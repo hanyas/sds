@@ -1,0 +1,238 @@
+import autograd.numpy as np
+from autograd import grad
+
+from autograd.scipy.misc import logsumexp
+from autograd.scipy.linalg import block_diag
+
+from autograd.misc import flatten
+
+from scipy.optimize import linear_sum_assignment, minimize
+
+from functools import partial
+from warnings import warn
+
+
+def div0(a, b):
+    with np.errstate(divide='ignore', invalid='ignore'):
+        c = np.true_divide(a, b)
+        c[ ~ np.isfinite(c)] = 0.0  # -inf inf NaN
+    return c
+
+
+def normalize(x, dim):
+    norm = np.sum(x, axis=dim, keepdims=True)
+    c = div0(x, norm)
+    return c, norm.flatten ()
+
+
+def compute_state_overlap(z1, z2, K1=None, K2=None):
+    assert z1.dtype == int and z2.dtype == int
+    assert z1.shape == z2.shape
+    assert z1.min() >= 0 and z2.min() >= 0
+
+    K1 = z1.max() + 1 if K1 is None else K1
+    K2 = z2.max() + 1 if K2 is None else K2
+
+    overlap = np.zeros((K1, K2))
+    for k1 in range(K1):
+        for k2 in range(K2):
+            overlap[k1, k2] = np.sum((z1 == k1) & (z2 == k2))
+    return overlap
+
+
+def find_permutation(z1, z2, K1=None, K2=None):
+    overlap = compute_state_overlap(z1, z2, K1=K1, K2=K2)
+    K1, K2 = overlap.shape
+    assert K1 <= K2, "Can only find permutation from more states to fewer"
+
+    tmp, perm = linear_sum_assignment(-overlap)
+    assert np.all(tmp == np.arange(K1)), "All indices should have been matched!"
+
+    # Pad permutation if K1 < K2
+    if K1 < K2:
+        unused = np.array(list(set(np.arange(K2)) - set(perm)))
+        perm = np.concatenate((perm, unused))
+
+    return perm
+
+
+def random_rotation(n, theta=None):
+    if theta is None:
+        # Sample a random, slow rotation
+        theta = 0.5 * np.pi * np.random.rand()
+
+    if n == 1:
+        return np.random.rand() * np.eye(1)
+
+    rot = np.array([[np.cos(theta), -np.sin(theta)],
+                    [np.sin(theta), np.cos(theta)]])
+    out = np.zeros((n, n))
+    out[:2, :2] = rot
+    q = np.linalg.qr(np.random.randn(n, n))[0]
+    return q.dot(out).dot(q.T)
+
+
+def fit_multiclass_logistic_regression(X, y, bias=None, K=None, W0=None, mu0=0, sigmasq0=1,
+                                       verbose=False, maxiter=1000):
+    """
+    Fit a multiclass logistic regression
+
+        y_i ~ Cat(softmax(W x_i))
+
+    y is a one hot vector in {0, 1}^K
+    x_i is a vector in R^D
+    W is a matrix R^{K x D}
+
+    The log likelihood is,
+
+        L(W) = sum_i sum_k y_ik * w_k^T x_i - logsumexp(W x_i)
+
+    The prior is w_k ~ Norm(mu0, diag(sigmasq0)).
+    """
+    N, D = X.shape
+    assert y.shape[0] == N
+
+    # Make sure y is one hot
+    if y.ndim == 1 or y.shape[1] == 1:
+        assert y.dtype == int and y.min() >= 0
+        K = y.max() + 1 if K is None else K
+        y_oh = np.zeros((N, K), dtype=int)
+        y_oh[np.arange(N), y] = 1
+
+    else:
+        K = y.shape[1]
+        assert y.min() == 0 and y.max() == 1 and np.allclose(y.sum(1), 1)
+        y_oh = y
+
+    # Check that bias is correct shape
+    if bias is not None:
+        assert bias.shape == (K,) or bias.shape == (N, K)
+    else:
+        bias = np.zeros((K,))
+
+    def loss(W_flat):
+        W = np.reshape(W_flat, (K, D))
+        scores = np.dot(X, W.T) + bias
+        lp = np.sum(y_oh * scores) - np.sum(logsumexp(scores, axis=1))
+        prior = np.sum(-0.5 * (W - mu0)**2 / sigmasq0)
+        return -(lp + prior) / N
+
+    W0 = W0 if W0 is not None else np.zeros((K, D))
+    assert W0.shape == (K, D)
+
+    itr = [0]
+    def callback(W_flat):
+        itr[0] += 1
+        print("Iteration {} loss: {:.3f}".format(itr[0], loss(W_flat)))
+
+    result = minimize(loss, np.ravel(W0), jac=grad(loss),
+                      method="BFGS",
+                      callback=callback if verbose else None,
+                      options=dict(maxiter=maxiter, disp=verbose))
+
+    W = np.reshape(result.x, (K, D))
+    return W
+
+
+def fit_linear_regression(Xs, ys, weights=None,
+                          mu0=0, sigmasq0=1, alpha0=1, beta0=1,
+                          fit_intercept=True):
+    """
+    Fit a linear regression y_i ~ N(Wx_i + b, diag(S)) for W, b, S.
+
+    :param Xs: array or list of arrays
+    :param ys: array or list of arrays
+    :param fit_intercept:  if False drop b
+    """
+    Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
+    ys = ys if isinstance(ys, (list, tuple)) else [ys]
+    assert len(Xs) == len(ys)
+
+    D = Xs[0].shape[1]
+    P = ys[0].shape[1]
+    assert all([X.shape[1] == D for X in Xs])
+    assert all([y.shape[1] == P for y in ys])
+    assert all([X.shape[0] == y.shape[0] for X, y in zip(Xs, ys)])
+
+    mu0 = mu0 * np.zeros((P, D))
+    sigmasq0 = sigmasq0 * np.eye(D)
+
+    # Make sure the weights are the weights
+    if weights is not None:
+        weights = weights if isinstance(weights, (list, tuple)) else [weights]
+    else:
+        weights = [np.ones(X.shape[0]) for X in Xs]
+
+    # Add weak prior on intercept
+    if fit_intercept:
+        mu0 = np.column_stack((mu0, np.zeros(P)))
+        sigmasq0 = block_diag(sigmasq0, np.eye(1))
+
+    # Compute the posterior
+    J = np.linalg.inv(sigmasq0)
+    h = np.dot(J, mu0.T)
+
+    for X, y, weight in zip(Xs, ys, weights):
+        X = np.column_stack((X, np.ones(X.shape[0]))) if fit_intercept else X
+        J += np.dot(X.T * weight, X)
+        h += np.dot(X.T * weight, y)
+
+    # Solve for the MAP estimate
+    W = np.linalg.solve(J, h).T
+    if fit_intercept:
+        W, b = W[:, :-1], W[:, -1]
+    else:
+        b = 0
+
+    # Compute the residual and the posterior variance
+    alpha = alpha0
+    beta = beta0 * np.ones(P)
+    for X, y, weight in zip(Xs, ys, weights):
+        yhat = np.dot(X, W.T) + b
+        resid = y - yhat
+        alpha += 0.5 * np.sum(weight)
+        beta += 0.5 * np.sum(weight[:, None] * resid**2, axis=0)
+
+    # Get MAP estimate of posterior mode of precision
+    sigmasq = beta / (alpha + 1e-16)
+
+    if fit_intercept:
+        return W, b, sigmasq
+    else:
+        return W, sigmasq
+
+
+def _generic_minimize(method, loss, x0, verbose=False, num_iters=1000):
+    """
+    Minimize a given loss function with scipy.optimize.minimize.
+    """
+    # Flatten the loss
+    _x0, unflatten = flatten(x0)
+    _objective = lambda x_flat, itr: loss(unflatten(x_flat), itr)
+
+    if verbose:
+        print("Fitting with {}.".format(method))
+
+    # Specify callback for fitting
+    itr = [0]
+    def callback(x_flat):
+        itr[0] += 1
+        print("Iteration {} loss: {:.3f}".format(itr[0], loss(unflatten(x_flat), -1)))
+
+    # Call the optimizer.
+    # HACK: Pass in -1 as the iteration.
+    result = minimize(_objective, _x0, args=(-1,), jac=grad(_objective),
+                      method=method,
+                      callback=callback if verbose else None,
+                      options=dict(maxiter=num_iters, disp=verbose))
+
+    # if verbose:
+    #     print("{} completed with message: \n{}".format(method, result.message))
+    #
+    # if not result.success:
+    #     warn("{} failed with message:\n{}".format(method, result.message))
+
+    return unflatten(result.x)
+
+# Define optimizers
+bfgs = partial(_generic_minimize, "BFGS")
