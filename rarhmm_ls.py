@@ -3,7 +3,9 @@ import autograd.numpy.random as npr
 
 from scipy.special import logsumexp
 
-from sds.distn import CategoricalInitState, RecurrentTransition, RecurrentOnlyTransition
+from sds.distn import CategoricalInitState
+from sds.distn import RecurrentTransition, RecurrentOnlyTransition
+from sds.distn import NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
 from sds.distn import GaussianObservation, AutoRegressiveGaussianObservation
 
 from sds.util import normalize, find_permutation
@@ -22,7 +24,10 @@ class rARHMM:
 
         # transitions
         # self.transitions = RecurrentTransition(self.nb_states, self.dim_obs, degree=1)
-        self.transitions = RecurrentOnlyTransition(self.nb_states, self.dim_obs, degree=1)
+        # self.transitions = RecurrentOnlyTransition(self.nb_states, self.dim_obs, degree=1)
+
+        # self.transitions = NeuralRecurrentTransition(self.nb_states, self.dim_obs, hidden_layer_sizes=(10, ))
+        self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dim_obs, hidden_layer_sizes=(5, ))
 
         # init observation
         self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)

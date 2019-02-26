@@ -12,7 +12,8 @@ from scipy.stats import multivariate_normal as mvn
 
 from sds.util import random_rotation
 from sds.util import fit_linear_regression
-from sds.util import bfgs
+from sds.util import bfgs, adam
+from ssm.util import relu
 
 from sklearn.preprocessing import PolynomialFeatures
 
@@ -190,6 +191,135 @@ class RecurrentOnlyTransition:
             return -obj / T
 
         self.params = bfgs(_objective, self.params, num_iters=num_iters)
+
+
+class NeuralRecurrentTransition:
+
+    def __init__(self, nb_states, dim_in,
+                 hidden_layer_sizes=(50,), nonlinearity="relu",
+                 reg=1e-16):
+        self.nb_states = nb_states
+        self.dim_in = dim_in
+        self.reg = reg
+
+        layer_sizes = (self.dim_in,) + hidden_layer_sizes + (self.nb_states,)
+        self.weights = [npr.randn(m, n) for m, n in zip(layer_sizes[:-1], layer_sizes[1:])]
+        self.biases = [npr.randn(n) for n in layer_sizes[1:]]
+
+        mat =  0.95 * np.eye(self.nb_states) + 0.05 * npr.rand(self.nb_states, self.nb_states)
+        mat /= np.sum(mat, axis=1, keepdims=True)
+        self.logmat = np.log(mat)
+
+        nonlinearities = dict(relu=relu, tanh=np.tanh)
+        self.nonlinearity = nonlinearities[nonlinearity]
+
+    @property
+    def params(self):
+        return self.logmat, self.weights, self.biases
+
+    @params.setter
+    def params(self, value):
+        self.logmat, self.weights, self.biases = value
+
+    def sample(self, z, x):
+        mat = np.exp(self.loglik(x))[0, ...]
+        return npr.choice(self.nb_states, p=mat[z, :])
+
+    def loglik(self, x):
+        _in = x[:-1, ...]
+        for W, b in zip(self.weights, self.biases):
+            y = np.dot(_in, W) + b
+            _in = self.nonlinearity(y)
+
+        logtrans = self.logmat[None, :, :] + y[:, None, :]
+
+        return logtrans - logsumexp(logtrans, axis=-1, keepdims=True)
+
+    def logprior(self):
+        return 0.0
+
+    def permute(self, perm):
+        self.logmat = self.logmat[np.ix_(perm, perm)]
+        self.weights[-1] = self.weights[-1][:, perm]
+        self.biases[-1] = self.biases[-1][perm]
+
+    def update(self, joints, x, num_iters=100):
+
+        def _expected_log_joint(joints):
+            elbo = self.logprior()
+            logtrans = self.loglik(x)
+            elbo += np.sum(joints * logtrans)
+            return elbo
+
+        T = x.shape[0]
+        def _objective(params, itr):
+            self.params = params
+            obj = _expected_log_joint(joints)
+            return -obj / T
+
+        self.params = adam(_objective, self.params, num_iters=num_iters)
+
+
+class NeuralRecurrentOnlyTransition:
+
+    def __init__(self, nb_states, dim_in,
+                 hidden_layer_sizes=(50,), nonlinearity="relu",
+                 reg=1e-16):
+        self.nb_states = nb_states
+        self.dim_in = dim_in
+        self.reg = reg
+
+        layer_sizes = (self.dim_in,) + hidden_layer_sizes + (self.nb_states,)
+        self.weights = [npr.randn(m, n) for m, n in zip(layer_sizes[:-1], layer_sizes[1:])]
+        self.biases = [npr.randn(n) for n in layer_sizes[1:]]
+
+        nonlinearities = dict(relu=relu, tanh=np.tanh)
+        self.nonlinearity = nonlinearities[nonlinearity]
+
+    @property
+    def params(self):
+        return self.weights, self.biases
+
+    @params.setter
+    def params(self, value):
+        self.weights, self.biases = value
+
+    def sample(self, z, x):
+        mat = np.exp(self.loglik(x))[0, ...]
+        return npr.choice(self.nb_states, p=mat[z, :])
+
+    def loglik(self, x):
+        _in = x[:-1, ...]
+        for W, b in zip(self.weights, self.biases):
+            y = np.dot(_in, W) + b
+            _in = self.nonlinearity(y)
+
+        logtrans = np.tile(y[:, None, :], (1, self.nb_states, 1))
+
+        return logtrans - logsumexp(logtrans, axis=-1, keepdims=True)
+
+    def logprior(self):
+        return 0.0
+
+    def permute(self, perm):
+        self.weights[-1] = self.weights[-1][:, perm]
+        self.biases[-1] = self.biases[-1][perm]
+
+    def update(self, joints, x, num_iters=100):
+
+        def _expected_log_joint(joints):
+            elbo = self.logprior()
+            logtrans = self.loglik(x)
+            elbo += np.sum(joints * logtrans)
+            return elbo
+
+        T = x.shape[0]
+        def _objective(params, itr):
+            self.params = params
+            obj = _expected_log_joint(joints)
+            return -obj / T
+
+        self.params = adam(_objective, self.params, num_iters=num_iters)
 
 
 class GaussianObservation:

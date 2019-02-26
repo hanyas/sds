@@ -1,10 +1,11 @@
 import autograd.numpy as np
-from autograd import grad
+from autograd import grad, value_and_grad
 
 from autograd.scipy.misc import logsumexp
 from autograd.scipy.linalg import block_diag
 
 from autograd.misc import flatten
+from autograd.wrap_util import wraps
 
 from scipy.optimize import linear_sum_assignment, minimize
 
@@ -70,6 +71,10 @@ def random_rotation(n, theta=None):
     out[:2, :2] = rot
     q = np.linalg.qr(np.random.randn(n, n))[0]
     return q.dot(out).dot(q.T)
+
+
+def relu(x):
+    return np.maximum(0, x)
 
 
 def fit_multiclass_logistic_regression(X, y, bias=None, K=None, W0=None, mu0=0, sigmasq0=1,
@@ -202,6 +207,59 @@ def fit_linear_regression(Xs, ys, weights=None,
         return W, sigmasq
 
 
+def unflatten_optimizer_step(step):
+    """
+    Wrap an optimizer step function that operates on flat 1D arrays
+    with a version that handles trees of nested containers,
+    i.e. (lists/tuples/dicts), with arrays/scalars at the leaves.
+    """
+    @wraps(step)
+    def _step(value_and_grad, x, itr, state=None, *args, **kwargs):
+        _x, unflatten = flatten(x)
+        def _value_and_grad(x, i):
+            v, g = value_and_grad(unflatten(x), i)
+            return v, flatten(g)[0]
+        _next_x, _next_val, _next_g, _next_state = \
+            step(_value_and_grad, _x, itr, state=state, *args, **kwargs)
+        return unflatten(_next_x), _next_val, _next_g, _next_state
+    return _step
+
+
+@unflatten_optimizer_step
+def adam_step(value_and_grad, x, itr, state=None, step_size=0.001, b1=0.9, b2=0.999, eps=10**-8):
+    """
+    Adam as described in http://arxiv.org/pdf/1412.6980.pdf.
+    It's basically RMSprop with momentum and some correction terms.
+    """
+    m, v = (np.zeros(len(x)), np.zeros(len(x))) if state is None else state
+    val, g = value_and_grad(x, itr)
+    m = (1 - b1) * g      + b1 * m    # First  moment estimate.
+    v = (1 - b2) * (g**2) + b2 * v    # Second moment estimate.
+    mhat = m / (1 - b1**(itr + 1))    # Bias correction.
+    vhat = v / (1 - b2**(itr + 1))
+    x = x - (step_size * mhat) / (np.sqrt(vhat) + eps)
+    return x, val, g, (m, v)
+
+
+def _generic_sgd(method, loss, x0, callback=None, num_iters=200, step_size=0.1, mass=0.9, full_output=False):
+    """
+    Generic stochastic gradient descent step.
+    """
+    step = dict(adam=adam_step)[method]
+
+    # Initialize outputs
+    x, losses, grads, state = x0, [], [], None
+    for itr in range(num_iters):
+        x, val, g, state = step(value_and_grad(loss), x, itr, state)
+        losses.append(val)
+        grads.append(g)
+
+    if full_output:
+        return x, losses, grads
+    else:
+        return x
+
+
 def _generic_minimize(method, loss, x0, verbose=False, num_iters=1000):
     """
     Minimize a given loss function with scipy.optimize.minimize.
@@ -235,4 +293,5 @@ def _generic_minimize(method, loss, x0, verbose=False, num_iters=1000):
     return unflatten(result.x)
 
 # Define optimizers
+adam = partial(_generic_sgd, "adam")
 bfgs = partial(_generic_minimize, "BFGS")
