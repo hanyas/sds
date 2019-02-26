@@ -55,7 +55,7 @@ class StationaryTransition:
         self.mat /= np.sum(self.mat, axis=1, keepdims=True)
 
     def sample(self, z):
-        return np.argmax(cat(1, self.mat[z, :]).rvs())
+        return npr.choice(self.nb_states, p=self.mat[z, :])
 
     def lik(self):
         return self.mat
@@ -101,7 +101,7 @@ class RecurrentTransition:
 
     def sample(self, z, x):
         mat = np.exp(self.loglik(x))[0, ...]
-        return np.argmax(cat(1, mat[z, :]).rvs())
+        return npr.choice(self.nb_states, p=mat[z, :])
 
     def loglik(self, x):
         T, D = x.shape
@@ -159,7 +159,7 @@ class RecurrentOnlyTransition:
 
     def sample(self, z, x):
         mat = np.exp(self.loglik(x))[0, ...]
-        return np.argmax(cat(1, mat[z, :]).rvs())
+        return npr.choice(self.nb_states, p=mat[z, :])
 
     def loglik(self, x):
         logtrans = (self.basis.fit_transform(x[:-1, :]) @ self.par.T)[:, np.newaxis, :]

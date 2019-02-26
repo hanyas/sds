@@ -56,7 +56,7 @@ class rARHMM:
             coef_, intercept_, sigmas = fit_linear_regression(x, y)
             self.observations.A[k, ...] = coef_
             self.observations.c[k, :] = intercept_
-            aux[k, ...] = np.diag(1.0 / sigmas)
+            aux[k, ...] = np.diag(sigmas)
 
         self.observations.cov = aux
 
