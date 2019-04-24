@@ -18,16 +18,15 @@ class rARHMM:
         self.nb_states = nb_states
         self.dim_obs = dim_obs
 
-
         # init state
         self.init_state = CategoricalInitState(self.nb_states)
 
         # transitions
         # self.transitions = RecurrentTransition(self.nb_states, self.dim_obs, degree=1)
-        # self.transitions = RecurrentOnlyTransition(self.nb_states, self.dim_obs, degree=1)
+        self.transitions = RecurrentOnlyTransition(self.nb_states, self.dim_obs, degree=1)
 
         # self.transitions = NeuralRecurrentTransition(self.nb_states, self.dim_obs, hidden_layer_sizes=(10, ))
-        self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dim_obs, hidden_layer_sizes=(5, ))
+        # self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dim_obs, hidden_layer_sizes=(5, ))
 
         # init observation
         self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)
@@ -225,6 +224,7 @@ class rARHMM:
                          for k in range(self.nb_states)])
 
         return np.einsum('nk,knl->nl', gamma, np.concatenate((imu, armu), axis=1))
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt

@@ -13,7 +13,7 @@ from scipy.stats import multivariate_normal as mvn
 from sds.util import random_rotation
 from sds.util import fit_linear_regression
 from sds.util import bfgs, adam
-from ssm.util import relu
+from sds.util import relu
 
 from sklearn.preprocessing import PolynomialFeatures
 
@@ -128,6 +128,7 @@ class RecurrentTransition:
             return elbo
 
         T = x.shape[0]
+
         def _objective(params, itr):
             self.params = params
             obj = _expected_log_joint(joints)
@@ -185,6 +186,7 @@ class RecurrentOnlyTransition:
             return elbo
 
         T = x.shape[0]
+
         def _objective(params, itr):
             self.params = params
             obj = _expected_log_joint(joints)
@@ -252,6 +254,7 @@ class NeuralRecurrentTransition:
             return elbo
 
         T = x.shape[0]
+
         def _objective(params, itr):
             self.params = params
             obj = _expected_log_joint(joints)
@@ -314,6 +317,7 @@ class NeuralRecurrentOnlyTransition:
             return elbo
 
         T = x.shape[0]
+
         def _objective(params, itr):
             self.params = params
             obj = _expected_log_joint(joints)

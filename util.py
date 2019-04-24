@@ -77,7 +77,8 @@ def relu(x):
     return np.maximum(0, x)
 
 
-def fit_multiclass_logistic_regression(X, y, bias=None, K=None, W0=None, mu0=0, sigmasq0=1,
+def fit_multiclass_logistic_regression(X, y, bias=None, K=None,
+                                       W0=None, mu0=0, sigmasq0=1,
                                        verbose=False, maxiter=1000):
     """
     Fit a multiclass logistic regression
@@ -126,6 +127,7 @@ def fit_multiclass_logistic_regression(X, y, bias=None, K=None, W0=None, mu0=0, 
     assert W0.shape == (K, D)
 
     itr = [0]
+
     def callback(W_flat):
         itr[0] += 1
         print("Iteration {} loss: {:.3f}".format(itr[0], loss(W_flat)))
@@ -140,7 +142,8 @@ def fit_multiclass_logistic_regression(X, y, bias=None, K=None, W0=None, mu0=0, 
 
 
 def fit_linear_regression(Xs, ys, weights=None,
-                          mu0=0, sigmasq0=1, alpha0=1, beta0=1,
+                          mu0=0, sigmasq0=1,
+                          alpha0=1, beta0=1,
                           fit_intercept=True):
     """
     Fit a linear regression y_i ~ N(Wx_i + b, diag(S)) for W, b, S.
@@ -216,9 +219,11 @@ def unflatten_optimizer_step(step):
     @wraps(step)
     def _step(value_and_grad, x, itr, state=None, *args, **kwargs):
         _x, unflatten = flatten(x)
+
         def _value_and_grad(x, i):
             v, g = value_and_grad(unflatten(x), i)
             return v, flatten(g)[0]
+
         _next_x, _next_val, _next_g, _next_state = \
             step(_value_and_grad, _x, itr, state=state, *args, **kwargs)
         return unflatten(_next_x), _next_val, _next_g, _next_state
@@ -233,7 +238,7 @@ def adam_step(value_and_grad, x, itr, state=None, step_size=0.001, b1=0.9, b2=0.
     """
     m, v = (np.zeros(len(x)), np.zeros(len(x))) if state is None else state
     val, g = value_and_grad(x, itr)
-    m = (1 - b1) * g      + b1 * m    # First  moment estimate.
+    m = (1 - b1) * g + b1 * m    # First  moment estimate.
     v = (1 - b2) * (g**2) + b2 * v    # Second moment estimate.
     mhat = m / (1 - b1**(itr + 1))    # Bias correction.
     vhat = v / (1 - b2**(itr + 1))
