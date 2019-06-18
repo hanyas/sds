@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# @Filename: rarahmm_test.py
+# @Date: 2019-06-05-15-27
+# @Author: Hany Abdulsamad
+# @Contact: hany@robot-learning.de
+
+import numpy as np
+from inf.sds.ararhmm_ls import arARHMM
+
+
+# list of dicts to dict of lists
+def lod2dol(*dicts):
+    d = {}
+    for dict in dicts:
+        for key in dict:
+            try:
+                d[key].append(dict[key])
+            except KeyError:
+                d[key] = [dict[key]]
+
+    return d
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    from hips.plotting.colormaps import gradient_cmap
+    import seaborn as sns
+
+    sns.set_style("white")
+    sns.set_context("talk")
+
+    color_names = [
+        "windows blue",
+        "red",
+        "amber",
+        "faded green",
+        "dusty purple",
+        "orange"
+    ]
+
+    colors = sns.xkcd_palette(color_names)
+    cmap = gradient_cmap(colors)
+
+    import gym
+
+    # np.random.seed(0)
+    env = gym.make('Pendulum-v0')
+    env._max_episode_steps = 200
+    # env.seed(0)
+
+    rollouts = np.load('acreps_pendulum_data')
+    data = lod2dol(*rollouts)
+
+    ararhmm = arARHMM(nb_states=3, dim_obs=3, dim_act=1, type='recurrent')
+    ararhmm.initialize(data['x'], data['u'])
+    lls = ararhmm.em(data['x'],  data['u'], nb_iter=50, prec=1e-6, verbose=True)
+
+    plt.figure(figsize=(5, 5))
+    plt.plot(lls)
+    plt.show()
+
+    _seq = np.random.choice(len(data['x']))
+    _, z = ararhmm.viterbi([data['x'][_seq]], [data['u'][_seq]])
+
+    x = ararhmm.mean_observation(data['x'], data['u'])
+
+    plt.figure(figsize=(8, 8))
+    plt.subplot(211)
+    plt.imshow(z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    plt.xlim(0, len(z[0]))
+    plt.ylabel("$state_{\\mathrm{true}}$")
+    plt.yticks([])
+
+    plt.subplot(212)
+    plt.plot(x[_seq], '-k', lw=2)
+    plt.xlim(0, len(x[_seq]))
+    plt.ylabel("$obs_{\\mathrm{inferred}}$")
+    plt.yticks([])
+    plt.xlabel("time")
+
+    plt.tight_layout()
+    plt.show()
