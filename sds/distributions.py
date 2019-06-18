@@ -9,10 +9,10 @@ from scipy import special
 from scipy.stats import multinomial as cat
 from scipy.stats import multivariate_normal as mvn
 
-from inf.sds.util import random_rotation
-from inf.sds.util import bfgs, adam
-from inf.sds.util import relu
-from inf.sds.util import multivariate_normal_logpdf
+from sds.util import random_rotation
+from sds.util import bfgs, adam
+from sds.util import relu
+from sds.util import multivariate_normal_logpdf
 
 from sklearn.preprocessing import PolynomialFeatures
 

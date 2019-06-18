@@ -6,7 +6,7 @@
 # @Contact: hany@robot-learning.de
 
 import numpy as np
-from inf.sds.rarhmm_ls import rARHMM
+from sds.rarhmm_ls import rARHMM
 
 
 # list of dicts to dict of lists

@@ -1,18 +1,15 @@
 import autograd.numpy as np
-import autograd.numpy.random as npr
-
-from inf.sds.distributions import CategoricalInitState, StationaryTransition
-from inf.sds.distributions import GaussianObservation, AutoRegressiveGaussianObservation
-
-from inf.sds.util import normalize, permutation, linear_regression
 
 
-class ARHMM:
+from sds.distributions import CategoricalInitState, GaussianObservation, StationaryTransition
+from sds.util import normalize, permutation
 
-    def __init__(self, nb_states, dim_obs, dim_act=0):
+
+class HMM:
+
+    def __init__(self, nb_states, dim_obs):
         self.nb_states = nb_states
         self.dim_obs = dim_obs
-        self.dim_act = dim_act
 
         # init state
         self.init_state = CategoricalInitState(self.nb_states)
@@ -20,54 +17,40 @@ class ARHMM:
         # transitions
         self.transitions = StationaryTransition(self.nb_states)
 
-        # init observation
-        self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)
-
         # observations
-        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dim_obs)
+        self.observations = GaussianObservation(self.nb_states, self.dim_obs)
 
         self.likhds = None
 
-    def sample(self, T, act):
+    def sample(self, T):
         obs = []
         state = []
 
         N = len(T)
         for n in range(N):
-            _act = act[n]
             _obs = np.zeros((T[n], self.dim_obs))
-            _state = np.zeros((T[n], ), np.int64)
+            _state = np.zeros((T[n],), np.int64)
 
             _state[0] = self.init_state.sample()
-            _obs[0, :] = self.init_observation.sample(z=0)
-            for t in range(1, T[n]):
-                _state[t] = self.transitions.sample(_state[t - 1])
-                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :])
+            for t in range(T[n] - 1):
+                _obs[t, :] = self.observations.sample(_state[t])
+                _state[t + 1] = self.transitions.sample(_state[t])
+
+            _obs[-1, :] = self.observations.sample(_state[-1])
 
             state.append(_state)
             obs.append(_obs)
 
         return state, obs
 
-    def initialize(self, obs, act):
-        self.init_observation.mu = npr.randn(1, self.dim_obs)
-        self.init_observation.cov = np.array([np.eye(self.dim_obs, self.dim_obs)])
+    def initialize(self, obs):
+        from sklearn.cluster import KMeans
+        _obs = np.concatenate(obs)
+        km = KMeans(self.nb_states).fit(_obs)
 
-        Ts = [_obs.shape[0] for _obs in obs]
-        zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
-
-        aux = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
-        for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [np.hstack((_obs[t, :], _act[t, :])) for t, _obs, _act in zip(ts, obs, act)]
-            ys = [_obs[t + 1, :] for t, _obs in zip(ts, obs)]
-
-            coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.A[k, ...] = coef_
-            self.observations.c[k, :] = intercept_
-            aux[k, ...] = np.diag(sigmas)
-
-        self.observations.cov = aux
+        self.observations.mu = km.cluster_centers_
+        self.observations.cov = np.array([np.cov(_obs[km.labels_ == k].T)
+                                          for k in range(self.nb_states)])
 
     def log_priors(self):
         logprior = 0.0
@@ -76,17 +59,10 @@ class ARHMM:
         logprior += self.observations.log_prior()
         return logprior
 
-    def likelihoods(self, obs, act):
+    def likelihoods(self, obs):
         likinit = self.init_state.likelihood()
         liktrans = self.transitions.likelihood()
-
-        ilik = self.init_observation.likelihood([_obs[0, :] for _obs in obs])
-        arlik = self.observations.likelihood(obs, act)
-
-        likobs = []
-        for _ilik, _arlik in zip(ilik, arlik):
-            likobs.append(np.vstack((np.repeat(_ilik, self.nb_states), _arlik)))
-
+        likobs = self.observations.likelihood(obs)
         return [likinit, liktrans, likobs]
 
     def filter(self, likhds):
@@ -147,8 +123,8 @@ class ARHMM:
 
         return zeta
 
-    def viterbi(self, obs, act):
-        likinit, liktrans, likobs = self.likelihoods(obs, act)
+    def viterbi(self, obs):
+        likinit, liktrans, likobs = self.likelihoods(obs)
 
         delta = []
         z = []
@@ -185,8 +161,8 @@ class ARHMM:
 
         return delta, z
 
-    def estep(self, obs, act):
-        self.likhds = self.likelihoods(obs, act)
+    def estep(self, obs):
+        self.likhds = self.likelihoods(obs)
         alpha, scale = self.filter(self.likhds)
         beta = self.smooth(self.likhds, scale)
         gamma = self.expectations(alpha, beta)
@@ -194,20 +170,20 @@ class ARHMM:
 
         return gamma, zeta
 
-    def mstep(self, obs, act, gamma, zeta):
+    def mstep(self, obs, gamma, zeta):
         self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
         self.transitions.mstep(zeta)
-        self.observations.mstep(obs, act, gamma)
+        self.observations.mstep(obs, gamma)
 
-    def em(self, obs, act, nb_iter=50, prec=1e-6, verbose=False):
+    def em(self, obs, nb_iter=50, prec=1e-6, verbose=False):
         lls = []
         last_ll = - np.inf
 
         it = 0
         while it < nb_iter:
-            gamma, zeta = self.estep(obs, act)
+            gamma, zeta = self.estep(obs)
 
-            ll = self.log_probability(obs, act)
+            ll = self.log_probability(obs)
             lls.append(ll)
             if verbose:
                 print("it=", it, "ll=", ll)
@@ -215,7 +191,7 @@ class ARHMM:
             if (ll - last_ll) < prec:
                 break
             else:
-                self.mstep(obs, act, gamma, zeta)
+                self.mstep(obs, gamma, zeta)
                 last_ll = ll
 
             it += 1
@@ -227,29 +203,22 @@ class ARHMM:
         self.transitions.permute(perm)
         self.observations.permute(perm)
 
-    def log_norm(self, obs, act):
+    def log_norm(self, obs):
         if self.likhds is None:
-            self.likhds = self.likelihoods(obs, act)
+            self.likhds = self.likelihoods(obs)
         _, norm = self.filter(self.likhds)
         return np.sum(np.log(np.concatenate(norm)))
 
-    def log_probability(self, obs, act):
-        return self.log_norm(obs, act) + self.log_priors()
+    def log_probability(self, obs):
+        return self.log_norm(obs) + self.log_priors()
 
-    def mean_observation(self, obs, act):
-        likhds = self.likelihoods(obs, act)
+    def mean_observation(self, obs):
+        likhds = self.likelihoods(obs)
         alpha, scale = self.filter(likhds)
         beta = self.smooth(likhds, scale)
         gamma = self.expectations(alpha, beta)
 
-        imu = np.array([self.init_observation.mu for _ in range(self.nb_states)])
-
-        _mean = []
-        for _obs, _act, _gamma in zip(obs, act, gamma):
-            armu = np.array([self.observations.mean(k, _obs[:-1, :], _act[:-1, :self.dim_act]) for k in range(self.nb_states)])
-            _mean.append(np.einsum('nk,knl->nl', _gamma, np.concatenate((imu, armu), axis=1)))
-
-        return _mean
+        return [np.einsum('nk,km->nm', _gamma, self.observations.mu) for _gamma in gamma]
 
 
 if __name__ == "__main__":
@@ -275,21 +244,22 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=5, suppress=True)
 
-    true_arhmm = ARHMM(nb_states=3, dim_obs=2)
+    true_hmm = HMM(nb_states=3, dim_obs=2)
+
+    thetas = np.linspace(0, 2 * np.pi, true_hmm.nb_states, endpoint=False)
+    for k in range(true_hmm.nb_states):
+        true_hmm.observations.mu[k, :] = 3 * np.array([np.cos(thetas[k]), np.sin(thetas[k])])
 
     # trajectory lengths
-    T = [1250, 1150, 1025]
+    T = [95, 85, 75]
 
-    # empty action sequence
-    act = [np.zeros((t, 0)) for t in T]
+    true_z, y = true_hmm.sample(T=T)
+    true_ll = true_hmm.log_probability(y)
 
-    true_z, y = true_arhmm.sample(T=T, act=act)
-    true_ll = true_arhmm.log_probability(y, act)
+    hmm = HMM(nb_states=3, dim_obs=2)
+    hmm.initialize(y)
 
-    arhmm = ARHMM(nb_states=3, dim_obs=2)
-    arhmm.initialize(y, act)
-
-    lls = arhmm.em(y, act, nb_iter=50, prec=1e-6, verbose=True)
+    lls = hmm.em(y, nb_iter=50, prec=1e-24, verbose=True)
     print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
     plt.figure(figsize=(5, 5))
@@ -298,8 +268,8 @@ if __name__ == "__main__":
     plt.show()
 
     _seq = np.random.choice(len(y))
-    arhmm.permute(permutation(true_z[_seq], arhmm.viterbi([y[_seq]], [act[_seq]])[1][0]))
-    _, arhmm_z = arhmm.viterbi([y[_seq]], [act[_seq]])
+    hmm.permute(permutation(true_z[_seq], hmm.viterbi([y[_seq]])[1][0]))
+    _, hmm_z = hmm.viterbi([y[_seq]])
 
     plt.figure(figsize=(8, 4))
     plt.subplot(211)
@@ -309,7 +279,7 @@ if __name__ == "__main__":
     plt.yticks([])
 
     plt.subplot(212)
-    plt.imshow(arhmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    plt.imshow(hmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
     plt.xlim(0, len(y[_seq]))
     plt.ylabel("$z_{\\mathrm{inferred}}$")
     plt.yticks([])
@@ -318,9 +288,9 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    arhmm_y = arhmm.mean_observation(y, act)
+    hmm_y = hmm.mean_observation(y)
 
     plt.figure(figsize=(8, 4))
-    plt.plot(y[_seq] + 10 * np.arange(arhmm.dim_obs), '-k', lw=2)
-    plt.plot(arhmm_y[_seq] + 10 * np.arange(arhmm.dim_obs), '-', lw=2)
+    plt.plot(y[_seq] + 10 * np.arange(hmm.dim_obs), '-k', lw=2)
+    plt.plot(hmm_y[_seq] + 10 * np.arange(hmm.dim_obs), '-', lw=2)
     plt.show()
