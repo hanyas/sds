@@ -24,7 +24,7 @@ class ARHMM:
         self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)
 
         # observations
-        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dim_obs)
+        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dim_obs, self.dim_act)
 
         self.likhds = None
 
@@ -49,12 +49,19 @@ class ARHMM:
 
         return state, obs
 
-    def initialize(self, obs, act):
+    def initialize(self, obs, act, localize=True):
         self.init_observation.mu = npr.randn(1, self.dim_obs)
         self.init_observation.cov = np.array([np.eye(self.dim_obs, self.dim_obs)])
 
         Ts = [_obs.shape[0] for _obs in obs]
-        zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
+        if localize:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.hstack((np.vstack(obs), np.vstack(act))))
+            zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
+            zs = [z[:-1] for z in zs]
+        else:
+            zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
 
         aux = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
         for k in range(self.nb_states):
@@ -63,7 +70,8 @@ class ARHMM:
             ys = [_obs[t + 1, :] for t, _obs in zip(ts, obs)]
 
             coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.A[k, ...] = coef_
+            self.observations.A[k, ...] = coef_[:, :self.dim_obs]
+            self.observations.B[k, ...] = coef_[:, self.dim_obs:]
             self.observations.c[k, :] = intercept_
             aux[k, ...] = np.diag(sigmas)
 

@@ -76,7 +76,7 @@ class rARHMM:
         if localize:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
-            km.fit(np.vstack(obs))
+            km.fit(np.hstack((np.vstack(obs), np.vstack(act))))
             zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
             zs = [z[:-1] for z in zs]
         else:

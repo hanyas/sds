@@ -535,7 +535,7 @@ class AutoRegressiveGaussianObservation:
 
         mu = np.linalg.solve(_J, _h)
         self.A = np.swapaxes(mu[:, :self.dim_obs, :], 1, 2)
-        self.B = np.swapaxes(mu[:, self.nb_states:self.nb_states + self.dim_act, :], 1, 2)
+        self.B = np.swapaxes(mu[:, self.dim_obs:self.dim_obs + self.dim_act, :], 1, 2)
         self.c = mu[:, -1, :]
 
         sqerr = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
@@ -687,7 +687,7 @@ class AutoRegressiveGaussianFullObservation:
 
         mu = np.linalg.solve(_J, _h)
         self.A = np.swapaxes(mu[:, :self.dim_obs, :], 1, 2)
-        self.B = np.swapaxes(mu[:, self.nb_states:self.nb_states + self.dim_act, :], 1, 2)
+        self.B = np.swapaxes(mu[:, self.dim_obs:self.dim_obs + self.dim_act, :], 1, 2)
         self.c = mu[:, -1, :]
 
         sqerr = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
