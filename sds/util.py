@@ -316,13 +316,7 @@ def linear_regression(Xs, ys, weights=None,
                       mu0=0, sigmasq0=1,
                       alpha0=1, beta0=1,
                       fit_intercept=True):
-    """
-    Fit a linear regression y_i ~ N(Wx_i + b, diag(S)) for W, b, S.
 
-    :param Xs: array or list of arrays
-    :param ys: array or list of arrays
-    :param fit_intercept:  if False drop b
-    """
     Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
     ys = ys if isinstance(ys, (list, tuple)) else [ys]
     assert len(Xs) == len(ys)
@@ -449,6 +443,7 @@ def _generic_minimize(method, loss, x0, verbose=False, num_iters=1000):
 
     # Specify callback for fitting
     itr = [0]
+
     def callback(x_flat):
         itr[0] += 1
         print("Iteration {} loss: {:.3f}".format(itr[0], loss(unflatten(x_flat), -1)))
