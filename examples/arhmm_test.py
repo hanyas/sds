@@ -19,12 +19,12 @@ for t in T:
 
 true_ll = true_arhmm.log_probability(y)
 
-# true_arhmm = ARHMM(nb_states=3, dim_obs=2)
+# true_arhmm = ARHMM(nb_states=3, dm_obs=2)
 # true_z, y = true_arhmm.sample(T)
 # true_ll = true_arhmm.log_probability(y)
 
 act = [np.zeros((t, 0)) for t in T]
-my_arhmm = ARHMM(nb_states=3, dim_obs=2)
+my_arhmm = ARHMM(nb_states=3, dm_obs=2)
 my_arhmm.initialize(y, act)
 my_arhmm_lls = my_arhmm.em(y, act, nb_iter=50, prec=1e-12, verbose=False)
 

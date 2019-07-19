@@ -6,7 +6,7 @@
 # @Contact: hany@robot-learning.de
 
 import numpy as np
-from sds.ararhmm_ls import arARHMM
+from sds import arARHMM
 
 
 # list of dicts to dict of lists
@@ -43,17 +43,11 @@ if __name__ == "__main__":
     colors = sns.xkcd_palette(color_names)
     cmap = gradient_cmap(colors)
 
-    import gym
-
-    # np.random.seed(0)
-    env = gym.make('Pendulum-v0')
-    env._max_episode_steps = 200
-    # env.seed(0)
-
-    rollouts = np.load('acreps_pendulum_data')
+    file = np.load('reps_pendulum_rollouts.npz', allow_pickle=True)
+    rollouts = file['arr_0']
     data = lod2dol(*rollouts)
 
-    ararhmm = arARHMM(nb_states=3, dim_obs=3, dim_act=1, type='recurrent')
+    ararhmm = arARHMM(nb_states=3, dm_obs=3, dm_act=1, type='recurrent')
     ararhmm.initialize(data['x'], data['u'])
     lls = ararhmm.em(data['x'],  data['u'], nb_iter=50, prec=1e-6, verbose=True)
 
@@ -77,7 +71,6 @@ if __name__ == "__main__":
     plt.plot(x[_seq], '-k', lw=2)
     plt.xlim(0, len(x[_seq]))
     plt.ylabel("$obs_{\\mathrm{inferred}}$")
-    plt.yticks([])
     plt.xlabel("time")
 
     plt.tight_layout()
