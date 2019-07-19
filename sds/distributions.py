@@ -76,11 +76,11 @@ class StationaryTransition:
 
 class RecurrentTransition:
 
-    def __init__(self, nb_states, dim_obs, dim_act, degree=1, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act, degree=1, reg=1e-16):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
-        self.dim_in = self.dim_obs + self.dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+        self.dim_in = self.dm_obs + self.dm_act
         self.degree = degree
         self.reg = reg
 
@@ -106,10 +106,13 @@ class RecurrentTransition:
         return npr.choice(self.nb_states, p=mat[z, :])
 
     def log_likelihood(self, x, u):
+        x = [x] if not isinstance(x, list) else x
+        u = [u] if not isinstance(u, list) else u
+
         logtrans = []
         for _x, _u in zip(x, u):
             _x, _u = np.atleast_2d(_x), np.atleast_2d(_u)
-            _in = np.concatenate((_x, _u[:, :self.dim_act]), axis=1)
+            _in = np.concatenate((_x, _u[:, :self.dm_act]), axis=1)
 
             T = len(_x)
             _logtrans = np.tile(self.logmat[None, :, :], (T, 1, 1))
@@ -152,11 +155,11 @@ class RecurrentTransition:
 
 class RecurrentOnlyTransition:
 
-    def __init__(self, nb_states, dim_obs, dim_act, degree=1, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act, degree=1, reg=1e-16):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
-        self.dim_in = self.dim_obs + self.dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+        self.dim_in = self.dm_obs + self.dm_act
         self.degree = degree
         self.reg = reg
 
@@ -179,10 +182,13 @@ class RecurrentOnlyTransition:
         return npr.choice(self.nb_states, p=mat[z, :])
 
     def log_likelihood(self, x, u):
+        x = [x] if not isinstance(x, list) else x
+        u = [u] if not isinstance(u, list) else u
+
         logtrans = []
         for _x, _u in zip(x, u):
             _x , _u = np.atleast_2d(_x), np.atleast_2d(_u)
-            _in = np.concatenate((_x, _u[:, :self.dim_act]), axis=1)
+            _in = np.concatenate((_x, _u[:, :self.dm_act]), axis=1)
 
             _logtrans = (self.basis.fit_transform(_in) @ self.par.T)[:, None, :]
             _logtrans += self.offset
@@ -225,13 +231,13 @@ class RecurrentOnlyTransition:
 
 class NeuralRecurrentTransition:
 
-    def __init__(self, nb_states, dim_obs, dim_act,
+    def __init__(self, nb_states, dm_obs, dm_act,
                  hidden_layer_sizes=(50,), nonlinearity="relu",
                  reg=1e-16):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
-        self.dim_in = self.dim_obs + self.dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+        self.dim_in = self.dm_obs + self.dm_act
         self.reg = reg
 
         layer_sizes = (self.dim_in,) + hidden_layer_sizes + (self.nb_states,)
@@ -258,10 +264,13 @@ class NeuralRecurrentTransition:
         return npr.choice(self.nb_states, p=mat[z, :])
 
     def log_likelihood(self, x, u):
+        x = [x] if not isinstance(x, list) else x
+        u = [u] if not isinstance(u, list) else u
+
         logtrans = []
         for _x, _u in zip(x, u):
             _x , _u = np.atleast_2d(_x), np.atleast_2d(_u)
-            _in = np.concatenate((_x, _u[:, :self.dim_act]), axis=1)
+            _in = np.concatenate((_x, _u[:, :self.dm_act]), axis=1)
 
             for W, b in zip(self.weights, self.biases):
                 y = np.dot(_in, W) + b
@@ -307,12 +316,12 @@ class NeuralRecurrentTransition:
 
 class NeuralRecurrentOnlyTransition:
 
-    def __init__(self, nb_states, dim_obs , dim_act,
+    def __init__(self, nb_states, dm_obs , dm_act,
                  hidden_layer_sizes=(50,), nonlinearity="relu", reg=1e-16):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
-        self.dim_in = self.dim_obs + self.dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+        self.dim_in = self.dm_obs + self.dm_act
         self.reg = reg
 
         layer_sizes = (self.dim_in,) + hidden_layer_sizes + (self.nb_states,)
@@ -335,10 +344,13 @@ class NeuralRecurrentOnlyTransition:
         return npr.choice(self.nb_states, p=mat[z, :])
 
     def log_likelihood(self, x, u):
+        x = [x] if not isinstance(x, list) else x
+        u = [u] if not isinstance(u, list) else u
+
         logtrans = []
         for _x, _u in zip(x, u):
             _x, _u = np.atleast_2d(_x), np.atleast_2d(_u)
-            _in = np.concatenate((_x, _u[:, :self.dim_act]), axis=1)
+            _in = np.concatenate((_x, _u[:, :self.dm_act]), axis=1)
 
             for W, b in zip(self.weights, self.biases):
                 y = np.dot(_in, W) + b
@@ -383,16 +395,16 @@ class NeuralRecurrentOnlyTransition:
 
 class GaussianObservation:
 
-    def __init__(self, nb_states, dim_obs, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, reg=1e-16):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
+        self.dm_obs = dm_obs
         self.reg = reg
 
-        self.mu = np.zeros((self.nb_states, self.dim_obs))
+        self.mu = np.zeros((self.nb_states, self.dm_obs))
         for k in range(self.nb_states):
-            self.mu[k, :] = mvn(mean=np.zeros((self.dim_obs, )), cov=np.eye(self.dim_obs)).rvs()
+            self.mu[k, :] = mvn(mean=np.zeros((self.dm_obs, )), cov=np.eye(self.dm_obs)).rvs()
 
-        L = npr.randn(self.nb_states, self.dim_obs, self.dim_obs)
+        L = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
         self.cov = np.array([L[k, ...] @ L[k, ...].T for k in range(self.nb_states)])
 
     @property
@@ -401,7 +413,7 @@ class GaussianObservation:
 
     @cov.setter
     def cov(self, mat):
-        self._cov = mat + np.array([np.eye(self.dim_obs) * self.reg])
+        self._cov = mat + np.array([np.eye(self.dm_obs) * self.reg])
 
     def sample(self, z):
         return mvn(mean=self.mu[z, :], cov=self.cov[z, ...]).rvs()
@@ -422,15 +434,15 @@ class GaussianObservation:
         self.cov = self.cov[perm, ...]
 
     def mstep(self, x, w):
-        _J = np.zeros((self.nb_states, self.dim_obs))
-        _h = np.zeros((self.nb_states, self.dim_obs))
+        _J = np.zeros((self.nb_states, self.dm_obs))
+        _h = np.zeros((self.nb_states, self.dm_obs))
         for _x, _w in zip(x, w):
             _J += np.sum(_w[:, :, None], axis=0)
             _h += np.sum(_w[:, :, None] * _x[:, None, :], axis=0)
 
         self.mu = _h / _J
 
-        sqerr = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
+        sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         weight = np.zeros((self.nb_states, ))
         for _x, _w in zip(x, w):
             resid = _x[:, None, :] - self.mu
@@ -443,22 +455,22 @@ class GaussianObservation:
 
 class AutoRegressiveGaussianObservation:
 
-    def __init__(self, nb_states, dim_obs, dim_act=0, reg=1e-8):
+    def __init__(self, nb_states, dm_obs, dm_act=0, reg=1e-8):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
         self.reg = reg
 
-        self.A = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
-        self.B = np.zeros((self.nb_states, self.dim_obs, self.dim_act))
-        self.c = np.zeros((self.nb_states, self.dim_obs))
+        self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        self.B = np.zeros((self.nb_states, self.dm_obs, self.dm_act))
+        self.c = np.zeros((self.nb_states, self.dm_obs))
 
         for k in range(self.nb_states):
-            self.A[k, ...] = .95 * random_rotation(self.dim_obs)
-            self.B[k, ...] = npr.randn(self.dim_obs, self.dim_act)
-            self.c[k, :] = npr.randn(self.dim_obs)
+            self.A[k, ...] = .95 * random_rotation(self.dm_obs)
+            self.B[k, ...] = npr.randn(self.dm_obs, self.dm_act)
+            self.c[k, :] = npr.randn(self.dm_obs)
 
-        L = 0.1 * npr.randn(self.nb_states, self.dim_obs, self.dim_obs)
+        L = 0.1 * npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
         self.cov = np.array([L[k, ...] @ L[k, ...].T for k in range(self.nb_states)])
 
     @property
@@ -467,7 +479,7 @@ class AutoRegressiveGaussianObservation:
 
     @cov.setter
     def cov(self, mat):
-        self._cov = mat + np.array([np.eye(self.dim_obs) * self.reg])
+        self._cov = mat + np.array([np.eye(self.dm_obs) * self.reg])
 
     def mean(self, z, x, u):
         return np.einsum('kh,...h->...k', self.A[z, ...], x) +\
@@ -483,7 +495,7 @@ class AutoRegressiveGaussianObservation:
             T = _x.shape[0]
             _lik = np.zeros((T - 1, self.nb_states))
             for k in range(self.nb_states):
-                mu = self.mean(k, _x[:-1, :], _u[:-1, :self.dim_act])
+                mu = self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act])
                 for t in range(T - 1):
                     _lik[t, k] = mvn(mean=mu[t, :], cov=self.cov[k, ...]).pdf(_x[t + 1, :])
 
@@ -497,7 +509,7 @@ class AutoRegressiveGaussianObservation:
             T = _x.shape[0]
             _loglik = np.zeros((T - 1, self.nb_states))
             for k in range(self.nb_states):
-                mu = self.mean(k, _x[:-1, :], _u[:-1, :self.dim_act])
+                mu = self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act])
                 _loglik[:, k] = multivariate_normal_logpdf(_x[1:, :], mu, self.cov[k, ...])
 
             loglik.append(_loglik)
@@ -517,15 +529,15 @@ class AutoRegressiveGaussianObservation:
 
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, w):
-            xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dim_act], np.ones((_x.shape[0] - 1, 1)))))
+            xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
             ys.append(_x[1:, :])
             ws.append(_w[1:, :])
 
-        _J_diag = np.concatenate((self.reg * np.ones(self.dim_obs),
-                                  self.reg * np.ones(self.dim_act),
+        _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs),
+                                  self.reg * np.ones(self.dm_act),
                                   self.reg * np.ones(1)))
         _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
-        _h = np.zeros((self.nb_states, self.dim_obs + self.dim_act + 1, self.dim_obs))
+        _h = np.zeros((self.nb_states, self.dm_obs + self.dm_act + 1, self.dm_obs))
 
         for _x, _y, _w in zip(xs, ys, ws):
             for k in range(self.nb_states):
@@ -534,11 +546,11 @@ class AutoRegressiveGaussianObservation:
                 _h[k] += np.dot(wx.T, _y)
 
         mu = np.linalg.solve(_J, _h)
-        self.A = np.swapaxes(mu[:, :self.dim_obs, :], 1, 2)
-        self.B = np.swapaxes(mu[:, self.dim_obs:self.dim_obs + self.dim_act, :], 1, 2)
+        self.A = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
+        self.B = np.swapaxes(mu[:, self.dm_obs:self.dm_obs + self.dm_act, :], 1, 2)
         self.c = mu[:, -1, :]
 
-        sqerr = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
+        sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         weight = 1e-8 * np.ones(self.nb_states)
         for _x, _y, _w in zip(xs, ys, ws):
             yhat = np.matmul(_x[None, :, :], mu)
@@ -551,32 +563,32 @@ class AutoRegressiveGaussianObservation:
 
 class AutoRegressiveGaussianFullObservation:
 
-    def __init__(self, nb_states, dim_obs, dim_act=0, reg=1e-8):
+    def __init__(self, nb_states, dm_obs, dm_act=0, reg=1e-8):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
         self.reg = reg
 
-        self.A = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
-        self.B = np.zeros((self.nb_states, self.dim_obs, self.dim_act))
-        self.c = np.zeros((self.nb_states, self.dim_obs))
+        self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        self.B = np.zeros((self.nb_states, self.dm_obs, self.dm_act))
+        self.c = np.zeros((self.nb_states, self.dm_obs))
 
-        self.K = np.zeros((self.nb_states, self.dim_act, self.dim_obs))
-        self.kff = np.zeros((self.nb_states, self.dim_act))
-
-        for k in range(self.nb_states):
-            self.A[k, ...] = .95 * random_rotation(self.dim_obs)
-            self.B[k, ...] = npr.randn(self.dim_obs, self.dim_act)
-            self.c[k, :] = npr.randn(self.dim_obs)
+        self.K = np.zeros((self.nb_states, self.dm_act, self.dm_obs))
+        self.kff = np.zeros((self.nb_states, self.dm_act))
 
         for k in range(self.nb_states):
-            self.K = npr.randn(self.nb_states, self.dim_act, self.dim_obs)
-            self.kff = npr.randn(self.nb_states, self.dim_act)
+            self.A[k, ...] = .95 * random_rotation(self.dm_obs)
+            self.B[k, ...] = npr.randn(self.dm_obs, self.dm_act)
+            self.c[k, :] = npr.randn(self.dm_obs)
 
-        L = 0.1 * npr.randn(self.nb_states, self.dim_obs, self.dim_obs)
+        for k in range(self.nb_states):
+            self.K = npr.randn(self.nb_states, self.dm_act, self.dm_obs)
+            self.kff = npr.randn(self.nb_states, self.dm_act)
+
+        L = 0.1 * npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
         self.cov_x = np.array([L[k, ...] @ L[k, ...].T for k in range(self.nb_states)])
 
-        L = 0.1 * npr.randn(self.nb_states, self.dim_act, self.dim_act)
+        L = 0.1 * npr.randn(self.nb_states, self.dm_act, self.dm_act)
         self.cov_u = np.array([L[k, ...] @ L[k, ...].T for k in range(self.nb_states)])
 
     @property
@@ -585,7 +597,7 @@ class AutoRegressiveGaussianFullObservation:
 
     @cov_x.setter
     def cov_x(self, mat):
-        self._cov_x = mat + np.array([np.eye(self.dim_obs) * self.reg])
+        self._cov_x = mat + np.array([np.eye(self.dm_obs) * self.reg])
 
     @property
     def cov_u(self):
@@ -593,7 +605,7 @@ class AutoRegressiveGaussianFullObservation:
 
     @cov_u.setter
     def cov_u(self, mat):
-        self._cov_u = mat + np.array([np.eye(self.dim_act) * self.reg])
+        self._cov_u = mat + np.array([np.eye(self.dm_act) * self.reg])
 
     def mean_u(self, z, x):
         return np.einsum('kh,...h->...k', self.K[z, ...], x) + self.kff[z, ...]
@@ -626,7 +638,7 @@ class AutoRegressiveGaussianFullObservation:
             T = _x.shape[0]
             _lik = np.zeros((T - 1, self.nb_states))
             for k in range(self.nb_states):
-                mu_x = self.mean_x(k, _x[:-1, :], _u[:-1, :self.dim_act])
+                mu_x = self.mean_x(k, _x[:-1, :], _u[:-1, :self.dm_act])
                 mu_u = self.mean_u(k, _x[:-1, :])
                 for t in range(T - 1):
                     _lik[t, k] = mvn(mean=mu_x[t, :], cov=self.cov_x[k, ...]).pdf(_x[t + 1, :]) *\
@@ -642,7 +654,7 @@ class AutoRegressiveGaussianFullObservation:
             T = _x.shape[0]
             _loglik = np.zeros((T - 1, self.nb_states))
             for k in range(self.nb_states):
-                mu_x = self.mean_x(k, _x[:-1, :], _u[:-1, :self.dim_act])
+                mu_x = self.mean_x(k, _x[:-1, :], _u[:-1, :self.dm_act])
                 mu_u = self.mean_u(k, _x[:-1, :])
                 _loglik[:, k] = multivariate_normal_logpdf(_x[1:, :], mu_x, self.cov_x[k, ...])
                 _loglik[:, k] += multivariate_normal_logpdf(_u[:-1, :], mu_u, self.cov_u[k, ...])
@@ -668,15 +680,15 @@ class AutoRegressiveGaussianFullObservation:
         # fit dynamics
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, w):
-            xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dim_act], np.ones((_x.shape[0] - 1, 1)))))
+            xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
             ys.append(_x[1:, :])
             ws.append(_w[1:, :])
 
-        _J_diag = np.concatenate((self.reg * np.ones(self.dim_obs),
-                                  self.reg * np.ones(self.dim_act),
+        _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs),
+                                  self.reg * np.ones(self.dm_act),
                                   self.reg * np.ones(1)))
         _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
-        _h = np.zeros((self.nb_states, self.dim_obs + self.dim_act + 1, self.dim_obs))
+        _h = np.zeros((self.nb_states, self.dm_obs + self.dm_act + 1, self.dm_obs))
 
         # solving p = (xT w x)^-1 xT w y
         for _x, _y, _w in zip(xs, ys, ws):
@@ -686,11 +698,11 @@ class AutoRegressiveGaussianFullObservation:
                 _h[k] += np.dot(wx.T, _y)
 
         mu = np.linalg.solve(_J, _h)
-        self.A = np.swapaxes(mu[:, :self.dim_obs, :], 1, 2)
-        self.B = np.swapaxes(mu[:, self.dim_obs:self.dim_obs + self.dim_act, :], 1, 2)
+        self.A = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
+        self.B = np.swapaxes(mu[:, self.dm_obs:self.dm_obs + self.dm_act, :], 1, 2)
         self.c = mu[:, -1, :]
 
-        sqerr = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
+        sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         weight = 1e-8 * np.ones(self.nb_states)
         for _x, _y, _w in zip(xs, ys, ws):
             yhat = np.matmul(_x[None, :, :], mu)
@@ -707,10 +719,10 @@ class AutoRegressiveGaussianFullObservation:
             ys.append(_u)
             ws.append(_w)
 
-        _J_diag = np.concatenate((self.reg * np.ones(self.dim_obs),
+        _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs),
                                   self.reg * np.ones(1)))
         _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
-        _h = np.zeros((self.nb_states, self.dim_obs + 1, self.dim_act))
+        _h = np.zeros((self.nb_states, self.dm_obs + 1, self.dm_act))
 
         # solving p = (xT w x)^-1 xT w y
         for _x, _y, _w in zip(xs, ys, ws):
@@ -720,10 +732,10 @@ class AutoRegressiveGaussianFullObservation:
                 _h[k] += np.dot(wx.T, _y)
 
         mu = np.linalg.solve(_J, _h)
-        self.K = np.swapaxes(mu[:, :self.dim_act, :], 1, 2)
+        self.K = np.swapaxes(mu[:, :self.dm_act, :], 1, 2)
         self.kff = mu[:, -1, :]
 
-        sqerr = np.zeros((self.nb_states, self.dim_act, self.dim_act))
+        sqerr = np.zeros((self.nb_states, self.dm_act, self.dm_act))
         weight = 1e-8 * np.ones(self.nb_states)
         for _x, _y, _w in zip(xs, ys, ws):
             yhat = np.matmul(_x[None, :, :], mu)

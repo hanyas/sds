@@ -19,10 +19,10 @@ to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] el
 
 class arARHMM:
 
-    def __init__(self, nb_states, dim_obs, dim_act, type='recurrent'):
+    def __init__(self, nb_states, dm_obs, dm_act, type='recurrent'):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
 
         self.type = type
 
@@ -31,19 +31,19 @@ class arARHMM:
 
         # transitions
         if self.type == 'recurrent':
-            self.transitions = RecurrentTransition(self.nb_states, self.dim_obs, self.dim_act, degree=1)
+            self.transitions = RecurrentTransition(self.nb_states, self.dm_obs, self.dm_act, degree=1)
         elif self.type == 'recurrent-only':
-            self.transitions = RecurrentOnlyTransition(self.nb_states, self.dim_obs, self.dim_act, degree=1)
+            self.transitions = RecurrentOnlyTransition(self.nb_states, self.dm_obs, self.dm_act, degree=1)
         elif self.type == 'neural-recurrent':
-            self.transitions = NeuralRecurrentTransition(self.nb_states, self.dim_obs, self.dim_act, hidden_layer_sizes=(10,))
+            self.transitions = NeuralRecurrentTransition(self.nb_states, self.dm_obs, self.dm_act, hidden_layer_sizes=(10,))
         elif self.type == 'neural-recurrent-only':
-            self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dim_obs, self.dim_act, hidden_layer_sizes=(10, ))
+            self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dm_obs, self.dm_act, hidden_layer_sizes=(10, ))
 
         # init observation
-        self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)
+        self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs)
 
         # observations
-        self.observations = AutoRegressiveGaussianFullObservation(self.nb_states, self.dim_obs, self.dim_act)
+        self.observations = AutoRegressiveGaussianFullObservation(self.nb_states, self.dm_obs, self.dm_act)
 
         self.loglikhds = None
 
@@ -54,8 +54,8 @@ class arARHMM:
 
         N = len(T)
         for n in range(N):
-            _act = np.zeros((T[n], self.dim_act))
-            _obs = np.zeros((T[n], self.dim_obs))
+            _act = np.zeros((T[n], self.dm_act))
+            _obs = np.zeros((T[n], self.dm_obs))
             _state = np.zeros((T[n], ), np.int64)
 
             _state[0] = self.init_state.sample()
@@ -74,8 +74,8 @@ class arARHMM:
         return state, obs, act
 
     def initialize(self, obs, act, localize=True):
-        self.init_observation.mu = npr.randn(1, self.dim_obs)
-        self.init_observation.cov = np.array([np.eye(self.dim_obs, self.dim_obs)])
+        self.init_observation.mu = npr.randn(1, self.dm_obs)
+        self.init_observation.cov = np.array([np.eye(self.dm_obs, self.dm_obs)])
 
         Ts = [_obs.shape[0] for _obs in obs]
         if localize:
@@ -87,28 +87,28 @@ class arARHMM:
         else:
             zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
 
-        aux = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
+        aux = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         for k in range(self.nb_states):
             ts = [np.where(z == k)[0] for z in zs]
             xs = [np.hstack((_obs[t, :], _act[t, :])) for t, _obs, _act in zip(ts, obs, act)]
             ys = [_obs[t + 1, :] for t, _obs in zip(ts, obs)]
 
             coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.A[k, ...] = coef_[:, :self.dim_obs]
-            self.observations.B[k, ...] = coef_[:, self.dim_obs:]
+            self.observations.A[k, ...] = coef_[:, :self.dm_obs]
+            self.observations.B[k, ...] = coef_[:, self.dm_obs:]
             self.observations.c[k, :] = intercept_
             aux[k, ...] = np.diag(sigmas)
 
         self.observations.cov_x = aux
 
-        aux = np.zeros((self.nb_states, self.dim_act, self.dim_act))
+        aux = np.zeros((self.nb_states, self.dm_act, self.dm_act))
         for k in range(self.nb_states):
             ts = [np.where(z == k)[0] for z in zs]
             xs = [_obs[t, :] for t, _obs in zip(ts, obs)]
             ys = [_act[t, :] for t, _act in zip(ts, act)]
 
             coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.K[k, ...] = coef_[:, :self.dim_act]
+            self.observations.K[k, ...] = coef_[:, :self.dm_act]
             self.observations.kff[k, :] = intercept_
             aux[k, ...] = np.diag(sigmas)
 
@@ -298,7 +298,7 @@ class arARHMM:
 
         _mean = []
         for _obs, _act, _gamma in zip(obs, act, gamma):
-            armu = np.array([self.observations.mean_x(k, _obs[:-1, :], _act[:-1, :self.dim_act]) for k in range(self.nb_states)])
+            armu = np.array([self.observations.mean_x(k, _obs[:-1, :], _act[:-1, :self.dm_act]) for k in range(self.nb_states)])
             _mean.append(np.einsum('nk,knl->nl', _gamma, np.concatenate((imu, armu), axis=1)))
 
         return _mean

@@ -7,9 +7,9 @@ from sds.util import normalize, permutation
 
 class HMM:
 
-    def __init__(self, nb_states, dim_obs):
+    def __init__(self, nb_states, dm_obs):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
+        self.dm_obs = dm_obs
 
         # init state
         self.init_state = CategoricalInitState(self.nb_states)
@@ -18,7 +18,7 @@ class HMM:
         self.transitions = StationaryTransition(self.nb_states)
 
         # observations
-        self.observations = GaussianObservation(self.nb_states, self.dim_obs)
+        self.observations = GaussianObservation(self.nb_states, self.dm_obs)
 
         self.likhds = None
 
@@ -28,7 +28,7 @@ class HMM:
 
         N = len(T)
         for n in range(N):
-            _obs = np.zeros((T[n], self.dim_obs))
+            _obs = np.zeros((T[n], self.dm_obs))
             _state = np.zeros((T[n],), np.int64)
 
             _state[0] = self.init_state.sample()
@@ -244,7 +244,7 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=5, suppress=True)
 
-    true_hmm = HMM(nb_states=3, dim_obs=2)
+    true_hmm = HMM(nb_states=3, dm_obs=2)
 
     thetas = np.linspace(0, 2 * np.pi, true_hmm.nb_states, endpoint=False)
     for k in range(true_hmm.nb_states):
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     true_z, y = true_hmm.sample(T=T)
     true_ll = true_hmm.log_probability(y)
 
-    hmm = HMM(nb_states=3, dim_obs=2)
+    hmm = HMM(nb_states=3, dm_obs=2)
     hmm.initialize(y)
 
     lls = hmm.em(y, nb_iter=50, prec=1e-24, verbose=True)
@@ -291,6 +291,6 @@ if __name__ == "__main__":
     hmm_y = hmm.mean_observation(y)
 
     plt.figure(figsize=(8, 4))
-    plt.plot(y[_seq] + 10 * np.arange(hmm.dim_obs), '-k', lw=2)
-    plt.plot(hmm_y[_seq] + 10 * np.arange(hmm.dim_obs), '-', lw=2)
+    plt.plot(y[_seq] + 10 * np.arange(hmm.dm_obs), '-k', lw=2)
+    plt.plot(hmm_y[_seq] + 10 * np.arange(hmm.dm_obs), '-', lw=2)
     plt.show()

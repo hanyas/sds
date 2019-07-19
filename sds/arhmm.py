@@ -9,10 +9,10 @@ from sds.util import normalize, permutation, linear_regression
 
 class ARHMM:
 
-    def __init__(self, nb_states, dim_obs, dim_act=0):
+    def __init__(self, nb_states, dm_obs, dm_act=0):
         self.nb_states = nb_states
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
 
         # init state
         self.init_state = CategoricalInitState(self.nb_states)
@@ -21,10 +21,10 @@ class ARHMM:
         self.transitions = StationaryTransition(self.nb_states)
 
         # init observation
-        self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)
+        self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs)
 
         # observations
-        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dim_obs, self.dim_act)
+        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
         self.likhds = None
 
@@ -35,7 +35,7 @@ class ARHMM:
         N = len(T)
         for n in range(N):
             _act = act[n]
-            _obs = np.zeros((T[n], self.dim_obs))
+            _obs = np.zeros((T[n], self.dm_obs))
             _state = np.zeros((T[n], ), np.int64)
 
             _state[0] = self.init_state.sample()
@@ -50,8 +50,8 @@ class ARHMM:
         return state, obs
 
     def initialize(self, obs, act, localize=True):
-        self.init_observation.mu = npr.randn(1, self.dim_obs)
-        self.init_observation.cov = np.array([np.eye(self.dim_obs, self.dim_obs)])
+        self.init_observation.mu = npr.randn(1, self.dm_obs)
+        self.init_observation.cov = np.array([np.eye(self.dm_obs, self.dm_obs)])
 
         Ts = [_obs.shape[0] for _obs in obs]
         if localize:
@@ -63,15 +63,15 @@ class ARHMM:
         else:
             zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
 
-        aux = np.zeros((self.nb_states, self.dim_obs, self.dim_obs))
+        aux = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         for k in range(self.nb_states):
             ts = [np.where(z == k)[0] for z in zs]
             xs = [np.hstack((_obs[t, :], _act[t, :])) for t, _obs, _act in zip(ts, obs, act)]
             ys = [_obs[t + 1, :] for t, _obs in zip(ts, obs)]
 
             coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.A[k, ...] = coef_[:, :self.dim_obs]
-            self.observations.B[k, ...] = coef_[:, self.dim_obs:]
+            self.observations.A[k, ...] = coef_[:, :self.dm_obs]
+            self.observations.B[k, ...] = coef_[:, self.dm_obs:]
             self.observations.c[k, :] = intercept_
             aux[k, ...] = np.diag(sigmas)
 
@@ -254,7 +254,7 @@ class ARHMM:
 
         _mean = []
         for _obs, _act, _gamma in zip(obs, act, gamma):
-            armu = np.array([self.observations.mean(k, _obs[:-1, :], _act[:-1, :self.dim_act]) for k in range(self.nb_states)])
+            armu = np.array([self.observations.mean(k, _obs[:-1, :], _act[:-1, :self.dm_act]) for k in range(self.nb_states)])
             _mean.append(np.einsum('nk,knl->nl', _gamma, np.concatenate((imu, armu), axis=1)))
 
         return _mean
@@ -283,7 +283,7 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=5, suppress=True)
 
-    true_arhmm = ARHMM(nb_states=3, dim_obs=2)
+    true_arhmm = ARHMM(nb_states=3, dm_obs=2)
 
     # trajectory lengths
     T = [1250, 1150, 1025]
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     true_z, y = true_arhmm.sample(T=T, act=act)
     true_ll = true_arhmm.log_probability(y, act)
 
-    arhmm = ARHMM(nb_states=3, dim_obs=2)
+    arhmm = ARHMM(nb_states=3, dm_obs=2)
     arhmm.initialize(y, act)
 
     lls = arhmm.em(y, act, nb_iter=50, prec=1e-6, verbose=True)
@@ -329,6 +329,6 @@ if __name__ == "__main__":
     arhmm_y = arhmm.mean_observation(y, act)
 
     plt.figure(figsize=(8, 4))
-    plt.plot(y[_seq] + 10 * np.arange(arhmm.dim_obs), '-k', lw=2)
-    plt.plot(arhmm_y[_seq] + 10 * np.arange(arhmm.dim_obs), '-', lw=2)
+    plt.plot(y[_seq] + 10 * np.arange(arhmm.dm_obs), '-k', lw=2)
+    plt.plot(arhmm_y[_seq] + 10 * np.arange(arhmm.dm_obs), '-', lw=2)
     plt.show()
