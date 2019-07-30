@@ -4,7 +4,7 @@ import autograd.numpy as np
 from sds.observations import GaussianObservation
 from sds.transitions import StationaryTransition
 from sds.initial import CategoricalInitState
-from sds.util import normalize, permutation
+from sds.utils import normalize, permutation
 
 
 class HMM:

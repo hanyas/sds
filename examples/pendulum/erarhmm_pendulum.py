@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# @Filename: rarahmm_test.py
+# @Filename: erarhmm_test.py
 # @Date: 2019-06-05-15-27
 # @Author: Hany Abdulsamad
 # @Contact: hany@robot-learning.de
 
 import numpy as np
-from sds import arARHMM
+from sds import erARHMM
 
 
 # list of dicts to dict of lists
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     rollouts = file['arr_0']
     data = lod2dol(*rollouts)
 
-    ararhmm = arARHMM(nb_states=3, dm_obs=3, dm_act=1, type='recurrent')
+    ararhmm = erARHMM(nb_states=3, dm_obs=3, dm_act=1, type='recurrent')
     ararhmm.initialize(data['x'], data['u'])
     lls = ararhmm.em(data['x'],  data['u'], nb_iter=50, prec=1e-6, verbose=True)
 

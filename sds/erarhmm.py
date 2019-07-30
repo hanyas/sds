@@ -5,10 +5,9 @@ from scipy.special import logsumexp
 
 from sds.initial import CategoricalInitState
 from sds.transitions import RecurrentTransition, RecurrentOnlyTransition, NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
-from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation, AutoRegressiveGaussianFullObservation
+from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation, AutoRegressiveGaussianExtendedObservation
 
-from sds.util import permutation
-from sds.util import linear_regression
+from sds.utils import linear_regression
 
 from sds.cython.ararhmm_cy import filter_cy, smooth_cy
 
@@ -16,7 +15,7 @@ from autograd.tracer import getval
 to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] else getval(arr)
 
 
-class arARHMM:
+class erARHMM:
 
     def __init__(self, nb_states, dm_obs, dm_act, type='recurrent'):
         self.nb_states = nb_states
@@ -42,7 +41,7 @@ class arARHMM:
         self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs)
 
         # observations
-        self.observations = AutoRegressiveGaussianFullObservation(self.nb_states, self.dm_obs, self.dm_act)
+        self.observations = AutoRegressiveGaussianExtendedObservation(self.nb_states, self.dm_obs, self.dm_act)
 
         self.loglikhds = None
 

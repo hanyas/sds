@@ -5,7 +5,7 @@ from sds.transitions import StationaryTransition
 from sds.initial import CategoricalInitState
 from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation
 
-from sds.util import normalize, permutation, linear_regression
+from sds.utils import normalize, permutation, linear_regression
 
 
 class ARHMM:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# @Filename: rarahmm_test.py
+# @Filename: rarhmm_test.py
 # @Date: 2019-06-05-15-27
 # @Author: Hany Abdulsamad
 # @Contact: hany@robot-learning.de

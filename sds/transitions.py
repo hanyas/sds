@@ -8,7 +8,7 @@ import scipy as sc
 from autograd import numpy as np
 from autograd.numpy import random as npr
 from autograd.scipy.misc import logsumexp
-from sds.util import bfgs, relu, adam
+from sds.utils import bfgs, relu, adam
 from sklearn.preprocessing import PolynomialFeatures
 
 

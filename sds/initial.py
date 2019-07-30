@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# @Filename: init_state
+# @Filename: initial
 # @Date: 2019-07-30-15-29
 # @Author: Hany Abdulsamad
 # @Contact: hany@robot-learning.de

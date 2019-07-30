@@ -3,8 +3,8 @@ import autograd.numpy.random as npr
 
 from scipy.stats import multivariate_normal as mvn
 
-from sds.util import random_rotation
-from sds.util import multivariate_normal_logpdf
+from sds.utils import random_rotation
+from sds.stats import multivariate_normal_logpdf
 
 
 class GaussianObservation:
@@ -140,7 +140,7 @@ class AutoRegressiveGaussianObservation:
         self.cov = self.cov[perm, ...]
 
     def mstep(self, x, u, w):
-
+        # fit dynamics
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, w):
             xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
@@ -175,7 +175,7 @@ class AutoRegressiveGaussianObservation:
         self.cov = sqerr / weight[:, None, None]
 
 
-class AutoRegressiveGaussianFullObservation:
+class AutoRegressiveGaussianExtendedObservation:
 
     def __init__(self, nb_states, dm_obs, dm_act=0, reg=1e-8):
         self.nb_states = nb_states
@@ -290,7 +290,6 @@ class AutoRegressiveGaussianFullObservation:
         self.cov_u = self.cov_u[perm, ...]
 
     def mstep(self, x, u, w):
-
         # fit dynamics
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, w):
