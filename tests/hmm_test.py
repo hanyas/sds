@@ -1,7 +1,7 @@
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from sds.hmm_ls import HMM
+from sds.hmm import HMM
 from ssm.models import HMM as originHMM
 
 T = [100, 95]

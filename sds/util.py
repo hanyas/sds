@@ -184,7 +184,8 @@ def multivariate_normal_logpdf(data, mus, Sigmas, mask=None):
     return np.reshape(lls, shp)
 
 
-def div0(a, b):
+def undefined_division(a, b):
+    # handle bad division
     with np.errstate(divide='ignore', invalid='ignore'):
         c = np.true_divide(a, b)
         c[~ np.isfinite(c)] = 0.0  # -inf inf NaN
@@ -193,8 +194,8 @@ def div0(a, b):
 
 def normalize(x, dim):
     norm = np.sum(x, axis=dim, keepdims=True)
-    c = div0(x, norm)
-    return c, norm.flatten ()
+    c = undefined_division(x, norm)
+    return c, norm.flatten()
 
 
 def state_overlap(z1, z2, K1=None, K2=None):

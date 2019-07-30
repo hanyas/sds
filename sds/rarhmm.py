@@ -3,23 +3,22 @@ import autograd.numpy.random as npr
 
 from scipy.special import logsumexp
 
-from sds.distributions import CategoricalInitState
-from sds.distributions import RecurrentTransition, RecurrentOnlyTransition
-from sds.distributions import NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
-from sds.distributions import GaussianObservation, AutoRegressiveGaussianObservation, AutoRegressiveGaussianFullObservation
+from sds.initial import CategoricalInitState
+from sds.transitions import RecurrentTransition, RecurrentOnlyTransition, NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
+from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation
 
 from sds.util import permutation
 from sds.util import linear_regression
 
-from sds.cython.ararhmm_cy import filter_cy, smooth_cy
+from sds.cython.rarhmm_cy import filter_cy, smooth_cy
 
 from autograd.tracer import getval
 to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] else getval(arr)
 
 
-class arARHMM:
+class rARHMM:
 
-    def __init__(self, nb_states, dm_obs, dm_act, type='recurrent'):
+    def __init__(self, nb_states, dm_obs, dm_act=0, type='neural-recurrent-only'):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -43,35 +42,30 @@ class arARHMM:
         self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs)
 
         # observations
-        self.observations = AutoRegressiveGaussianFullObservation(self.nb_states, self.dm_obs, self.dm_act)
+        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
         self.loglikhds = None
 
-    def sample(self, T):
-        act = []
+    def sample(self, T, act):
         obs = []
         state = []
 
         N = len(T)
         for n in range(N):
-            _act = np.zeros((T[n], self.dm_act))
+            _act = act[n]
             _obs = np.zeros((T[n], self.dm_obs))
             _state = np.zeros((T[n], ), np.int64)
 
             _state[0] = self.init_state.sample()
             _obs[0, :] = self.init_observation.sample(z=0)
             for t in range(1, T[n]):
-                _act[t - 1, :] = self.observations.sample_u(_state[t - 1], _obs[t - 1, :])
                 _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
-                _obs[t, :] = self.observations.sample_x(_state[t], _obs[t - 1, :], _act[t - 1, :])
-
-            _act[-1, :] = self.observations.sample_u(_state[-1], _obs[-1, :])
+                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :])
 
             state.append(_state)
             obs.append(_obs)
-            act.append(_act)
 
-        return state, obs, act
+        return state, obs
 
     def initialize(self, obs, act, localize=True):
         self.init_observation.mu = npr.randn(1, self.dm_obs)
@@ -99,20 +93,7 @@ class arARHMM:
             self.observations.c[k, :] = intercept_
             aux[k, ...] = np.diag(sigmas)
 
-        self.observations.cov_x = aux
-
-        aux = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [_obs[t, :] for t, _obs in zip(ts, obs)]
-            ys = [_act[t, :] for t, _act in zip(ts, act)]
-
-            coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.K[k, ...] = coef_[:, :self.dm_act]
-            self.observations.kff[k, :] = intercept_
-            aux[k, ...] = np.diag(sigmas)
-
-        self.observations.cov_u = aux
+        self.observations.cov = aux
 
     def log_priors(self):
         logprior = 0.0
@@ -298,7 +279,84 @@ class arARHMM:
 
         _mean = []
         for _obs, _act, _gamma in zip(obs, act, gamma):
-            armu = np.array([self.observations.mean_x(k, _obs[:-1, :], _act[:-1, :self.dm_act]) for k in range(self.nb_states)])
+            armu = np.array([self.observations.mean(k, _obs[:-1, :], _act[:-1, :self.dm_act]) for k in range(self.nb_states)])
             _mean.append(np.einsum('nk,knl->nl', _gamma, np.concatenate((imu, armu), axis=1)))
 
         return _mean
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    from hips.plotting.colormaps import gradient_cmap
+    import seaborn as sns
+
+    sns.set_style("white")
+    sns.set_context("talk")
+
+    color_names = [
+        "windows blue",
+        "red",
+        "amber",
+        "faded green",
+        "dusty purple",
+        "orange"
+    ]
+
+    colors = sns.xkcd_palette(color_names)
+    cmap = gradient_cmap(colors)
+
+    np.set_printoptions(precision=5, suppress=True)
+
+    import warnings
+    warnings.simplefilter(action='ignore', category=FutureWarning)
+
+    true_rarhmm = rARHMM(nb_states=3, dm_obs=2, dm_act=0)
+
+    # trajectory lengths
+    T = [1250, 1150, 1025]
+
+    # empty action sequence
+    act = [np.zeros((t, 0)) for t in T]
+
+    true_z, y = true_rarhmm.sample(T=T, act=act)
+    true_ll = true_rarhmm.log_probability(y, act)
+
+    rarhmm = rARHMM(nb_states=3, dm_obs=2)
+    rarhmm.initialize(y, act)
+
+    lls = rarhmm.em(y, act, nb_iter=50, prec=1e-4, verbose=True)
+    print("true_ll=", true_ll, "hmm_ll=", lls[-1])
+
+    plt.figure(figsize=(5, 5))
+    plt.plot(np.ones(len(lls)) * true_ll, '-r')
+    plt.plot(lls)
+    plt.show()
+
+    _seq = np.random.choice(len(y))
+    rarhmm.permute(permutation(true_z[_seq], rarhmm.viterbi([y[_seq]], [act[_seq]])[1][0]))
+    _, rarhmm_z = rarhmm.viterbi([y[_seq]], [act[_seq]])
+
+    plt.figure(figsize=(8, 4))
+    plt.subplot(211)
+    plt.imshow(true_z[_seq][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    plt.xlim(0, len(y[_seq]))
+    plt.ylabel("$z_{\\mathrm{true}}$")
+    plt.yticks([])
+
+    plt.subplot(212)
+    plt.imshow(rarhmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    plt.xlim(0, len(y[_seq]))
+    plt.ylabel("$z_{\\mathrm{inferred}}$")
+    plt.yticks([])
+    plt.xlabel("time")
+
+    plt.tight_layout()
+    plt.show()
+
+    rarhmm_y = rarhmm.mean_observation(y, act)
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(y[_seq] + 10 * np.arange(rarhmm.dm_obs), '-k', lw=2)
+    plt.plot(rarhmm_y[_seq] + 10 * np.arange(rarhmm.dm_obs), '-', lw=2)
+    plt.show()

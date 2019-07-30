@@ -3,7 +3,7 @@ import numpy as np
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from sds.arhmm_ls import ARHMM
+from sds.arhmm import ARHMM
 from ssm.models import HMM as originHMM
 
 
