@@ -1,43 +1,25 @@
 import autograd.numpy as np
 import autograd.numpy.random as npr
 
-from scipy.special import logsumexp
+from sds.transitions import StationaryTransition
+from sds.initial import CategoricalInitState
+from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation
 
-from sds.distributions import CategoricalInitState
-from sds.distributions import RecurrentTransition, RecurrentOnlyTransition
-from sds.distributions import NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
-from sds.distributions import GaussianObservation, AutoRegressiveGaussianObservation
-
-from sds.util import permutation
-from sds.util import linear_regression
-
-from sds.cython.rarhmm_cy import filter_cy, smooth_cy
-
-from autograd.tracer import getval
-to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] else getval(arr)
+from sds.util import normalize, permutation, linear_regression
 
 
-class rARHMM:
+class ARHMM:
 
-    def __init__(self, nb_states, dim_obs, dim_act=0, type='neural-recurrent-only'):
+    def __init__(self, nb_states, dim_obs, dim_act=0):
         self.nb_states = nb_states
         self.dim_obs = dim_obs
         self.dim_act = dim_act
-
-        self.type = type
 
         # init state
         self.init_state = CategoricalInitState(self.nb_states)
 
         # transitions
-        if self.type == 'recurrent':
-            self.transitions = RecurrentTransition(self.nb_states, self.dim_obs, self.dim_act, degree=1)
-        elif self.type == 'recurrent-only':
-            self.transitions = RecurrentOnlyTransition(self.nb_states, self.dim_obs, self.dim_act, degree=1)
-        elif self.type == 'neural-recurrent':
-            self.transitions = NeuralRecurrentTransition(self.nb_states, self.dim_obs, self.dim_act, hidden_layer_sizes=(10,))
-        elif self.type == 'neural-recurrent-only':
-            self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dim_obs, self.dim_act, hidden_layer_sizes=(10, ))
+        self.transitions = StationaryTransition(self.nb_states)
 
         # init observation
         self.init_observation = GaussianObservation(nb_states=1, dim_obs=self.dim_obs)
@@ -45,7 +27,7 @@ class rARHMM:
         # observations
         self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dim_obs, self.dim_act)
 
-        self.loglikhds = None
+        self.likhds = None
 
     def sample(self, T, act):
         obs = []
@@ -60,7 +42,7 @@ class rARHMM:
             _state[0] = self.init_state.sample()
             _obs[0, :] = self.init_observation.sample(z=0)
             for t in range(1, T[n]):
-                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                _state[t] = self.transitions.sample(_state[t - 1])
                 _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :])
 
             state.append(_state)
@@ -103,111 +85,104 @@ class rARHMM:
         logprior += self.observations.log_prior()
         return logprior
 
-    def log_likelihoods(self, obs, act):
-        loginit = self.init_state.log_likelihood()
-        logtrans = self.transitions.log_likelihood(obs, act)
+    def likelihoods(self, obs, act):
+        likinit = self.init_state.likelihood()
+        liktrans = self.transitions.likelihood()
 
-        ilog = self.init_observation.log_likelihood([_obs[0, :] for _obs in obs])
-        arlog = self.observations.log_likelihood(obs, act)
+        ilik = self.init_observation.likelihood([_obs[0, :] for _obs in obs])
+        arlik = self.observations.likelihood(obs, act)
 
-        logobs = []
-        for _ilog, _arlog in zip(ilog, arlog):
-            logobs.append(np.vstack((np.repeat(_ilog, self.nb_states), _arlog)))
+        likobs = []
+        for _ilik, _arlik in zip(ilik, arlik):
+            likobs.append(np.vstack((np.repeat(_ilik, self.nb_states), _arlik)))
 
-        return [loginit, logtrans, logobs]
+        return [likinit, liktrans, likobs]
 
-    def filter(self, loglikhds, cython=True):
-        loginit, logtrans, logobs = loglikhds
+    def filter(self, likhds):
+        likinit, liktrans, likobs = likhds
 
         alpha = []
-        for _logobs, _logtrans in zip(logobs, logtrans):
-            T = _logobs.shape[0]
+        norm = []
+        for _likobs in likobs:
+            T = _likobs.shape[0]
             _alpha = np.zeros((T, self.nb_states))
+            _norm = np.zeros((T, 1))
 
-            if cython:
-                filter_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), _alpha)
-            else:
-                for k in range(self.nb_states):
-                    _alpha[0, k] = loginit[k] + _logobs[0, k]
+            _alpha[0, :] = _likobs[0, :] * likinit
+            _alpha[0, :], _norm[0, :] = normalize(_alpha[0, :], dim=0)
 
-                _aux = np.zeros((self.nb_states,))
-                for t in range(1, T):
-                    for k in range(self.nb_states):
-                        for j in range(self.nb_states):
-                            _aux[j] = _alpha[t - 1, j] + _logtrans[t - 1, j, k]
-                        _alpha[t, k] = logsumexp(_aux) + _logobs[t, k]
+            for t in range(1, T):
+                _alpha[t, :] = _likobs[t, :] * (liktrans.T @ _alpha[t - 1, :])
+                _alpha[t, :], _norm[t, :] = normalize(_alpha[t, :], dim=0)
 
             alpha.append(_alpha)
-        return alpha
+            norm.append(_norm)
 
-    def smooth(self, loglikhds, cython=True):
-        loginit, logtrans, logobs = loglikhds
+        return alpha, norm
+
+    def smooth(self, likhds, scale):
+        _, liktrans, likobs = likhds
 
         beta = []
-        for _logobs, _logtrans in zip(logobs, logtrans):
-            T = _logobs.shape[0]
+        for _likobs, _scale in zip(likobs, scale):
+            T = _likobs.shape[0]
             _beta = np.zeros((T, self.nb_states))
 
-            if cython:
-                smooth_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), _beta)
-            else:
-                for k in range(self.nb_states):
-                    _beta[T - 1, k] = 0.0
-
-                _aux = np.zeros((self.nb_states,))
-                for t in range(T - 2, -1, -1):
-                    for k in range(self.nb_states):
-                        for j in range(self.nb_states):
-                            _aux[j] = _logtrans[t, k, j] + _beta[t + 1, j] + _logobs[t + 1, j]
-                        _beta[t, k] = logsumexp(_aux)
+            _beta[-1, :] = np.ones((self.nb_states,)) / _scale[-1, None]
+            for t in range(T - 2, -1, -1):
+                _beta[t, :] = liktrans @ (_likobs[t + 1, :] * _beta[t + 1, :])
+                _beta[t, :] = _beta[t, :] / _scale[t, None]
 
             beta.append(_beta)
+
         return beta
 
     def expectations(self, alpha, beta):
-        return [np.exp(_alpha + _beta - logsumexp(_alpha + _beta, axis=1,  keepdims=True)) for _alpha, _beta in zip(alpha, beta)]
+        return [normalize(_alpha * _beta, dim=1)[0] for _alpha, _beta in zip(alpha, beta)]
 
-    def two_slice(self, loglikhds, alpha, beta):
-        loginit, logtrans, logobs = loglikhds
+    def two_slice(self, likhds, alpha, beta):
+        _, liktrans, likobs = likhds
 
         zeta = []
-        for _logobs, _logtrans, _alpha, _beta in zip(logobs, logtrans, alpha, beta):
-            _zeta = _alpha[:-1, :, None] + _beta[1:, None, :] +\
-                    _logobs[1:, :][:, None, :] + _logtrans
+        for _likobs, _alpha, _beta in zip(likobs, alpha, beta):
+            T = _likobs.shape[0]
+            _zeta = np.zeros((T - 1, self.nb_states, self.nb_states))
 
-            _zeta -= _zeta.max((1, 2))[:, None, None]
-            _zeta = np.exp(_zeta)
-            _zeta /= _zeta.sum((1, 2))[:, None, None]
+            for t in range(T - 1):
+                _zeta[t, :, :] = liktrans * np.outer(_alpha[t, :], _likobs[t + 1, :] * _beta[t + 1, :])
+                _zeta[t, :, :], _ = normalize(_zeta[t, :, :], dim=(0, 1))
 
             zeta.append(_zeta)
+
         return zeta
 
     def viterbi(self, obs, act):
-        loginit, logtrans, logobs = self.log_likelihoods(obs, act)
+        likinit, liktrans, likobs = self.likelihoods(obs, act)
 
         delta = []
         z = []
-        for _logobs, _logtrans in zip(logobs, logtrans):
-            T = _logobs.shape[0]
+        for _likobs in likobs:
+            T = _likobs.shape[0]
 
             _delta = np.zeros((T, self.nb_states))
             _args = np.zeros((T, self.nb_states), np.int64)
             _z = np.zeros((T, ), np.int64)
 
-            _aux = np.zeros((self.nb_states,))
-            for k in range(self.nb_states):
-                _aux[k] = _logobs[0, k] + loginit[k]
-
+            _aux = _likobs[0, :] * likinit
             _delta[0, :] = np.max(_aux, axis=0)
             _args[0, :] = np.argmax(_delta[0, :], axis=0)
+
+            _delta[0, :], _ = normalize(_delta[0, :], dim=0)
 
             for t in range(1, T):
                 for j in range(self.nb_states):
                     for i in range(self.nb_states):
-                        _aux[i] = _delta[t - 1, i] + _logtrans[t - 1, i, j] + _logobs[t, j]
+                        _aux[i] = _delta[t - 1, i] * liktrans[i, j] * _likobs[t, j]
 
                     _delta[t, j] = np.max(_aux, axis=0)
                     _args[t, j] = np.argmax(_aux, axis=0)
+
+                _delta[t, :], _ = normalize(_delta[t, :], dim=0)
 
             # backtrace
             _z[T - 1] = np.argmax(_delta[T - 1, :], axis=0)
@@ -220,17 +195,17 @@ class rARHMM:
         return delta, z
 
     def estep(self, obs, act):
-        self.loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(self.loglikhds)
-        beta = self.smooth(self.loglikhds)
+        self.likhds = self.likelihoods(obs, act)
+        alpha, scale = self.filter(self.likhds)
+        beta = self.smooth(self.likhds, scale)
         gamma = self.expectations(alpha, beta)
-        zeta = self.two_slice(self.loglikhds, alpha, beta)
+        zeta = self.two_slice(self.likhds, alpha, beta)
 
         return gamma, zeta
 
     def mstep(self, obs, act, gamma, zeta):
         self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
-        self.transitions.mstep(zeta, obs, act, num_iters=50)
+        self.transitions.mstep(zeta)
         self.observations.mstep(obs, act, gamma)
 
     def em(self, obs, act, nb_iter=50, prec=1e-6, verbose=False):
@@ -262,18 +237,18 @@ class rARHMM:
         self.observations.permute(perm)
 
     def log_norm(self, obs, act):
-        if self.loglikhds is None:
-            self.loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(self.loglikhds)
-        return sum([logsumexp(_alpha[-1, :]) for _alpha in alpha])
+        if self.likhds is None:
+            self.likhds = self.likelihoods(obs, act)
+        _, norm = self.filter(self.likhds)
+        return np.sum(np.log(np.concatenate(norm)))
 
     def log_probability(self, obs, act):
         return self.log_norm(obs, act) + self.log_priors()
 
     def mean_observation(self, obs, act):
-        loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(loglikhds)
-        beta = self.smooth(loglikhds)
+        likhds = self.likelihoods(obs, act)
+        alpha, scale = self.filter(likhds)
+        beta = self.smooth(likhds, scale)
         gamma = self.expectations(alpha, beta)
 
         imu = np.array([self.init_observation.mu for _ in range(self.nb_states)])
@@ -309,10 +284,7 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=5, suppress=True)
 
-    import warnings
-    warnings.simplefilter(action='ignore', category=FutureWarning)
-
-    true_rarhmm = rARHMM(nb_states=3, dim_obs=2, dim_act=0)
+    true_arhmm = ARHMM(nb_states=3, dim_obs=2)
 
     # trajectory lengths
     T = [1250, 1150, 1025]
@@ -320,13 +292,13 @@ if __name__ == "__main__":
     # empty action sequence
     act = [np.zeros((t, 0)) for t in T]
 
-    true_z, y = true_rarhmm.sample(T=T, act=act)
-    true_ll = true_rarhmm.log_probability(y, act)
+    true_z, y = true_arhmm.sample(T=T, act=act)
+    true_ll = true_arhmm.log_probability(y, act)
 
-    rarhmm = rARHMM(nb_states=3, dim_obs=2)
-    rarhmm.initialize(y, act)
+    arhmm = ARHMM(nb_states=3, dim_obs=2)
+    arhmm.initialize(y, act)
 
-    lls = rarhmm.em(y, act, nb_iter=50, prec=1e-4, verbose=True)
+    lls = arhmm.em(y, act, nb_iter=50, prec=1e-6, verbose=True)
     print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
     plt.figure(figsize=(5, 5))
@@ -335,8 +307,8 @@ if __name__ == "__main__":
     plt.show()
 
     _seq = np.random.choice(len(y))
-    rarhmm.permute(permutation(true_z[_seq], rarhmm.viterbi([y[_seq]], [act[_seq]])[1][0]))
-    _, rarhmm_z = rarhmm.viterbi([y[_seq]], [act[_seq]])
+    arhmm.permute(permutation(true_z[_seq], arhmm.viterbi([y[_seq]], [act[_seq]])[1][0]))
+    _, arhmm_z = arhmm.viterbi([y[_seq]], [act[_seq]])
 
     plt.figure(figsize=(8, 4))
     plt.subplot(211)
@@ -346,7 +318,7 @@ if __name__ == "__main__":
     plt.yticks([])
 
     plt.subplot(212)
-    plt.imshow(rarhmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    plt.imshow(arhmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
     plt.xlim(0, len(y[_seq]))
     plt.ylabel("$z_{\\mathrm{inferred}}$")
     plt.yticks([])
@@ -355,9 +327,9 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    rarhmm_y = rarhmm.mean_observation(y, act)
+    arhmm_y = arhmm.mean_observation(y, act)
 
     plt.figure(figsize=(8, 4))
-    plt.plot(y[_seq] + 10 * np.arange(rarhmm.dim_obs), '-k', lw=2)
-    plt.plot(rarhmm_y[_seq] + 10 * np.arange(rarhmm.dim_obs), '-', lw=2)
+    plt.plot(y[_seq] + 10 * np.arange(arhmm.dim_obs), '-k', lw=2)
+    plt.plot(arhmm_y[_seq] + 10 * np.arange(arhmm.dim_obs), '-', lw=2)
     plt.show()
