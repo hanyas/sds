@@ -37,14 +37,8 @@ class HMM:
 
         N = len(T)
         for n in range(N):
-<<<<<<< HEAD
             _obs = np.zeros((T[n], self.dm_obs))
             _state = np.zeros((T[n],), np.int64)
-=======
-            _obs = np.zeros((T[n], self.dim_obs))
-            _state = np.zeros((T[n], ), np.int64)
->>>>>>> tmp
-
             _state[0] = self.init_state.sample()
             for t in range(T[n] - 1):
                 _obs[t, :] = self.observations.sample(_state[t])

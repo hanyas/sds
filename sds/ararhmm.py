@@ -3,7 +3,7 @@ import autograd.numpy.random as npr
 
 from scipy.special import logsumexp
 
-from sds.init_state import CategoricalInitState
+from sds.initial import CategoricalInitState
 from sds.transitions import RecurrentTransition, RecurrentOnlyTransition, NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
 from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation, AutoRegressiveGaussianFullObservation
 
