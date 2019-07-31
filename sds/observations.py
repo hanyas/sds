@@ -9,9 +9,10 @@ from sds.stats import multivariate_normal_logpdf
 
 class GaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act, reg=1e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
+        self.dm_act = dm_act
         self.reg = reg
 
         self.mu = np.zeros((self.nb_states, self.dm_obs))
@@ -29,14 +30,14 @@ class GaussianObservation:
     def cov(self, mat):
         self._cov = mat + np.array([np.eye(self.dm_obs) * self.reg])
 
-    def sample(self, z):
+    def sample(self, z, x=None, u=None):
         return mvn(mean=self.mu[z, :], cov=self.cov[z, ...]).rvs()
 
-    def likelihood(self, x):
+    def likelihood(self, x, u=None):
         return [np.array([mvn(mean=self.mu[k, :], cov=self.cov[k, ...]).pdf(_x)
                           for k in range(self.nb_states)]).T for _x in x]
 
-    def log_likelihood(self, x):
+    def log_likelihood(self, x, u=None):
         return [np.array([mvn(mean=self.mu[k, :], cov=self.cov[k, ...]).logpdf(_x)
                          for k in range(self.nb_states)]).T for _x in x]
 
@@ -47,7 +48,7 @@ class GaussianObservation:
         self.mu = self.mu[perm, :]
         self.cov = self.cov[perm, ...]
 
-    def mstep(self, x, w):
+    def mstep(self, x, u, w):
         _J = np.zeros((self.nb_states, self.dm_obs))
         _h = np.zeros((self.nb_states, self.dm_obs))
         for _x, _w in zip(x, w):

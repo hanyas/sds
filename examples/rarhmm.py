@@ -37,7 +37,7 @@ act = [np.zeros((t, 0)) for t in T]
 true_z, y = true_rarhmm.sample(T=T, act=act)
 true_ll = true_rarhmm.log_probability(y, act)
 
-rarhmm = rARHMM(nb_states=3, dm_obs=2)
+rarhmm = rARHMM(nb_states=3, dm_obs=2, dm_act=0)
 rarhmm.initialize(y, act)
 
 lls = rarhmm.em(y, act, nb_iter=50, prec=1e-4, verbose=True)

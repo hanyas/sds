@@ -26,7 +26,7 @@ color_names = ["windows blue", "red", "amber", "faded green", "dusty purple", "o
 colors = sns.xkcd_palette(color_names)
 cmap = gradient_cmap(colors)
 
-true_hmm = HMM(nb_states=3, dm_obs=2)
+true_hmm = HMM(nb_states=3, dm_obs=2, dm_act=0)
 
 thetas = np.linspace(0, 2 * np.pi, true_hmm.nb_states, endpoint=False)
 for k in range(true_hmm.nb_states):
@@ -35,13 +35,16 @@ for k in range(true_hmm.nb_states):
 # trajectory lengths
 T = [95, 85, 75]
 
-true_z, y = true_hmm.sample(T=T)
-true_ll = true_hmm.log_probability(y)
+# empty action sequence
+act = [np.zeros((t, 0)) for t in T]
 
-hmm = HMM(nb_states=3, dm_obs=2)
-hmm.initialize(y)
+true_z, y = true_hmm.sample(T=T, act=act)
+true_ll = true_hmm.log_probability(y, act=act)
 
-lls = hmm.em(y, nb_iter=50, prec=1e-24, verbose=True)
+hmm = HMM(nb_states=3, dm_obs=2, dm_act=0)
+hmm.initialize(y, act=None)
+
+lls = hmm.em(y, act, nb_iter=50, prec=1e-24, verbose=True)
 print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
 plt.figure(figsize=(5, 5))
@@ -50,8 +53,8 @@ plt.plot(lls)
 plt.show()
 
 _seq = np.random.choice(len(y))
-hmm.permute(permutation(true_z[_seq], hmm.viterbi([y[_seq]])[1][0]))
-_, hmm_z = hmm.viterbi([y[_seq]])
+hmm.permute(permutation(true_z[_seq], hmm.viterbi([y[_seq]], [act[_seq]])[1][0]))
+_, hmm_z = hmm.viterbi([y[_seq]], [act[_seq]])
 
 plt.figure(figsize=(8, 4))
 plt.subplot(211)
@@ -70,7 +73,7 @@ plt.xlabel("time")
 plt.tight_layout()
 plt.show()
 
-hmm_y = hmm.mean_observation(y)
+hmm_y = hmm.mean_observation(y, act)
 
 plt.figure(figsize=(8, 4))
 plt.plot(y[_seq] + 10 * np.arange(hmm.dm_obs), '-k', lw=2)

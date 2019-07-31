@@ -1,28 +1,18 @@
 import autograd.numpy as np
 import autograd.numpy.random as npr
 
-from sds.transitions import StationaryTransition
-from sds.initial import CategoricalInitState
 from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation
+from sds.utils import permutation, linear_regression
 
-from sds.utils import normalize, permutation, linear_regression
+from sds.educational.hmm import HMM
 
 
-class ARHMM:
+class ARHMM(HMM):
 
     def __init__(self, nb_states, dm_obs, dm_act=0):
-        self.nb_states = nb_states
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
-
-        # init state
-        self.init_state = CategoricalInitState(self.nb_states)
-
-        # transitions
-        self.transitions = StationaryTransition(self.nb_states)
-
+        super(ARHMM, self).__init__(nb_states, dm_obs, dm_act)
         # init observation
-        self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs)
+        self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs, dm_act=dm_act)
 
         # observations
         self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
@@ -78,16 +68,9 @@ class ARHMM:
 
         self.observations.cov = aux
 
-    def log_priors(self):
-        logprior = 0.0
-        logprior += self.init_state.log_prior()
-        logprior += self.transitions.log_prior()
-        logprior += self.observations.log_prior()
-        return logprior
-
     def likelihoods(self, obs, act):
         likinit = self.init_state.likelihood()
-        liktrans = self.transitions.likelihood()
+        liktrans = self.transitions.likelihood(obs, act)
 
         ilik = self.init_observation.likelihood([_obs[0, :] for _obs in obs])
         arlik = self.observations.likelihood(obs, act)
@@ -98,158 +81,11 @@ class ARHMM:
 
         return [likinit, liktrans, likobs]
 
-    def filter(self, likhds):
-        likinit, liktrans, likobs = likhds
-
-        alpha = []
-        norm = []
-        for _likobs in likobs:
-            T = _likobs.shape[0]
-            _alpha = np.zeros((T, self.nb_states))
-            _norm = np.zeros((T, 1))
-
-            _alpha[0, :] = _likobs[0, :] * likinit
-            _alpha[0, :], _norm[0, :] = normalize(_alpha[0, :], dim=0)
-
-            for t in range(1, T):
-                _alpha[t, :] = _likobs[t, :] * (liktrans.T @ _alpha[t - 1, :])
-                _alpha[t, :], _norm[t, :] = normalize(_alpha[t, :], dim=0)
-
-            alpha.append(_alpha)
-            norm.append(_norm)
-
-        return alpha, norm
-
-    def smooth(self, likhds, scale):
-        _, liktrans, likobs = likhds
-
-        beta = []
-        for _likobs, _scale in zip(likobs, scale):
-            T = _likobs.shape[0]
-            _beta = np.zeros((T, self.nb_states))
-
-            _beta[-1, :] = np.ones((self.nb_states,)) / _scale[-1, None]
-            for t in range(T - 2, -1, -1):
-                _beta[t, :] = liktrans @ (_likobs[t + 1, :] * _beta[t + 1, :])
-                _beta[t, :] = _beta[t, :] / _scale[t, None]
-
-            beta.append(_beta)
-
-        return beta
-
-    def expectations(self, alpha, beta):
-        return [normalize(_alpha * _beta, dim=1)[0] for _alpha, _beta in zip(alpha, beta)]
-
-    def two_slice(self, likhds, alpha, beta):
-        _, liktrans, likobs = likhds
-
-        zeta = []
-        for _likobs, _alpha, _beta in zip(likobs, alpha, beta):
-            T = _likobs.shape[0]
-            _zeta = np.zeros((T - 1, self.nb_states, self.nb_states))
-
-            for t in range(T - 1):
-                _zeta[t, :, :] = liktrans * np.outer(_alpha[t, :], _likobs[t + 1, :] * _beta[t + 1, :])
-                _zeta[t, :, :], _ = normalize(_zeta[t, :, :], dim=(0, 1))
-
-            zeta.append(_zeta)
-
-        return zeta
-
-    def viterbi(self, obs, act):
-        likinit, liktrans, likobs = self.likelihoods(obs, act)
-
-        delta = []
-        z = []
-        for _likobs in likobs:
-            T = _likobs.shape[0]
-
-            _delta = np.zeros((T, self.nb_states))
-            _args = np.zeros((T, self.nb_states), np.int64)
-            _z = np.zeros((T, ), np.int64)
-
-            _aux = _likobs[0, :] * likinit
-            _delta[0, :] = np.max(_aux, axis=0)
-            _args[0, :] = np.argmax(_delta[0, :], axis=0)
-
-            _delta[0, :], _ = normalize(_delta[0, :], dim=0)
-
-            for t in range(1, T):
-                for j in range(self.nb_states):
-                    for i in range(self.nb_states):
-                        _aux[i] = _delta[t - 1, i] * liktrans[i, j] * _likobs[t, j]
-
-                    _delta[t, j] = np.max(_aux, axis=0)
-                    _args[t, j] = np.argmax(_aux, axis=0)
-
-                _delta[t, :], _ = normalize(_delta[t, :], dim=0)
-
-            # backtrace
-            _z[T - 1] = np.argmax(_delta[T - 1, :], axis=0)
-            for t in range(T - 2, -1, -1):
-                _z[t] = _args[t + 1, _z[t + 1]]
-
-            delta.append(_delta)
-            z.append(_z)
-
-        return delta, z
-
-    def estep(self, obs, act):
-        self.likhds = self.likelihoods(obs, act)
-        alpha, scale = self.filter(self.likhds)
-        beta = self.smooth(self.likhds, scale)
-        gamma = self.expectations(alpha, beta)
-        zeta = self.two_slice(self.likhds, alpha, beta)
-
-        return gamma, zeta
-
-    def mstep(self, obs, act, gamma, zeta):
-        self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
-        self.transitions.mstep(zeta)
-        self.observations.mstep(obs, act, gamma)
-
-    def em(self, obs, act, nb_iter=50, prec=1e-6, verbose=False):
-        lls = []
-        last_ll = - np.inf
-
-        it = 0
-        while it < nb_iter:
-            gamma, zeta = self.estep(obs, act)
-
-            ll = self.log_probability(obs, act)
-            lls.append(ll)
-            if verbose:
-                print("it=", it, "ll=", ll)
-
-            if (ll - last_ll) < prec:
-                break
-            else:
-                self.mstep(obs, act, gamma, zeta)
-                last_ll = ll
-
-            it += 1
-
-        return lls
-
-    def permute(self, perm):
-        self.init_state.permute(perm)
-        self.transitions.permute(perm)
-        self.observations.permute(perm)
-
-    def log_norm(self, obs, act):
-        if self.likhds is None:
-            self.likhds = self.likelihoods(obs, act)
-        _, norm = self.filter(self.likhds)
-        return np.sum(np.log(np.concatenate(norm)))
-
-    def log_probability(self, obs, act):
-        return self.log_norm(obs, act) + self.log_priors()
-
     def mean_observation(self, obs, act):
         likhds = self.likelihoods(obs, act)
         alpha, scale = self.filter(likhds)
         beta = self.smooth(likhds, scale)
-        gamma = self.expectations(alpha, beta)
+        gamma = self.marginals(alpha, beta)
 
         imu = np.array([self.init_observation.mu for _ in range(self.nb_states)])
 
@@ -262,6 +98,8 @@ class ARHMM:
 
 
 if __name__ == "__main__":
+    np.set_printoptions(precision=5, suppress=True)
+
     import matplotlib.pyplot as plt
 
     from hips.plotting.colormaps import gradient_cmap
@@ -282,9 +120,7 @@ if __name__ == "__main__":
     colors = sns.xkcd_palette(color_names)
     cmap = gradient_cmap(colors)
 
-    np.set_printoptions(precision=5, suppress=True)
-
-    true_arhmm = ARHMM(nb_states=3, dm_obs=2)
+    true_arhmm = ARHMM(nb_states=3, dm_obs=2, dm_act=0)
 
     # trajectory lengths
     T = [1250, 1150, 1025]
@@ -295,7 +131,7 @@ if __name__ == "__main__":
     true_z, y = true_arhmm.sample(T=T, act=act)
     true_ll = true_arhmm.log_probability(y, act)
 
-    arhmm = ARHMM(nb_states=3, dm_obs=2)
+    arhmm = ARHMM(nb_states=3, dm_obs=2, dm_act=0)
     arhmm.initialize(y, act)
 
     lls = arhmm.em(y, act, nb_iter=50, prec=1e-6, verbose=True)

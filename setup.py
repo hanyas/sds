@@ -32,33 +32,6 @@ ext_modules.append(
         libraries=["m"])
 )
 
-ext_modules.append(
-    Extension(
-        "sds.cython.arhmm_cy",
-        ["sds/cython/arhmm_cy.pyx"],
-        extra_compile_args=['-ffast-math', '-O3', '-fopenmp'],
-        extra_link_args=['-fopenmp'],
-        libraries=["m"])
-)
-
-ext_modules.append(
-    Extension(
-        "sds.cython.rarhmm_cy",
-        ["sds/cython/rarhmm_cy.pyx"],
-        extra_compile_args=['-ffast-math', '-O3', '-fopenmp'],
-        extra_link_args=['-fopenmp'],
-        libraries=["m"])
-)
-
-ext_modules.append(
-    Extension(
-        "sds.cython.ararhmm_cy",
-        ["sds/cython/ararhmm_cy.pyx"],
-        extra_compile_args=['-ffast-math', '-O3', '-fopenmp'],
-        extra_link_args=['-fopenmp'],
-        libraries=["m"])
-)
-
 
 setup(name='sds',
       version='0.0.1',

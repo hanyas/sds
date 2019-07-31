@@ -1,17 +1,18 @@
 import autograd.numpy as np
 
-
-from sds.observations import GaussianObservation
-from sds.transitions import StationaryTransition
 from sds.initial import CategoricalInitState
+from sds.transitions import StationaryTransition
+from sds.observations import GaussianObservation
+
 from sds.utils import normalize, permutation
 
 
 class HMM:
 
-    def __init__(self, nb_states, dm_obs):
+    def __init__(self, nb_states, dm_obs, dm_act=0):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
+        self.dm_act = dm_act
 
         # init state
         self.init_state = CategoricalInitState(self.nb_states)
@@ -20,11 +21,11 @@ class HMM:
         self.transitions = StationaryTransition(self.nb_states)
 
         # observations
-        self.observations = GaussianObservation(self.nb_states, self.dm_obs)
+        self.observations = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
         self.likhds = None
 
-    def sample(self, T):
+    def sample(self, T, act):
         obs = []
         state = []
 
@@ -45,7 +46,7 @@ class HMM:
 
         return state, obs
 
-    def initialize(self, obs):
+    def initialize(self, obs, act):
         from sklearn.cluster import KMeans
         _obs = np.concatenate(obs)
         km = KMeans(self.nb_states).fit(_obs)
@@ -61,10 +62,10 @@ class HMM:
         logprior += self.observations.log_prior()
         return logprior
 
-    def likelihoods(self, obs):
+    def likelihoods(self, obs, act):
         likinit = self.init_state.likelihood()
-        liktrans = self.transitions.likelihood()
-        likobs = self.observations.likelihood(obs)
+        liktrans = self.transitions.likelihood(obs, act)
+        likobs = self.observations.likelihood(obs, act)
         return [likinit, liktrans, likobs]
 
     def filter(self, likhds):
@@ -72,7 +73,7 @@ class HMM:
 
         alpha = []
         norm = []
-        for _likobs in likobs:
+        for _likobs, _liktrans in zip(likobs, liktrans):
             T = _likobs.shape[0]
             _alpha = np.zeros((T, self.nb_states))
             _norm = np.zeros((T, 1))
@@ -81,7 +82,7 @@ class HMM:
             _alpha[0, :], _norm[0, :] = normalize(_alpha[0, :], dim=0)
 
             for t in range(1, T):
-                _alpha[t, :] = _likobs[t, :] * (liktrans.T @ _alpha[t - 1, :])
+                _alpha[t, :] = _likobs[t, :] * (_liktrans[t - 1, ...].T @ _alpha[t - 1, :])
                 _alpha[t, :], _norm[t, :] = normalize(_alpha[t, :], dim=0)
 
             alpha.append(_alpha)
@@ -93,44 +94,44 @@ class HMM:
         _, liktrans, likobs = likhds
 
         beta = []
-        for _likobs, _scale in zip(likobs, scale):
+        for _likobs, _liktrans, _scale in zip(likobs, liktrans, scale):
             T = _likobs.shape[0]
             _beta = np.zeros((T, self.nb_states))
 
             _beta[-1, :] = np.ones((self.nb_states,)) / _scale[-1, None]
             for t in range(T - 2, -1, -1):
-                _beta[t, :] = liktrans @ (_likobs[t + 1, :] * _beta[t + 1, :])
+                _beta[t, :] = _liktrans[t, ...] @ (_likobs[t + 1, :] * _beta[t + 1, :])
                 _beta[t, :] = _beta[t, :] / _scale[t, None]
 
             beta.append(_beta)
 
         return beta
 
-    def expectations(self, alpha, beta):
+    def marginals(self, alpha, beta):
         return [normalize(_alpha * _beta, dim=1)[0] for _alpha, _beta in zip(alpha, beta)]
 
     def two_slice(self, likhds, alpha, beta):
         _, liktrans, likobs = likhds
 
         zeta = []
-        for _likobs, _alpha, _beta in zip(likobs, alpha, beta):
+        for _likobs, _liktrans, _alpha, _beta in zip(likobs, liktrans, alpha, beta):
             T = _likobs.shape[0]
             _zeta = np.zeros((T - 1, self.nb_states, self.nb_states))
 
             for t in range(T - 1):
-                _zeta[t, :, :] = liktrans * np.outer(_alpha[t, :], _likobs[t + 1, :] * _beta[t + 1, :])
+                _zeta[t, :, :] = _liktrans[t, ...] * np.outer(_alpha[t, :], _likobs[t + 1, :] * _beta[t + 1, :])
                 _zeta[t, :, :], _ = normalize(_zeta[t, :, :], dim=(0, 1))
 
             zeta.append(_zeta)
 
         return zeta
 
-    def viterbi(self, obs):
-        likinit, liktrans, likobs = self.likelihoods(obs)
+    def viterbi(self, obs, act):
+        likinit, liktrans, likobs = self.likelihoods(obs, act)
 
         delta = []
         z = []
-        for _likobs in likobs:
+        for _likobs, _liktrans in zip(likobs, liktrans):
             T = _likobs.shape[0]
 
             _delta = np.zeros((T, self.nb_states))
@@ -146,7 +147,7 @@ class HMM:
             for t in range(1, T):
                 for j in range(self.nb_states):
                     for i in range(self.nb_states):
-                        _aux[i] = _delta[t - 1, i] * liktrans[i, j] * _likobs[t, j]
+                        _aux[i] = _delta[t - 1, i] * _liktrans[t - 1, i, j] * _likobs[t, j]
 
                     _delta[t, j] = np.max(_aux, axis=0)
                     _args[t, j] = np.argmax(_aux, axis=0)
@@ -163,29 +164,29 @@ class HMM:
 
         return delta, z
 
-    def estep(self, obs):
-        self.likhds = self.likelihoods(obs)
+    def estep(self, obs, act):
+        self.likhds = self.likelihoods(obs, act)
         alpha, scale = self.filter(self.likhds)
         beta = self.smooth(self.likhds, scale)
-        gamma = self.expectations(alpha, beta)
+        gamma = self.marginals(alpha, beta)
         zeta = self.two_slice(self.likhds, alpha, beta)
 
         return gamma, zeta
 
-    def mstep(self, obs, gamma, zeta):
+    def mstep(self, obs, act, gamma, zeta):
         self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
-        self.transitions.mstep(zeta)
-        self.observations.mstep(obs, gamma)
+        self.transitions.mstep(zeta, obs, act)
+        self.observations.mstep(obs, act, gamma)
 
-    def em(self, obs, nb_iter=50, prec=1e-6, verbose=False):
+    def em(self, obs, act, nb_iter=50, prec=1e-6, verbose=False):
         lls = []
         last_ll = - np.inf
 
         it = 0
         while it < nb_iter:
-            gamma, zeta = self.estep(obs)
+            gamma, zeta = self.estep(obs, act)
 
-            ll = self.log_probability(obs)
+            ll = self.log_probability(obs, act)
             lls.append(ll)
             if verbose:
                 print("it=", it, "ll=", ll)
@@ -193,7 +194,7 @@ class HMM:
             if (ll - last_ll) < prec:
                 break
             else:
-                self.mstep(obs, gamma, zeta)
+                self.mstep(obs, act, gamma, zeta)
                 last_ll = ll
 
             it += 1
@@ -205,25 +206,27 @@ class HMM:
         self.transitions.permute(perm)
         self.observations.permute(perm)
 
-    def log_norm(self, obs):
+    def log_norm(self, obs, act):
         if self.likhds is None:
-            self.likhds = self.likelihoods(obs)
+            self.likhds = self.likelihoods(obs, act)
         _, norm = self.filter(self.likhds)
         return np.sum(np.log(np.concatenate(norm)))
 
-    def log_probability(self, obs):
-        return self.log_norm(obs) + self.log_priors()
+    def log_probability(self, obs, act):
+        return self.log_norm(obs, act) + self.log_priors()
 
-    def mean_observation(self, obs):
-        likhds = self.likelihoods(obs)
+    def mean_observation(self, obs, act):
+        likhds = self.likelihoods(obs, act)
         alpha, scale = self.filter(likhds)
         beta = self.smooth(likhds, scale)
-        gamma = self.expectations(alpha, beta)
+        gamma = self.marginals(alpha, beta)
 
         return [np.einsum('nk,km->nm', _gamma, self.observations.mu) for _gamma in gamma]
 
 
 if __name__ == "__main__":
+    np.set_printoptions(precision=5, suppress=True)
+
     import matplotlib.pyplot as plt
 
     from hips.plotting.colormaps import gradient_cmap
@@ -244,9 +247,7 @@ if __name__ == "__main__":
     colors = sns.xkcd_palette(color_names)
     cmap = gradient_cmap(colors)
 
-    np.set_printoptions(precision=5, suppress=True)
-
-    true_hmm = HMM(nb_states=3, dm_obs=2)
+    true_hmm = HMM(nb_states=3, dm_obs=2, dm_act=0)
 
     thetas = np.linspace(0, 2 * np.pi, true_hmm.nb_states, endpoint=False)
     for k in range(true_hmm.nb_states):
@@ -255,13 +256,16 @@ if __name__ == "__main__":
     # trajectory lengths
     T = [95, 85, 75]
 
-    true_z, y = true_hmm.sample(T=T)
-    true_ll = true_hmm.log_probability(y)
+    # empty action sequence
+    act = [np.zeros((t, 0)) for t in T]
 
-    hmm = HMM(nb_states=3, dm_obs=2)
-    hmm.initialize(y)
+    true_z, y = true_hmm.sample(T=T, act=act)
+    true_ll = true_hmm.log_probability(y, act=act)
 
-    lls = hmm.em(y, nb_iter=50, prec=1e-24, verbose=True)
+    hmm = HMM(nb_states=3, dm_obs=2, dm_act=0)
+    hmm.initialize(y, act=None)
+
+    lls = hmm.em(y, act, nb_iter=50, prec=1e-24, verbose=True)
     print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
     plt.figure(figsize=(5, 5))
@@ -270,8 +274,8 @@ if __name__ == "__main__":
     plt.show()
 
     _seq = np.random.choice(len(y))
-    hmm.permute(permutation(true_z[_seq], hmm.viterbi([y[_seq]])[1][0]))
-    _, hmm_z = hmm.viterbi([y[_seq]])
+    hmm.permute(permutation(true_z[_seq], hmm.viterbi([y[_seq]], [act[_seq]])[1][0]))
+    _, hmm_z = hmm.viterbi([y[_seq]], [act[_seq]])
 
     plt.figure(figsize=(8, 4))
     plt.subplot(211)
@@ -290,7 +294,7 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    hmm_y = hmm.mean_observation(y)
+    hmm_y = hmm.mean_observation(y, act)
 
     plt.figure(figsize=(8, 4))
     plt.plot(y[_seq] + 10 * np.arange(hmm.dm_obs), '-k', lw=2)

@@ -26,7 +26,7 @@ color_names = ["windows blue", "red", "amber", "faded green", "dusty purple", "o
 colors = sns.xkcd_palette(color_names)
 cmap = gradient_cmap(colors)
 
-true_arhmm = ARHMM(nb_states=3, dm_obs=2)
+true_arhmm = ARHMM(nb_states=3, dm_obs=2, dm_act=0)
 
 # trajectory lengths
 T = [1250, 1150, 1025]
@@ -37,7 +37,7 @@ act = [np.zeros((t, 0)) for t in T]
 true_z, y = true_arhmm.sample(T=T, act=act)
 true_ll = true_arhmm.log_probability(y, act)
 
-arhmm = ARHMM(nb_states=3, dm_obs=2)
+arhmm = ARHMM(nb_states=3, dm_obs=2, dm_act=0)
 arhmm.initialize(y, act)
 
 lls = arhmm.em(y, act, nb_iter=50, prec=1e-6, verbose=True)

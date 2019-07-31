@@ -4,10 +4,13 @@
 # @Date: 2019-07-30-15-30
 # @Author: Hany Abdulsamad
 # @Contact: hany@robot-learning.de
-import scipy as sc
 from autograd import numpy as np
 from autograd.numpy import random as npr
 from autograd.scipy.misc import logsumexp
+
+import scipy as sc
+from scipy import special
+
 from sds.utils import bfgs, relu, adam
 from sklearn.preprocessing import PolynomialFeatures
 
@@ -24,11 +27,35 @@ class StationaryTransition:
     def sample(self, z):
         return npr.choice(self.nb_states, p=self.mat[z, :])
 
-    def likelihood(self):
-        return self.mat
+    def likelihood(self, x, u):
+        trans = []
+        for _x, _u in zip(x, u):
+            T = len(_x)
+            _trans = np.tile(self.mat[None, :, :], (T, 1, 1))
 
-    def log_likelihood(self):
-        return np.log(self.likelihood())
+            if len(_x) > 1:
+                _trans = _trans[:-1, ...]
+            else:
+                _trans = _trans.squeeze()
+
+            trans.append(_trans)
+
+        return trans
+
+    def log_likelihood(self, x, u):
+        logtrans = []
+        for _x, _u in zip(x, u):
+            T = len(_x)
+            _logtrans = np.log(np.tile(self.mat[None, :, :], (T, 1, 1)))
+
+            if len(_x) > 1:
+                _logtrans = _logtrans[:-1, ...]
+            else:
+                _logtrans = _logtrans.squeeze()
+
+            logtrans.append(_logtrans)
+
+        return logtrans
 
     def log_prior(self):
         return 0.0
@@ -36,7 +63,7 @@ class StationaryTransition:
     def permute(self, perm):
         self.mat = self.mat[np.ix_(perm, perm)]
 
-    def mstep(self, joint):
+    def mstep(self, joint, x, u, num_iters=100):
         counts = sum([np.sum(_joint, axis=0) for _joint in joint]) + self.reg
         self.mat = counts / np.sum(counts, axis=-1, keepdims=True)
 

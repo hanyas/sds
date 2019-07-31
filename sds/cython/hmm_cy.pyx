@@ -40,7 +40,7 @@ cdef double logsumexp(double[::1] x) nogil:
 
 
 cpdef filter_cy(double[::1] loginit,
-                double[:,::1] logtrans,
+                double[:,:,::1] logtrans,
                 double[:,::1] logobs,
                 double[:,::1] alpha):
 
@@ -55,12 +55,12 @@ cpdef filter_cy(double[::1] loginit,
     for t in range(1, T):
         for k in range(K):
             for j in range(K):
-                aux[j] = alpha[t - 1, j] + logtrans[j, k]
+                aux[j] = alpha[t - 1, j] + logtrans[t- 1, j, k]
             alpha[t, k] = logsumexp(aux) + logobs[t, k]
 
 
 cpdef smooth_cy(double[::1] loginit,
-                double[:,::1] logtrans,
+                double[:,:,::1] logtrans,
                 double[:,::1] logobs,
                 double[:,::1] beta):
 
@@ -75,5 +75,5 @@ cpdef smooth_cy(double[::1] loginit,
     for t in range(T - 2, -1, -1):
         for k in range(K):
             for j in range(K):
-                aux[j] = logtrans[k, j] + beta[t + 1, j] + logobs[t + 1, j]
+                aux[j] = logtrans[t, k, j] + beta[t + 1, j] + logobs[t + 1, j]
             beta[t, k] = logsumexp(aux)
