@@ -1,34 +1,33 @@
 import numpy as np
+from sds.rarhmm import rARHMM
+from ssm.hmm import HMM as orgHMM
 
 import warnings
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
-from sds.rarhmm import rARHMM
-from ssm.models import HMM as originHMM
-
+np.random.seed(1337)
 
 T = [900, 950]
 
-true_rarhmm = originHMM(3, 2, observations="ar", transitions="recurrent_only")
+true_rarhmm = orgHMM(3, 2, observations="ar", transitions="recurrent")
 
-true_z, y = [], []
+true_z, x = [], []
 for t in T:
-    _z, _y = true_rarhmm.sample(t)
+    _z, _x = true_rarhmm.sample(t)
     true_z.append(_z)
-    y.append(_y)
+    x.append(_x)
 
-true_ll = true_rarhmm.log_probability(y)
+true_ll = true_rarhmm.log_probability(x)
 
 # true_rarhmm = rARHMM(nb_states=3, dm_obs=2)
-# true_z, y = true_rarhmm.sample(T)
-# true_ll = true_rarhmm.log_probability(y)
+# true_z, x = true_rarhmm.sample(horizon=T)
+# true_ll = true_rarhmm.log_probability(x)
 
-act = [np.zeros((t, 0)) for t in T]
-my_rarhmm = rARHMM(nb_states=3, dm_obs=2)
-my_rarhmm.initialize(y, act)
-my_rarhmm_lls = my_rarhmm.em(y, act, nb_iter=50, prec=1e-12, verbose=False)
+my_rarhmm = rARHMM(nb_states=3, dm_obs=2, type='recurrent')
+my_rarhmm.initialize(x)
+my_ll = my_rarhmm.em(x, nb_iter=100, prec=1e-12)
 
-origin_rarhmm = originHMM(3, 2, observations="ar", transitions="recurrent_only")
-origin_rarhmm_lls = origin_rarhmm.fit(y, method="em", num_em_iters=50, initialize=True, verbose=False)
+org_rarhmm = orgHMM(3, 2, observations="ar", transitions="recurrent")
+org_ll = org_rarhmm.fit(x, method="em", num_em_iters=100)
 
-print("true_ll=", true_ll, "my_rarhmm_ll=", my_rarhmm_lls[-1], "origin_rarhmm_ll=", origin_rarhmm_lls[-1])
+print("true_ll=", true_ll, "my_ll=", my_ll[-1], "org_ll=", org_ll[-1])

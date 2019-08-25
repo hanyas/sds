@@ -1,34 +1,33 @@
 import numpy as np
+from sds.arhmm import ARHMM
+from ssm.hmm import HMM as orgHMM
 
 import warnings
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
-from sds.arhmm import ARHMM
-from ssm.models import HMM as originHMM
-
+np.random.seed(1337)
 
 T = [900, 950]
 
-true_arhmm = originHMM(3, 2, observations="ar")
+true_arhmm = orgHMM(3, 2, observations="ar")
 
-true_z, y = [], []
+true_z, x = [], []
 for t in T:
-    _z, _y = true_arhmm.sample(t)
+    _z, _x = true_arhmm.sample(t)
     true_z.append(_z)
-    y.append(_y)
+    x.append(_x)
 
-true_ll = true_arhmm.log_probability(y)
+true_ll = true_arhmm.log_probability(x)
 
 # true_arhmm = ARHMM(nb_states=3, dm_obs=2)
-# true_z, y = true_arhmm.sample(T)
-# true_ll = true_arhmm.log_probability(y)
+# true_z, x = true_arhmm.sample(horizon=T)
+# true_ll = true_arhmm.log_probability(x)
 
-act = [np.zeros((t, 0)) for t in T]
 my_arhmm = ARHMM(nb_states=3, dm_obs=2)
-my_arhmm.initialize(y, act)
-my_arhmm_lls = my_arhmm.em(y, act, nb_iter=50, prec=1e-12, verbose=False)
+my_arhmm.initialize(x)
+my_ll = my_arhmm.em(x, nb_iter=1000, prec=0., verbose=True)
 
-originarhmm = originHMM(3, 2, observations="ar")
-origin_arhmm_ll = originarhmm.fit(y, method="em", num_em_iters=50, initialize=True, verbose=False)
+org_arhmm = orgHMM(3, 2, observations="ar")
+org_ll = org_arhmm.fit(x, method="em", num_em_iters=1000, initialize=True)
 
-print("true_ll=", true_ll, "my_arhmm_ll=", my_arhmm_lls[-1], "origin_arhmm_ll=", origin_arhmm_ll[-1])
+print("true_ll=", true_ll, "my_ll=", my_ll[-1], "org_ll=", org_ll[-1])

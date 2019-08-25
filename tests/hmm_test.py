@@ -1,30 +1,33 @@
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
+import numpy as np
 from sds.hmm import HMM
-from ssm.models import HMM as originHMM
+from ssm.hmm import HMM as orgHMM
+
+import warnings
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
+np.random.seed(1337)
 
 T = [100, 95]
 
-true_hmm = originHMM(5, 2, observations="gaussian")
+true_hmm = orgHMM(5, 2, observations="gaussian")
 
-true_z, y = [], []
+true_z, x = [], []
 for t in T:
-    _z, _y = true_hmm.sample(t)
+    _z, _x = true_hmm.sample(t)
     true_z.append(_z)
-    y.append(_y)
+    x.append(_x)
 
-true_ll = true_hmm.log_probability(y)
+true_ll = true_hmm.log_probability(x)
 
 # true_hmm = HMM(nb_states=5, dm_obs=2)
-# true_z, y = true_hmm.sample(T)
-# true_ll = true_hmm.log_probability(y)
+# true_z, x = true_hmm.sample(horizon=T)
+# true_ll = true_hmm.log_probability(x)
 
 my_hmm = HMM(nb_states=5, dm_obs=2)
-my_hmm.initialize(y)
-my_hmm_ll = my_hmm.em(y, nb_iter=50, prec=1e-12, verbose=False)
+my_hmm.initialize(x)
+my_ll = my_hmm.em(x, nb_iter=1000, prec=0., verbose=True)
 
-origin_hmm = originHMM(5, 2, observations="gaussian")
-origin_hmm_ll = origin_hmm.fit(y, method="em", num_em_iters=50, initialize=True, verbose=False)
+org_hmm = orgHMM(5, 2, observations="gaussian")
+org_ll = org_hmm.fit(x, method="em", num_em_iters=1000, initialize=True)
 
-print("true_ll=", true_ll, "my_hmm_ll=", my_hmm_ll[-1], "origin_hmm_ll=", origin_hmm_ll[-1])
+print("true_ll=", true_ll, "my_ll=", my_ll[-1], "org_ll=", org_ll[-1])
