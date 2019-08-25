@@ -4,17 +4,7 @@
 {
     "distutils": {
         "depends": [],
-        "extra_compile_args": [
-            "-ffast-math",
-            "-O3",
-            "-fopenmp"
-        ],
-        "extra_link_args": [
-            "-fopenmp"
-        ],
-        "libraries": [
-            "m"
-        ],
+        "language": "c++",
         "name": "sds.cython.logsumexp_cy",
         "sources": [
             "sds/cython/logsumexp_cy.pyx"
@@ -308,19 +298,33 @@ END: Cython Metadata */
   #endif
 #endif
 
+#ifndef __cplusplus
+  #error "Cython files generated with the C++ option must be compiled with a C++ compiler."
+#endif
 #ifndef CYTHON_INLINE
   #if defined(__clang__)
     #define CYTHON_INLINE __inline__ __attribute__ ((__unused__))
-  #elif defined(__GNUC__)
-    #define CYTHON_INLINE __inline__
-  #elif defined(_MSC_VER)
-    #define CYTHON_INLINE __inline
-  #elif defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
-    #define CYTHON_INLINE inline
   #else
-    #define CYTHON_INLINE
+    #define CYTHON_INLINE inline
   #endif
 #endif
+template<typename T>
+void __Pyx_call_destructor(T& x) {
+    x.~T();
+}
+template<typename T>
+class __Pyx_FakeReference {
+  public:
+    __Pyx_FakeReference() : ptr(NULL) { }
+    __Pyx_FakeReference(const T& ref) : ptr(const_cast<T*>(&ref)) { }
+    T *operator->() { return ptr; }
+    T *operator&() { return ptr; }
+    operator T&() { return *ptr; }
+    template<typename U> bool operator ==(U other) { return *ptr == other; }
+    template<typename U> bool operator !=(U other) { return *ptr != other; }
+  private:
+    T *ptr;
+};
 
 #if CYTHON_COMPILING_IN_PYPY && PY_VERSION_HEX < 0x02070600 && !defined(Py_OptimizeFlag)
   #define Py_OptimizeFlag 0
@@ -1158,7 +1162,7 @@ typedef npy_double __pyx_t_5numpy_double_t;
  */
 typedef npy_longdouble __pyx_t_5numpy_longdouble_t;
 
-/* "sds/cython/logsumexp_cy.pyx":15
+/* "sds/cython/logsumexp_cy.pyx":8
  * 
  * DTYPE = np.float64
  * ctypedef np.float64_t DTYPE_t             # <<<<<<<<<<<<<<
@@ -2497,7 +2501,7 @@ static PyObject *__pyx_tuple__31;
 static PyObject *__pyx_codeobj__32;
 /* Late includes */
 
-/* "sds/cython/logsumexp_cy.pyx":23
+/* "sds/cython/logsumexp_cy.pyx":16
  * @cython.nonecheck(False)
  * 
  * cpdef double logsumexp1d(double[:] x) nogil:             # <<<<<<<<<<<<<<
@@ -2518,7 +2522,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
   Py_ssize_t __pyx_t_4;
   Py_ssize_t __pyx_t_5;
 
-  /* "sds/cython/logsumexp_cy.pyx":27
+  /* "sds/cython/logsumexp_cy.pyx":20
  *     cdef double m, out
  * 
  *     N = x.shape[0]             # <<<<<<<<<<<<<<
@@ -2527,7 +2531,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
  */
   __pyx_v_N = (__pyx_v_x.shape[0]);
 
-  /* "sds/cython/logsumexp_cy.pyx":30
+  /* "sds/cython/logsumexp_cy.pyx":23
  * 
  *     # find the max
  *     m = -INFINITY             # <<<<<<<<<<<<<<
@@ -2536,7 +2540,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
  */
   __pyx_v_m = (-INFINITY);
 
-  /* "sds/cython/logsumexp_cy.pyx":31
+  /* "sds/cython/logsumexp_cy.pyx":24
  *     # find the max
  *     m = -INFINITY
  *     for i in range(N):             # <<<<<<<<<<<<<<
@@ -2548,7 +2552,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
   for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_i = __pyx_t_3;
 
-    /* "sds/cython/logsumexp_cy.pyx":32
+    /* "sds/cython/logsumexp_cy.pyx":25
  *     m = -INFINITY
  *     for i in range(N):
  *         m = fmax(m, x[i])             # <<<<<<<<<<<<<<
@@ -2559,7 +2563,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
     __pyx_v_m = fmax(__pyx_v_m, (*((double *) ( /* dim=0 */ (__pyx_v_x.data + __pyx_t_4 * __pyx_v_x.strides[0]) ))));
   }
 
-  /* "sds/cython/logsumexp_cy.pyx":35
+  /* "sds/cython/logsumexp_cy.pyx":28
  * 
  *     # sum the exponentials
  *     out = 0             # <<<<<<<<<<<<<<
@@ -2568,7 +2572,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
  */
   __pyx_v_out = 0.0;
 
-  /* "sds/cython/logsumexp_cy.pyx":36
+  /* "sds/cython/logsumexp_cy.pyx":29
  *     # sum the exponentials
  *     out = 0
  *     for i in range(N):             # <<<<<<<<<<<<<<
@@ -2580,7 +2584,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
   for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_i = __pyx_t_3;
 
-    /* "sds/cython/logsumexp_cy.pyx":37
+    /* "sds/cython/logsumexp_cy.pyx":30
  *     out = 0
  *     for i in range(N):
  *         out += exp(x[i] - m)             # <<<<<<<<<<<<<<
@@ -2591,7 +2595,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
     __pyx_v_out = (__pyx_v_out + exp(((*((double *) ( /* dim=0 */ (__pyx_v_x.data + __pyx_t_5 * __pyx_v_x.strides[0]) ))) - __pyx_v_m)));
   }
 
-  /* "sds/cython/logsumexp_cy.pyx":39
+  /* "sds/cython/logsumexp_cy.pyx":32
  *         out += exp(x[i] - m)
  * 
  *     return m + log(out)             # <<<<<<<<<<<<<<
@@ -2601,7 +2605,7 @@ static double __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__Pyx_memviewslice
   __pyx_r = (__pyx_v_m + log(__pyx_v_out));
   goto __pyx_L0;
 
-  /* "sds/cython/logsumexp_cy.pyx":23
+  /* "sds/cython/logsumexp_cy.pyx":16
  * @cython.nonecheck(False)
  * 
  * cpdef double logsumexp1d(double[:] x) nogil:             # <<<<<<<<<<<<<<
@@ -2622,7 +2626,7 @@ static PyObject *__pyx_pw_3sds_6cython_12logsumexp_cy_1logsumexp1d(PyObject *__p
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("logsumexp1d (wrapper)", 0);
   assert(__pyx_arg_x); {
-    __pyx_v_x = __Pyx_PyObject_to_MemoryviewSlice_ds_double(__pyx_arg_x, PyBUF_WRITABLE); if (unlikely(!__pyx_v_x.memview)) __PYX_ERR(0, 23, __pyx_L3_error)
+    __pyx_v_x = __Pyx_PyObject_to_MemoryviewSlice_ds_double(__pyx_arg_x, PyBUF_WRITABLE); if (unlikely(!__pyx_v_x.memview)) __PYX_ERR(0, 16, __pyx_L3_error)
   }
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -2643,8 +2647,8 @@ static PyObject *__pyx_pf_3sds_6cython_12logsumexp_cy_logsumexp1d(CYTHON_UNUSED 
   PyObject *__pyx_t_1 = NULL;
   __Pyx_RefNannySetupContext("logsumexp1d", 0);
   __Pyx_XDECREF(__pyx_r);
-  if (unlikely(!__pyx_v_x.memview)) { __Pyx_RaiseUnboundLocalError("x"); __PYX_ERR(0, 23, __pyx_L1_error) }
-  __pyx_t_1 = PyFloat_FromDouble(__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__pyx_v_x, 0)); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 23, __pyx_L1_error)
+  if (unlikely(!__pyx_v_x.memview)) { __Pyx_RaiseUnboundLocalError("x"); __PYX_ERR(0, 16, __pyx_L1_error) }
+  __pyx_t_1 = PyFloat_FromDouble(__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__pyx_v_x, 0)); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 16, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -2662,7 +2666,7 @@ static PyObject *__pyx_pf_3sds_6cython_12logsumexp_cy_logsumexp1d(CYTHON_UNUSED 
   return __pyx_r;
 }
 
-/* "sds/cython/logsumexp_cy.pyx":42
+/* "sds/cython/logsumexp_cy.pyx":35
  * 
  * 
  * cpdef np.ndarray[DTYPE_t, ndim=1] logsumexp2d(double[:, :] x):             # <<<<<<<<<<<<<<
@@ -2690,43 +2694,43 @@ static PyArrayObject *__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp2d(__Pyx_memv
   int __pyx_t_10;
   __Pyx_RefNannySetupContext("logsumexp2d", 0);
 
-  /* "sds/cython/logsumexp_cy.pyx":45
+  /* "sds/cython/logsumexp_cy.pyx":38
  *     cdef int i
  * 
  *     cdef N = x.shape[0]             # <<<<<<<<<<<<<<
  *     cdef D = x.shape[1]
  * 
  */
-  __pyx_t_1 = PyInt_FromSsize_t((__pyx_v_x.shape[0])); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 45, __pyx_L1_error)
+  __pyx_t_1 = PyInt_FromSsize_t((__pyx_v_x.shape[0])); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 38, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_N = __pyx_t_1;
   __pyx_t_1 = 0;
 
-  /* "sds/cython/logsumexp_cy.pyx":46
+  /* "sds/cython/logsumexp_cy.pyx":39
  * 
  *     cdef N = x.shape[0]
  *     cdef D = x.shape[1]             # <<<<<<<<<<<<<<
  * 
  *     cdef double[:] mat
  */
-  __pyx_t_1 = PyInt_FromSsize_t((__pyx_v_x.shape[1])); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 46, __pyx_L1_error)
+  __pyx_t_1 = PyInt_FromSsize_t((__pyx_v_x.shape[1])); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 39, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_D = __pyx_t_1;
   __pyx_t_1 = 0;
 
-  /* "sds/cython/logsumexp_cy.pyx":49
+  /* "sds/cython/logsumexp_cy.pyx":42
  * 
  *     cdef double[:] mat
  *     mat = np.empty((N, ))             # <<<<<<<<<<<<<<
  * 
  *     for i in range(N):
  */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_n_s_np); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 49, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_n_s_np); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_2, __pyx_n_s_empty); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 49, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_2, __pyx_n_s_empty); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = PyTuple_New(1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 49, __pyx_L1_error)
+  __pyx_t_2 = PyTuple_New(1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_INCREF(__pyx_v_N);
   __Pyx_GIVEREF(__pyx_v_N);
@@ -2744,28 +2748,28 @@ static PyArrayObject *__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp2d(__Pyx_memv
   __pyx_t_1 = (__pyx_t_4) ? __Pyx_PyObject_Call2Args(__pyx_t_3, __pyx_t_4, __pyx_t_2) : __Pyx_PyObject_CallOneArg(__pyx_t_3, __pyx_t_2);
   __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 49, __pyx_L1_error)
+  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-  __pyx_t_5 = __Pyx_PyObject_to_MemoryviewSlice_ds_double(__pyx_t_1, PyBUF_WRITABLE); if (unlikely(!__pyx_t_5.memview)) __PYX_ERR(0, 49, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_PyObject_to_MemoryviewSlice_ds_double(__pyx_t_1, PyBUF_WRITABLE); if (unlikely(!__pyx_t_5.memview)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
   __pyx_v_mat = __pyx_t_5;
   __pyx_t_5.memview = NULL;
   __pyx_t_5.data = NULL;
 
-  /* "sds/cython/logsumexp_cy.pyx":51
+  /* "sds/cython/logsumexp_cy.pyx":44
  *     mat = np.empty((N, ))
  * 
  *     for i in range(N):             # <<<<<<<<<<<<<<
  *         mat[i] = logsumexp1d(x[i, :])
  * 
  */
-  __pyx_t_6 = __Pyx_PyInt_As_long(__pyx_v_N); if (unlikely((__pyx_t_6 == (long)-1) && PyErr_Occurred())) __PYX_ERR(0, 51, __pyx_L1_error)
+  __pyx_t_6 = __Pyx_PyInt_As_long(__pyx_v_N); if (unlikely((__pyx_t_6 == (long)-1) && PyErr_Occurred())) __PYX_ERR(0, 44, __pyx_L1_error)
   __pyx_t_7 = __pyx_t_6;
   for (__pyx_t_8 = 0; __pyx_t_8 < __pyx_t_7; __pyx_t_8+=1) {
     __pyx_v_i = __pyx_t_8;
 
-    /* "sds/cython/logsumexp_cy.pyx":52
+    /* "sds/cython/logsumexp_cy.pyx":45
  * 
  *     for i in range(N):
  *         mat[i] = logsumexp1d(x[i, :])             # <<<<<<<<<<<<<<
@@ -2784,7 +2788,7 @@ static PyArrayObject *__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp2d(__Pyx_memv
         if (!__Pyx_is_valid_index(__pyx_tmp_idx, __pyx_tmp_shape)) {
             PyErr_SetString(PyExc_IndexError,
                             "Index out of bounds (axis 0)");
-            __PYX_ERR(0, 52, __pyx_L1_error)
+            __PYX_ERR(0, 45, __pyx_L1_error)
         }
         __pyx_t_5.data += __pyx_tmp_idx * __pyx_tmp_stride;
 }
@@ -2801,7 +2805,7 @@ __pyx_t_9 = __pyx_v_i;
     } else if (unlikely(__pyx_t_9 >= __pyx_v_mat.shape[0])) __pyx_t_10 = 0;
     if (unlikely(__pyx_t_10 != -1)) {
       __Pyx_RaiseBufferIndexError(__pyx_t_10);
-      __PYX_ERR(0, 52, __pyx_L1_error)
+      __PYX_ERR(0, 45, __pyx_L1_error)
     }
     *((double *) ( /* dim=0 */ (__pyx_v_mat.data + __pyx_t_9 * __pyx_v_mat.strides[0]) )) = __pyx_f_3sds_6cython_12logsumexp_cy_logsumexp1d(__pyx_t_5, 0);
     __PYX_XDEC_MEMVIEW(&__pyx_t_5, 1);
@@ -2809,18 +2813,18 @@ __pyx_t_9 = __pyx_v_i;
     __pyx_t_5.data = NULL;
   }
 
-  /* "sds/cython/logsumexp_cy.pyx":54
+  /* "sds/cython/logsumexp_cy.pyx":47
  *         mat[i] = logsumexp1d(x[i, :])
  * 
  *     return np.asarray(mat)             # <<<<<<<<<<<<<<
  */
   __Pyx_XDECREF(((PyObject *)__pyx_r));
-  __Pyx_GetModuleGlobalName(__pyx_t_3, __pyx_n_s_np); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 54, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_3, __pyx_n_s_np); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
-  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_3, __pyx_n_s_asarray); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 54, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_3, __pyx_n_s_asarray); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-  __pyx_t_3 = __pyx_memoryview_fromslice(__pyx_v_mat, 1, (PyObject *(*)(char *)) __pyx_memview_get_double, (int (*)(char *, PyObject *)) __pyx_memview_set_double, 0);; if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 54, __pyx_L1_error)
+  __pyx_t_3 = __pyx_memoryview_fromslice(__pyx_v_mat, 1, (PyObject *(*)(char *)) __pyx_memview_get_double, (int (*)(char *, PyObject *)) __pyx_memview_set_double, 0);; if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __pyx_t_4 = NULL;
   if (CYTHON_UNPACK_METHODS && unlikely(PyMethod_Check(__pyx_t_2))) {
@@ -2835,15 +2839,15 @@ __pyx_t_9 = __pyx_v_i;
   __pyx_t_1 = (__pyx_t_4) ? __Pyx_PyObject_Call2Args(__pyx_t_2, __pyx_t_4, __pyx_t_3) : __Pyx_PyObject_CallOneArg(__pyx_t_2, __pyx_t_3);
   __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 54, __pyx_L1_error)
+  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  if (!(likely(((__pyx_t_1) == Py_None) || likely(__Pyx_TypeTest(__pyx_t_1, __pyx_ptype_5numpy_ndarray))))) __PYX_ERR(0, 54, __pyx_L1_error)
+  if (!(likely(((__pyx_t_1) == Py_None) || likely(__Pyx_TypeTest(__pyx_t_1, __pyx_ptype_5numpy_ndarray))))) __PYX_ERR(0, 47, __pyx_L1_error)
   __pyx_r = ((PyArrayObject *)__pyx_t_1);
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "sds/cython/logsumexp_cy.pyx":42
+  /* "sds/cython/logsumexp_cy.pyx":35
  * 
  * 
  * cpdef np.ndarray[DTYPE_t, ndim=1] logsumexp2d(double[:, :] x):             # <<<<<<<<<<<<<<
@@ -2877,7 +2881,7 @@ static PyObject *__pyx_pw_3sds_6cython_12logsumexp_cy_3logsumexp2d(PyObject *__p
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("logsumexp2d (wrapper)", 0);
   assert(__pyx_arg_x); {
-    __pyx_v_x = __Pyx_PyObject_to_MemoryviewSlice_dsds_double(__pyx_arg_x, PyBUF_WRITABLE); if (unlikely(!__pyx_v_x.memview)) __PYX_ERR(0, 42, __pyx_L3_error)
+    __pyx_v_x = __Pyx_PyObject_to_MemoryviewSlice_dsds_double(__pyx_arg_x, PyBUF_WRITABLE); if (unlikely(!__pyx_v_x.memview)) __PYX_ERR(0, 35, __pyx_L3_error)
   }
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -2898,8 +2902,8 @@ static PyObject *__pyx_pf_3sds_6cython_12logsumexp_cy_2logsumexp2d(CYTHON_UNUSED
   PyObject *__pyx_t_1 = NULL;
   __Pyx_RefNannySetupContext("logsumexp2d", 0);
   __Pyx_XDECREF(__pyx_r);
-  if (unlikely(!__pyx_v_x.memview)) { __Pyx_RaiseUnboundLocalError("x"); __PYX_ERR(0, 42, __pyx_L1_error) }
-  __pyx_t_1 = ((PyObject *)__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp2d(__pyx_v_x, 0)); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 42, __pyx_L1_error)
+  if (unlikely(!__pyx_v_x.memview)) { __Pyx_RaiseUnboundLocalError("x"); __PYX_ERR(0, 35, __pyx_L1_error) }
+  __pyx_t_1 = ((PyObject *)__pyx_f_3sds_6cython_12logsumexp_cy_logsumexp2d(__pyx_v_x, 0)); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 35, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -18945,7 +18949,7 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {0, 0, 0, 0, 0, 0, 0}
 };
 static CYTHON_SMALL_CODE int __Pyx_InitCachedBuiltins(void) {
-  __pyx_builtin_range = __Pyx_GetBuiltinName(__pyx_n_s_range); if (!__pyx_builtin_range) __PYX_ERR(0, 31, __pyx_L1_error)
+  __pyx_builtin_range = __Pyx_GetBuiltinName(__pyx_n_s_range); if (!__pyx_builtin_range) __PYX_ERR(0, 24, __pyx_L1_error)
   __pyx_builtin_ValueError = __Pyx_GetBuiltinName(__pyx_n_s_ValueError); if (!__pyx_builtin_ValueError) __PYX_ERR(1, 272, __pyx_L1_error)
   __pyx_builtin_RuntimeError = __Pyx_GetBuiltinName(__pyx_n_s_RuntimeError); if (!__pyx_builtin_RuntimeError) __PYX_ERR(1, 856, __pyx_L1_error)
   __pyx_builtin_ImportError = __Pyx_GetBuiltinName(__pyx_n_s_ImportError); if (!__pyx_builtin_ImportError) __PYX_ERR(1, 1038, __pyx_L1_error)
@@ -19666,37 +19670,37 @@ if (!__Pyx_RefNanny) {
   if (__Pyx_patch_abc() < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   #endif
 
-  /* "sds/cython/logsumexp_cy.pyx":11
+  /* "sds/cython/logsumexp_cy.pyx":4
  * cimport cython
  * 
  * import numpy as np             # <<<<<<<<<<<<<<
  * cimport numpy as np
  * 
  */
-  __pyx_t_1 = __Pyx_Import(__pyx_n_s_numpy, 0, -1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 11, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_Import(__pyx_n_s_numpy, 0, -1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 4, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  if (PyDict_SetItem(__pyx_d, __pyx_n_s_np, __pyx_t_1) < 0) __PYX_ERR(0, 11, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_d, __pyx_n_s_np, __pyx_t_1) < 0) __PYX_ERR(0, 4, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-  /* "sds/cython/logsumexp_cy.pyx":14
+  /* "sds/cython/logsumexp_cy.pyx":7
  * cimport numpy as np
  * 
  * DTYPE = np.float64             # <<<<<<<<<<<<<<
  * ctypedef np.float64_t DTYPE_t
  * 
  */
-  __Pyx_GetModuleGlobalName(__pyx_t_1, __pyx_n_s_np); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 14, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_1, __pyx_n_s_np); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 7, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_float64); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 14, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_float64); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 7, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-  if (PyDict_SetItem(__pyx_d, __pyx_n_s_DTYPE, __pyx_t_2) < 0) __PYX_ERR(0, 14, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_d, __pyx_n_s_DTYPE, __pyx_t_2) < 0) __PYX_ERR(0, 7, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
   /* "sds/cython/logsumexp_cy.pyx":1
- * #!/usr/bin/env python3             # <<<<<<<<<<<<<<
- * # -*- coding: utf-8 -*-
- * # @Filename: speed
+ * import cython             # <<<<<<<<<<<<<<
+ * cimport cython
+ * 
  */
   __pyx_t_2 = __Pyx_PyDict_NewPresized(0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);

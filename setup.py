@@ -16,20 +16,16 @@ ext_modules = []
 
 ext_modules.append(
     Extension(
-        "sds.cython.logsumexp_cy",
-        ["sds/cython/logsumexp_cy.pyx"],
-        extra_compile_args=['-ffast-math', '-O3', '-fopenmp'],
-        extra_link_args=['-fopenmp'],
-        libraries=["m"])
+        'sds.cython.logsumexp_cy',
+        sources=["sds/cython/logsumexp_cy.pyx"],
+        language="c++")
 )
 
 ext_modules.append(
     Extension(
-        "sds.cython.hmm_cy",
-        ["sds/cython/hmm_cy.pyx"],
-        extra_compile_args=['-ffast-math', '-O3', '-fopenmp'],
-        extra_link_args=['-fopenmp'],
-        libraries=["m"])
+        'sds.cython.hmm_cy',
+        sources=["sds/cython/hmm_cy.pyx"],
+        language="c++")
 )
 
 

@@ -1,24 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: speed
-# @Date: 2019-06-05-19-23
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
-import cython
-cimport cython
-
 import numpy as np
 cimport numpy as np
 
-DTYPE = np.float64
-ctypedef np.float64_t DTYPE_t
-
 from libc.math cimport log, exp, fmax, INFINITY
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.nonecheck(False)
 
 cdef double logsumexp(double[::1] x) nogil:
     cdef int i, N
@@ -39,7 +23,7 @@ cdef double logsumexp(double[::1] x) nogil:
     return m + log(out)
 
 
-cpdef filter_cy(double[::1] loginit,
+cpdef forward_cy(double[::1] loginit,
                 double[:,:,::1] logtrans,
                 double[:,::1] logobs,
                 double[:,::1] alpha):
@@ -55,11 +39,11 @@ cpdef filter_cy(double[::1] loginit,
     for t in range(1, T):
         for k in range(K):
             for j in range(K):
-                aux[j] = alpha[t - 1, j] + logtrans[t- 1, j, k]
+                aux[j] = alpha[t - 1, j] + logtrans[t - 1, j, k]
             alpha[t, k] = logsumexp(aux) + logobs[t, k]
 
 
-cpdef smooth_cy(double[::1] loginit,
+cpdef backward_cy(double[::1] loginit,
                 double[:,:,::1] logtrans,
                 double[:,::1] logobs,
                 double[:,::1] beta):

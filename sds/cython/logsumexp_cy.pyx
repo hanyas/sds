@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: speed
-# @Date: 2019-06-05-19-23
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
 import cython
 cimport cython
 
