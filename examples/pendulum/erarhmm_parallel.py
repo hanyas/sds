@@ -34,7 +34,9 @@ def parallel_em(nb_states, dm_obs, dm_act, type,
 
 if __name__ == "__main__":
 
+    import os
     import pickle
+
     import gym
     import rl
 
@@ -60,3 +62,6 @@ if __name__ == "__main__":
     rarhmm = models[np.argmax(all_models)]
 
     print(np.c_[mse, norm_mse])
+
+    # path = os.path.dirname(rl.__file__)
+    # pickle.dump(erarhmm, open(path + '/envs/control/hybrid/models/hybrid_pendulum.p', 'wb'))

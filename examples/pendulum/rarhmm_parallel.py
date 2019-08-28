@@ -34,14 +34,16 @@ def parallel_em(nb_states, dm_obs, dm_act, type,
 
 if __name__ == "__main__":
 
+    import os
     import pickle
+
     import gym
     import rl
 
     env = gym.make('Pendulum-RL-v0')
     env._max_episode_steps = 5000
 
-    nb_rollouts, nb_steps = 5, 200
+    nb_rollouts, nb_steps = 25, 200
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
@@ -51,8 +53,8 @@ if __name__ == "__main__":
     nb_states = 5
     models, liklhds, mse, norm_mse = parallel_em(nb_states, dm_obs, dm_act,
                                                  type='neural-recurrent',
-                                                 obs=obs, act=act, nb_iter=50,
-                                                 prec=1e-4, nb_jobs=10)
+                                                 obs=obs, act=act, nb_iter=100,
+                                                 prec=1e-4, nb_jobs=50)
 
     all_models = []
     for _nmse in norm_mse:
@@ -60,3 +62,6 @@ if __name__ == "__main__":
     rarhmm = models[np.argmax(all_models)]
 
     print(np.c_[mse, norm_mse])
+
+    # path = os.path.dirname(rl.__file__)
+    # pickle.dump(rarhmm, open(path + '/envs/control/hybrid/models/hybrid_pendulum.p', 'wb'))
