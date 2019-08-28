@@ -1,12 +1,14 @@
 import autograd.numpy as np
+import autograd.numpy.random as npr
 
-from scipy.special import logsumexp
+from autograd.scipy.special import logsumexp
 
 from sds.initial import CategoricalInitState
 from sds.transitions import StationaryTransition
 from sds.observations import GaussianObservation
 
-from sds.cython.hmm_cy import filter_cy, smooth_cy
+from sds.utils import ensure_args_are_viable_lists
+from sds.cython.hmm_cy import forward_cy, backward_cy
 
 from autograd.tracer import getval
 to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] else getval(arr)
@@ -19,45 +21,15 @@ class HMM:
         self.dm_obs = dm_obs
         self.dm_act = dm_act
 
-        # init state
         self.init_state = CategoricalInitState(self.nb_states)
-
-        # transitions
         self.transitions = StationaryTransition(self.nb_states)
-
-        # observations
         self.observations = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
-        self.loglikhds = None
-
-    def sample(self, T, act):
-        obs = []
-        state = []
-
-        N = len(T)
-        for n in range(N):
-            _obs = np.zeros((T[n], self.dm_obs))
-            _state = np.zeros((T[n],), np.int64)
-            _state[0] = self.init_state.sample()
-            for t in range(T[n] - 1):
-                _obs[t, :] = self.observations.sample(_state[t])
-                _state[t + 1] = self.transitions.sample(_state[t])
-
-            _obs[-1, :] = self.observations.sample(_state[-1])
-
-            state.append(_state)
-            obs.append(_obs)
-
-        return state, obs
-
-    def initialize(self, obs, act, *args):
-        from sklearn.cluster import KMeans
-        _obs = np.concatenate(obs)
-        km = KMeans(self.nb_states).fit(_obs)
-
-        self.observations.mu = km.cluster_centers_
-        self.observations.cov = np.array([np.cov(_obs[km.labels_ == k].T)
-                                          for k in range(self.nb_states)])
+    @ensure_args_are_viable_lists
+    def initialize(self, obs, act=None, **kwargs):
+        self.init_state.initialize(obs, act)
+        self.transitions.initialize(obs, act)
+        self.observations.initialize(obs, act)
 
     def log_priors(self):
         logprior = 0.0
@@ -66,13 +38,14 @@ class HMM:
         logprior += self.observations.log_prior()
         return logprior
 
-    def log_likelihoods(self, obs, act):
-        loginit = self.init_state.log_likelihood()
-        logtrans = self.transitions.log_likelihood(obs, act)
+    @ensure_args_are_viable_lists
+    def log_likelihoods(self, obs, act=None):
+        loginit = self.init_state.log_init()
+        logtrans = self.transitions.log_transition(obs, act)
         logobs = self.observations.log_likelihood(obs, act)
         return [loginit, logtrans, logobs]
 
-    def filter(self, loglikhds, cython=True):
+    def forward(self, loglikhds, cython=True):
         loginit, logtrans, logobs = loglikhds
 
         alpha = []
@@ -81,7 +54,7 @@ class HMM:
             _alpha = np.zeros((T, self.nb_states))
 
             if cython:
-                filter_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), _alpha)
+                forward_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), to_c(_alpha))
             else:
                 for k in range(self.nb_states):
                     _alpha[0, k] = loginit[k] + _logobs[0, k]
@@ -96,7 +69,7 @@ class HMM:
             alpha.append(_alpha)
         return alpha
 
-    def smooth(self, loglikhds, cython=True):
+    def backward(self, loglikhds, cython=True):
         loginit, logtrans, logobs = loglikhds
 
         beta = []
@@ -105,7 +78,7 @@ class HMM:
             _beta = np.zeros((T, self.nb_states))
 
             if cython:
-                smooth_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), _beta)
+                backward_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), to_c(_beta))
             else:
                 for k in range(self.nb_states):
                     _beta[T - 1, k] = 0.0
@@ -138,7 +111,7 @@ class HMM:
             zeta.append(_zeta)
         return zeta
 
-    def viterbi(self, obs, act):
+    def viterbi(self, obs, act=None):
         loginit, logtrans, logobs = self.log_likelihoods(obs, act)
 
         delta = []
@@ -175,27 +148,35 @@ class HMM:
 
         return delta, z
 
-    def estep(self, obs, act):
-        self.loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(self.loglikhds)
-        beta = self.smooth(self.loglikhds)
+    def estep(self, obs, act=None):
+        loglikhds = self.log_likelihoods(obs, act)
+        alpha = self.forward(loglikhds)
+        beta = self.backward(loglikhds)
         gamma = self.marginals(alpha, beta)
-        zeta = self.two_slice(self.loglikhds, alpha, beta)
+        zeta = self.two_slice(loglikhds, alpha, beta)
 
         return gamma, zeta
 
-    def mstep(self, obs, act, gamma, zeta):
+    def mstep(self, gamma, zeta, obs, act=None):
         self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
-        self.transitions.mstep(zeta, obs, act, num_iters=50)
-        self.observations.mstep(obs, act, gamma)
+        self.transitions.mstep(zeta, obs, act, nb_iters=100)
+        self.observations.mstep(gamma, obs, act)
 
-    def em(self, obs, act, nb_iter=50, prec=1e-6, verbose=False):
+    @ensure_args_are_viable_lists
+    def em(self, obs, act=None, nb_iter=50, prec=1e-4, verbose=False):
         lls = []
-        last_ll = - np.inf
 
-        it = 0
-        while it < nb_iter:
+        ll = self.log_probability(obs, act)
+        lls.append(ll)
+        if verbose:
+            print("it=", 0, "ll=", ll)
+
+        last_ll = ll
+
+        it = 1
+        while it <= nb_iter:
             gamma, zeta = self.estep(obs, act)
+            self.mstep(gamma, zeta, obs, act)
 
             ll = self.log_probability(obs, act)
             lls.append(ll)
@@ -205,7 +186,6 @@ class HMM:
             if (ll - last_ll) < prec:
                 break
             else:
-                self.mstep(obs, act, gamma, zeta)
                 last_ll = ll
 
             it += 1
@@ -217,19 +197,129 @@ class HMM:
         self.transitions.permute(perm)
         self.observations.permute(perm)
 
-    def log_norm(self, obs, act):
-        if self.loglikhds is None:
-            self.loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(self.loglikhds)
+    def log_norm(self, obs, act=None):
+        loglikhds = self.log_likelihoods(obs, act)
+        alpha = self.forward(loglikhds)
         return sum([logsumexp(_alpha[-1, :]) for _alpha in alpha])
 
-    def log_probability(self, obs, act):
+    def log_probability(self, obs, act=None):
         return self.log_norm(obs, act) + self.log_priors()
 
-    def mean_observation(self, obs, act):
+    @ensure_args_are_viable_lists
+    def mean_observation(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(loglikhds)
-        beta = self.smooth(loglikhds)
+        alpha = self.forward(loglikhds)
+        beta = self.backward(loglikhds)
         gamma = self.marginals(alpha, beta)
+        return self.observations.smooth(gamma, obs, act)
 
-        return [np.einsum('nk,km->nm', _gamma, self.observations.mu) for _gamma in gamma]
+    def filter(self, obs, act=None):
+        logliklhds = self.log_likelihoods(obs, act)
+        alpha = self.forward(logliklhds)
+        belief = [np.exp(_alpha - logsumexp(_alpha, axis=1, keepdims=True)) for _alpha in alpha]
+        return belief
+
+    def sample(self, act=None, horizon=None, stoch=True):
+        state = []
+        obs = []
+
+        for n in range(len(horizon)):
+            _act = np.zeros((horizon[n], self.dm_act)) if act is None else act[n]
+            _obs = np.zeros((horizon[n], self.dm_obs))
+            _state = np.zeros((horizon[n],), np.int64)
+
+            _state[0] = self.init_state.sample()
+            _obs[0, :] = self.observations.sample(_state[0], x=None, u=None, stoch=stoch)
+            for t in range(1, horizon[n]):
+                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
+
+            state.append(_state)
+            obs.append(_obs)
+
+        return state, obs
+
+    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
+                horizon=None, stoch=True, infer='viterbi'):
+        nxt_state = []
+        nxt_obs = []
+
+        for n in range(len(horizon)):
+            _hist_obs = hist_obs[n]
+            _hist_act = hist_act[n]
+
+            _nxt_act = np.zeros((horizon[n], self.dm_act)) if nxt_act is None else nxt_act[n]
+            _nxt_obs = np.zeros((horizon[n] + 1, self.dm_obs))
+            _nxt_state = np.zeros((horizon[n] + 1,), np.int64)
+
+            if infer == 'viterbi':
+                _, _state_seq = self.viterbi(_hist_obs, _hist_act)
+                _state = _state_seq[0][-1]
+            else:
+                _belief = self.filter(_hist_obs, _hist_act)
+                _state = npr.choice(n=self.nb_states, p=_belief[0][-1, ...])
+
+            _nxt_state[0] = _state
+            _nxt_obs[0, :] = _hist_obs[-1, ...]
+
+            for t in range(horizon[n]):
+                _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
+
+            nxt_state.append(_nxt_state)
+            nxt_obs.append(_nxt_obs)
+
+        return nxt_state, nxt_obs
+
+    def step(self, hist_obs=None, hist_act=None,
+             stoch=True, infer='viterbi'):
+
+        if infer == 'viterbi':
+            _, _state_seq = self.viterbi(hist_obs, hist_act)
+            _state = _state_seq[0][-1]
+        else:
+            _belief = self.filter(hist_obs, hist_act)
+            _state = npr.choice(n=self.nb_states, p=_belief[0][-1, ...])
+
+        _act = hist_act[-1, :]
+        _obs = hist_obs[-1, :]
+
+        nxt_state = self.transitions.sample(_state, _obs, _act)
+        nxt_obs = self.observations.sample(nxt_state, _obs, _act, stoch=stoch)
+        return nxt_state, nxt_obs
+
+    @ensure_args_are_viable_lists
+    def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='viterbi'):
+        from sklearn.metrics import mean_squared_error, r2_score
+
+        mse, norm_mse = [], []
+        for _obs, _act in zip(obs, act):
+            _hist_obs, _hist_act, _nxt_act = [], [], []
+            _target, _prediction = [], []
+
+            _nb_steps = _obs.shape[0] - horizon
+            for t in range(_nb_steps):
+                _hist_obs.append(_obs[:t + 1, :])
+                _hist_act.append(_act[:t + 1, :])
+                _nxt_act.append(_act[t: t + 1 + horizon, :])
+
+            _k = [horizon for _ in range(_nb_steps)]
+            _, _obs_hat = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
+                                       nxt_act=_nxt_act, horizon=_k,
+                                       stoch=stoch, infer=infer)
+
+            for t in range(_nb_steps):
+                _target.append(_obs[t + horizon, :])
+                _prediction.append(_obs_hat[t][-1, :])
+
+            _target = np.vstack(_target)
+            _prediction = np.vstack(_prediction)
+
+            _mse = mean_squared_error(_target, _prediction)
+            mse.append(_mse)
+
+            _norm_mse = r2_score(_target, _prediction,
+                                 multioutput='variance_weighted')
+            norm_mse.append(_norm_mse)
+
+        return np.mean(mse), np.mean(norm_mse)

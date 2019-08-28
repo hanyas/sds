@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: stats
-# @Date: 2019-07-30-21-10
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
 from autograd import numpy as np
 from sds.utils import flatten_to_dim
 
@@ -76,16 +70,21 @@ def multivariate_normal_logpdf(data, mus, Sigmas, mask=None):
     Compute the log probability density of a multivariate Gaussian distribution.
     This will broadcast as long as data, mus, Sigmas have the same (or at
     least compatible) leading dimensions.
+
     Parameters
     ----------
     data : array_like (..., D)
         The points at which to evaluate the log density
+
     mus : array_like (..., D)
         The mean(s) of the Gaussian distribution(s)
+
     Sigmas : array_like (..., D, D)
         The covariances(s) of the Gaussian distribution(s)
+
     mask : array_like (..., D) bool
         Optional mask indicating which entries in the data are observed
+
     Returns
     -------
     lps : array_like (...,)

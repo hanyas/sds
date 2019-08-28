@@ -1,10 +1,10 @@
 import autograd.numpy as np
-import autograd.numpy.random as npr
 
 from sds import HMM
-from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation
+from sds.observations import GaussianObservation
+from sds.observations import AutoRegressiveGaussianObservation
 
-from sds.utils import linear_regression
+from sds.utils import ensure_args_are_viable_lists
 
 
 class ARHMM(HMM):
@@ -12,87 +12,65 @@ class ARHMM(HMM):
     def __init__(self, nb_states, dm_obs, dm_act=0):
         super(ARHMM, self).__init__(nb_states, dm_obs, dm_act)
 
-        # init observation
-        self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs, dm_act=self.dm_act)
-
-        # observations
+        self.init_observation = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
         self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
-        self.loglikhds = None
+    @ensure_args_are_viable_lists
+    def initialize(self, obs, act=None, **kwargs):
+        self.init_observation.initialize(obs, act, kmeans=False)
+        self.transitions.initialize(obs, act)
+        self.observations.initialize(obs, act)
 
-    def sample(self, T, act):
-        obs = []
+    @ensure_args_are_viable_lists
+    def log_likelihoods(self, obs, act=None):
+        loginit = self.init_state.log_init()
+        logtrans = self.transitions.log_transition(obs, act)
+
+        ilog = self.init_observation.log_likelihood([_obs[0, :][None, :] for _obs in obs], None)
+        arlog = self.observations.log_likelihood(obs, act)
+
+        logobs = []
+        for _ilog, _arlog in zip(ilog, arlog):
+            logobs.append(np.vstack((_ilog, _arlog)))
+
+        return [loginit, logtrans, logobs]
+
+    @ensure_args_are_viable_lists
+    def mean_observation(self, obs, act=None):
+        loglikhds = self.log_likelihoods(obs, act)
+        alpha = self.forward(loglikhds)
+        beta = self.backward(loglikhds)
+        gamma = self.marginals(alpha, beta)
+
+        igamma = [_gamma[0, :] for _gamma in gamma]
+        iobs = [_obs[0, :] for _obs in obs]
+        iact = [_act[0, :] for _act in act]
+        imu = self.init_observation.smooth(igamma, iobs, iact)
+
+        armu = self.observations.smooth(gamma, obs, act)
+
+        mu = []
+        for _imu, _armu in zip(imu, armu):
+            mu.append(np.vstack((_imu, _armu)))
+
+        return mu
+
+    def sample(self, act=None, horizon=None, stoch=True):
         state = []
+        obs = []
 
-        N = len(T)
-        for n in range(N):
-            _act = act[n]
-            _obs = np.zeros((T[n], self.dm_obs))
-            _state = np.zeros((T[n], ), np.int64)
+        for n in range(len(horizon)):
+            _act = np.zeros((horizon[n], self.dm_act)) if act is None else act[n]
+            _obs = np.zeros((horizon[n], self.dm_obs))
+            _state = np.zeros((horizon[n],), np.int64)
 
             _state[0] = self.init_state.sample()
-            _obs[0, :] = self.init_observation.sample(z=0)
-            for t in range(1, T[n]):
-                _state[t] = self.transitions.sample(_state[t - 1])
-                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :])
+            _obs[0, :] = self.init_observation.sample(_state[0], x=None, u=None, stoch=stoch)
+            for t in range(1, horizon[n]):
+                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
 
             state.append(_state)
             obs.append(_obs)
 
         return state, obs
-
-    def initialize(self, obs, act, localize=True):
-        self.init_observation.mu = npr.randn(1, self.dm_obs)
-        self.init_observation.cov = np.array([np.eye(self.dm_obs, self.dm_obs)])
-
-        Ts = [_obs.shape[0] for _obs in obs]
-        if localize:
-            from sklearn.cluster import KMeans
-            km = KMeans(self.nb_states)
-            km.fit(np.hstack((np.vstack(obs), np.vstack(act))))
-            zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
-            zs = [z[:-1] for z in zs]
-        else:
-            zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
-
-        aux = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [np.hstack((_obs[t, :], _act[t, :])) for t, _obs, _act in zip(ts, obs, act)]
-            ys = [_obs[t + 1, :] for t, _obs in zip(ts, obs)]
-
-            coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.A[k, ...] = coef_[:, :self.dm_obs]
-            self.observations.B[k, ...] = coef_[:, self.dm_obs:]
-            self.observations.c[k, :] = intercept_
-            aux[k, ...] = np.diag(sigmas)
-
-        self.observations.cov = aux
-
-    def log_likelihoods(self, obs, act):
-        loginit = self.init_state.log_likelihood()
-        logtrans = self.transitions.log_likelihood(obs, act)
-
-        ilog = self.init_observation.log_likelihood([_obs[0, :] for _obs in obs])
-        arlog = self.observations.log_likelihood(obs, act)
-
-        logobs = []
-        for _ilog, _arlog in zip(ilog, arlog):
-            logobs.append(np.vstack((np.repeat(_ilog, self.nb_states), _arlog)))
-
-        return [loginit, logtrans, logobs]
-
-    def mean_observation(self, obs, act):
-        loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(loglikhds)
-        beta = self.smooth(loglikhds)
-        gamma = self.marginals(alpha, beta)
-
-        imu = np.array([self.init_observation.mu for _ in range(self.nb_states)])
-
-        _mean = []
-        for _obs, _act, _gamma in zip(obs, act, gamma):
-            armu = np.array([self.observations.mean(k, _obs[:-1, :], _act[:-1, :self.dm_act]) for k in range(self.nb_states)])
-            _mean.append(np.einsum('nk,knl->nl', _gamma, np.concatenate((imu, armu), axis=1)))
-
-        return _mean

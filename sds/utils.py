@@ -1,7 +1,9 @@
 import autograd.numpy as np
+import autograd.numpy.random as npr
+
 from autograd import grad, value_and_grad
 
-from autograd.scipy.misc import logsumexp
+from autograd.scipy.special import logsumexp
 from autograd.scipy.linalg import block_diag
 
 from autograd.misc import flatten
@@ -10,6 +12,65 @@ from autograd.wrap_util import wraps
 from scipy.optimize import linear_sum_assignment, minimize
 
 from functools import partial
+
+
+def sample_env(env, nb_rollouts, nb_steps, ctl=None):
+    obs, act = [], []
+
+    dm_obs = env.observation_space.shape[0]
+    dm_act = env.action_space.shape[0]
+
+    for n in range(nb_rollouts):
+        _obs = np.empty((nb_steps, dm_obs))
+        _act = np.empty((nb_steps, dm_act))
+
+        x = env.reset()
+
+        for t in range(nb_steps):
+            if ctl is None:
+                u = np.random.uniform(-5., 5., size=(1,))
+            else:
+                u = ctl.actions(x, stoch=True)
+
+            _obs[t, :] = x
+            _act[t, :] = u
+
+            x, r, _, _ = env.step(u)
+
+        obs.append(_obs)
+        act.append(_act)
+
+    return obs, act
+
+
+# list of dicts to dict of lists
+def lod2dol(*dicts):
+    d = {}
+    for dict in dicts:
+        for key in dict:
+            try:
+                d[key].append(dict[key])
+            except KeyError:
+                d[key] = [dict[key]]
+
+    return d
+
+
+def ensure_args_are_viable_lists(f):
+    def wrapper(self, obs, act=None, **kwargs):
+        assert obs is not None
+        obs = [np.atleast_2d(obs)] if not isinstance(obs, (list, tuple)) else obs
+
+        if act is None:
+            act = []
+            for _obs in obs:
+                act.append(np.zeros((_obs.shape[0], self.dm_act)))
+
+        act = [np.atleast_2d(act)] if not isinstance(act, (list, tuple)) else act
+
+        return f(self, obs, act, **kwargs)
+
+    return wrapper
 
 
 def flatten_to_dim(X, d):
@@ -70,7 +131,6 @@ def state_overlap(z1, z2, K1=None, K2=None):
 def permutation(z1, z2, K1=None, K2=None):
     overlap = state_overlap(z1, z2, K1=K1, K2=K2)
     K1, K2 = overlap.shape
-    assert K1 <= K2, "Can only find permutation from more states to fewer"
 
     tmp, perm = linear_sum_assignment(-overlap)
     assert np.all(tmp == np.arange(K1)), "All indices should have been matched!"
@@ -86,16 +146,16 @@ def permutation(z1, z2, K1=None, K2=None):
 def random_rotation(n, theta=None):
     if theta is None:
         # Sample a random, slow rotation
-        theta = 0.5 * np.pi * np.random.rand()
+        theta = 0.5 * np.pi * npr.rand()
 
     if n == 1:
-        return np.random.rand() * np.eye(1)
+        return npr.rand() * np.eye(1)
 
     rot = np.array([[np.cos(theta), -np.sin(theta)],
                     [np.sin(theta), np.cos(theta)]])
     out = np.zeros((n, n))
     out[:2, :2] = rot
-    q = np.linalg.qr(np.random.randn(n, n))[0]
+    q = np.linalg.qr(npr.randn(n, n))[0]
     return q.dot(out).dot(q.T)
 
 
@@ -169,7 +229,7 @@ def logistic_regression(X, y, bias=None, K=None,
 
 def linear_regression(Xs, ys, weights=None,
                       mu0=0, sigmasq0=1,
-                      alpha0=1, beta0=1,
+                      nu0=1, Psi0=1,
                       fit_intercept=True):
 
     Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
@@ -213,21 +273,23 @@ def linear_regression(Xs, ys, weights=None,
         b = 0
 
     # Compute the residual and the posterior variance
-    alpha = alpha0
-    beta = beta0 * np.ones(P)
+    nu = nu0
+    Psi = Psi0 * np.eye(P)
     for X, y, weight in zip(Xs, ys, weights):
         yhat = np.dot(X, W.T) + b
         resid = y - yhat
-        alpha += 0.5 * np.sum(weight)
-        beta += 0.5 * np.sum(weight[:, None] * resid**2, axis=0)
+        nu += np.sum(weight)
+        tmp1 = np.einsum('t,ti,tj->ij', weight, resid, resid)
+        tmp2 = np.sum(weight[:, None, None] * resid[:, :, None] * resid[:, None, :], axis=0)
+        assert np.allclose(tmp1, tmp2)
+        Psi += tmp1
 
-    # Get MAP estimate of posterior mode of precision
-    sigmasq = beta / (alpha + 1e-16)
-
+    # Get MAP estimate of posterior covariance
+    Sigma = Psi / (nu + P + 1)
     if fit_intercept:
-        return W, b, sigmasq
+        return W, b, Sigma
     else:
-        return W, sigmasq
+        return W, Sigma
 
 
 def unflatten_optimizer_step(step):
@@ -251,7 +313,8 @@ def unflatten_optimizer_step(step):
 
 
 @unflatten_optimizer_step
-def adam_step(value_and_grad, x, itr, state=None, step_size=0.001, b1=0.9, b2=0.999, eps=10**-8):
+def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
+              b1=0.9, b2=0.999, eps=10**-8):
     """
     Adam as described in http://arxiv.org/pdf/1412.6980.pdf.
     It's basically RMSprop with momentum and some correction terms.
@@ -266,26 +329,28 @@ def adam_step(value_and_grad, x, itr, state=None, step_size=0.001, b1=0.9, b2=0.
     return x, val, g, (m, v)
 
 
-def _generic_sgd(method, loss, x0, callback=None, num_iters=200, step_size=0.1, mass=0.9, full_output=False):
+def _generic_sgd(method, loss, x0, callback=None, nb_iters=200,
+                 step_size=0.1, mass=0.9, state=None, full_output=False):
     """
     Generic stochastic gradient descent step.
     """
     step = dict(adam=adam_step)[method]
 
     # Initialize outputs
-    x, losses, grads, state = x0, [], [], None
-    for itr in range(num_iters):
+    x, losses, grads = x0, [], []
+    for itr in range(nb_iters):
         x, val, g, state = step(value_and_grad(loss), x, itr, state)
         losses.append(val)
         grads.append(g)
 
     if full_output:
-        return x, losses, grads
+        return x, state
     else:
         return x
 
 
-def _generic_minimize(method, loss, x0, verbose=False, num_iters=1000):
+def _generic_minimize(method, loss, x0, verbose=False, nb_iters=1000,
+                      state=None, full_output=False):
     """
     Minimize a given loss function with scipy.optimize.minimize.
     """
@@ -308,17 +373,15 @@ def _generic_minimize(method, loss, x0, verbose=False, num_iters=1000):
     result = minimize(_objective, _x0, args=(-1,), jac=grad(_objective),
                       method=method,
                       callback=callback if verbose else None,
-                      options=dict(maxiter=num_iters, disp=verbose))
+                      options=dict(maxiter=nb_iters, disp=verbose))
 
-    # if verbose:
-    #     print("{} completed with message: \n{}".format(method, result.message))
-    #
-    # if not result.success:
-    #     warn("{} failed with message:\n{}".format(method, result.message))
-
-    return unflatten(result.x)
+    if full_output:
+        return unflatten(result.x), result
+    else:
+        return unflatten(result.x)
 
 
 # Define optimizers
 adam = partial(_generic_sgd, "adam")
 bfgs = partial(_generic_minimize, "BFGS")
+lbfgs = partial(_generic_minimize, "L-BFGS-B")

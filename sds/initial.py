@@ -1,11 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: initial
-# @Date: 2019-07-30-15-29
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
 from autograd import numpy as np
-from scipy.stats import multinomial as cat
+import autograd.numpy.random as npr
 
 
 class CategoricalInitState:
@@ -16,14 +10,17 @@ class CategoricalInitState:
 
         self.pi = np.ones((self.nb_states, )) / self.nb_states
 
+    def initialize(self, x, u):
+        pass
+
     def sample(self):
-        return np.argmax(cat(1, self.pi).rvs())
+        return npr.choice(self.nb_states, p=self.pi)
 
-    def likelihood(self):
-        return self.pi
+    def maximum(self):
+        return np.argmax(self.pi)
 
-    def log_likelihood(self):
-        return np.log(self.likelihood())
+    def log_init(self):
+        return np.log(self.pi / self.pi.sum())
 
     def log_prior(self):
         return 0.0

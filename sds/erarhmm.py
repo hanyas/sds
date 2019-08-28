@@ -1,132 +1,180 @@
 import autograd.numpy as np
 import autograd.numpy.random as npr
 
-from scipy.special import logsumexp
+from sds import rARHMM
+from sds.observations import LinearGaussianObservation
 
-from sds import HMM
-
-from sds.transitions import RecurrentTransition, RecurrentOnlyTransition, NeuralRecurrentTransition, NeuralRecurrentOnlyTransition
-from sds.observations import GaussianObservation, AutoRegressiveGaussianObservation, AutoRegressiveGaussianExtendedObservation
-
-from sds.utils import linear_regression
+from sds.utils import ensure_args_are_viable_lists
 
 
-class erARHMM(HMM):
+class erARHMM(rARHMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act, type='recurrent'):
-        super(erARHMM, self).__init__(nb_states, dm_obs, dm_act)
+    def __init__(self, nb_states, dm_obs, dm_act, type='recurrent',
+                 learn_dyn=True, learn_ctl=False):
+        super(erARHMM, self).__init__(nb_states, dm_obs, dm_act, type)
 
-        self.type = type
+        self.learn_dyn = learn_dyn
+        self.learn_ctl = learn_ctl
 
-        # init observation
-        self.init_observation = GaussianObservation(nb_states=1, dm_obs=self.dm_obs, dm_act=dm_act)
+        self.controls = LinearGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
-        # transitions
-        if self.type == 'recurrent':
-            self.transitions = RecurrentTransition(self.nb_states, self.dm_obs, self.dm_act, degree=1)
-        elif self.type == 'recurrent-only':
-            self.transitions = RecurrentOnlyTransition(self.nb_states, self.dm_obs, self.dm_act, degree=1)
-        elif self.type == 'neural-recurrent':
-            self.transitions = NeuralRecurrentTransition(self.nb_states, self.dm_obs, self.dm_act, hidden_layer_sizes=(10,))
-        elif self.type == 'neural-recurrent-only':
-            self.transitions = NeuralRecurrentOnlyTransition(self.nb_states, self.dm_obs, self.dm_act, hidden_layer_sizes=(10, ))
+    @ensure_args_are_viable_lists
+    def initialize(self, obs, act=None, **kwargs):
+        super(erARHMM, self).initialize(obs, act, **kwargs)
+        # if self.learn_ctl:
+        #     self.controls.initialize(obs, act, **kwargs)
 
-        # observations
-        self.observations = AutoRegressiveGaussianExtendedObservation(self.nb_states, self.dm_obs, self.dm_act)
+    def log_priors(self):
+        logprior = super(erARHMM, self).log_priors()
+        if self.learn_ctl:
+            logprior += self.controls.log_prior()
+        return logprior
 
-        self.loglikhds = None
+    @ensure_args_are_viable_lists
+    def log_likelihoods(self, obs, act=None):
+        loginit, logtrans, logobs = super(erARHMM, self).log_likelihoods(obs, act)
 
-    def sample(self, T, act=None):
-        act = []
-        obs = []
-        state = []
-
-        N = len(T)
-        for n in range(N):
-            _act = np.zeros((T[n], self.dm_act))
-            _obs = np.zeros((T[n], self.dm_obs))
-            _state = np.zeros((T[n], ), np.int64)
-
-            _state[0] = self.init_state.sample()
-            _obs[0, :] = self.init_observation.sample(z=0)
-            for t in range(1, T[n]):
-                _act[t - 1, :] = self.observations.sample_u(_state[t - 1], _obs[t - 1, :])
-                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
-                _obs[t, :] = self.observations.sample_x(_state[t], _obs[t - 1, :], _act[t - 1, :])
-
-            _act[-1, :] = self.observations.sample_u(_state[-1], _obs[-1, :])
-
-            state.append(_state)
-            obs.append(_obs)
-            act.append(_act)
-
-        return state, obs, act
-
-    def initialize(self, obs, act, localize=True):
-        self.init_observation.mu = npr.randn(1, self.dm_obs)
-        self.init_observation.cov = np.array([np.eye(self.dm_obs, self.dm_obs)])
-
-        Ts = [_obs.shape[0] for _obs in obs]
-        if localize:
-            from sklearn.cluster import KMeans
-            km = KMeans(self.nb_states)
-            km.fit(np.hstack((np.vstack(obs), np.vstack(act))))
-            zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
-            zs = [z[:-1] for z in zs]
+        if self.learn_ctl:
+            total_logobs = []
+            logctl = self.controls.log_likelihood(obs, act)
+            for _logobs, _logctl in zip(logobs, logctl):
+                total_logobs.append(_logobs + _logctl)
+            return [loginit, logtrans, total_logobs]
         else:
-            zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
+            return [loginit, logtrans, logobs]
 
-        aux = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [np.hstack((_obs[t, :], _act[t, :])) for t, _obs, _act in zip(ts, obs, act)]
-            ys = [_obs[t + 1, :] for t, _obs in zip(ts, obs)]
+    def mstep(self, gamma, zeta, obs, act=None):
+        if self.learn_dyn:
+            self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
+            self.transitions.mstep(zeta, obs, act, nb_iters=100)
+            self.observations.mstep(gamma, obs, act)
+        if self.learn_ctl:
+            self.controls.mstep(gamma, obs, act)
 
-            coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.A[k, ...] = coef_[:, :self.dm_obs]
-            self.observations.B[k, ...] = coef_[:, self.dm_obs:]
-            self.observations.c[k, :] = intercept_
-            aux[k, ...] = np.diag(sigmas)
+    def permute(self, perm):
+        super(erARHMM, self).permute(perm)
+        if self.learn_ctl:
+            self.controls.permute(perm)
 
-        self.observations.cov_x = aux
+    @ensure_args_are_viable_lists
+    def mean_observation(self, obs, act=None):
+        if self.learn_ctl:
+            loglikhds = self.log_likelihoods(obs, act)
+            alpha = self.forward(loglikhds)
+            beta = self.backward(loglikhds)
+            gamma = self.marginals(alpha, beta)
 
-        aux = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [_obs[t, :] for t, _obs in zip(ts, obs)]
-            ys = [_act[t, :] for t, _act in zip(ts, act)]
+            mu_obs = self.observations.smooth(gamma, obs, act)
+            mu_ctl = self.controls.smooth(gamma, obs, act)
+            return mu_obs, mu_ctl
+        else:
+            return super(erARHMM, self).mean_observation(obs, act)
 
-            coef_, intercept_, sigmas = linear_regression(xs, ys)
-            self.observations.K[k, ...] = coef_[:, :self.dm_act]
-            self.observations.kff[k, :] = intercept_
-            aux[k, ...] = np.diag(sigmas)
+    def sample(self, act=None, horizon=None, stoch=True):
+        if self.learn_ctl:
+            state = []
+            obs = []
+            act = []
 
-        self.observations.cov_u = aux
+            for n in range(len(horizon)):
+                _state = np.zeros((horizon[n],), np.int64)
+                _obs = np.zeros((horizon[n], self.dm_obs))
+                _act = np.zeros((horizon[n], self.dm_act))
 
-    def log_likelihoods(self, obs, act):
-        loginit = self.init_state.log_likelihood()
-        logtrans = self.transitions.log_likelihood(obs, act)
+                _state[0] = self.init_state.sample()
+                _obs[0, :] = self.init_observation.sample(_state[0], x=None, u=None, stoch=stoch)
+                _act[0, :] = self.controls.sample(_state[0], _obs[0, :], stoch=stoch)
+                for t in range(1, horizon[n]):
+                    _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                    _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
+                    _act[t, :] = self.controls.sample(_state[t], _obs[t, :], stoch=stoch)
 
-        ilog = self.init_observation.log_likelihood([_obs[0, :] for _obs in obs])
-        arlog = self.observations.log_likelihood(obs, act)
+                state.append(_state)
+                obs.append(_obs)
+                act.append(_act)
 
-        logobs = []
-        for _ilog, _arlog in zip(ilog, arlog):
-            logobs.append(np.vstack((np.repeat(_ilog, self.nb_states), _arlog)))
+            return state, obs, act
+        else:
+            return super(erARHMM, self).sample(act, horizon, stoch)
 
-        return [loginit, logtrans, logobs]
+    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
+                horizon=None, stoch=True, infer='viterbi'):
+        if self.learn_ctl:
+            nxt_state = []
+            nxt_obs = []
+            nxt_act = []
 
-    def mean_observation(self, obs, act):
-        loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.filter(loglikhds)
-        beta = self.smooth(loglikhds)
-        gamma = self.marginals(alpha, beta)
+            for n in range(len(horizon)):
+                _hist_obs = hist_obs[n]
+                _hist_act = hist_act[n]
 
-        imu = np.array([self.init_observation.mu for _ in range(self.nb_states)])
+                _nxt_act = np.zeros((horizon[n] + 1, self.dm_act))
+                _nxt_obs = np.zeros((horizon[n] + 1, self.dm_obs))
+                _nxt_state = np.zeros((horizon[n] + 1,), np.int64)
 
-        _mean = []
-        for _obs, _act, _gamma in zip(obs, act, gamma):
-            armu = np.array([self.observations.mean_x(k, _obs[:-1, :], _act[:-1, :self.dm_act]) for k in range(self.nb_states)])
-            _mean.append(np.einsum('nk,knl->nl', _gamma, np.concatenate((imu, armu), axis=1)))
+                if infer == 'viterbi':
+                    _, _state_seq = self.viterbi(_hist_obs, _hist_act)
+                    _state = _state_seq[0][-1]
+                else:
+                    _belief = self.filter(_hist_obs, _hist_act)
+                    _state = npr.choice(n=self.nb_states, p=_belief[0][-1, ...])
 
-        return _mean
+                _nxt_state[0] = _state
+                _nxt_obs[0, :] = _hist_obs[-1, ...]
+                _nxt_act[0, :] = _hist_act[-1, ...]
+
+                for t in range(horizon[n]):
+                    _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                    _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
+                    _nxt_act[t + 1, :] = self.controls.sample(_nxt_state[t + 1], _nxt_obs[t + 1, :], stoch=stoch)
+
+                nxt_state.append(_nxt_state)
+                nxt_obs.append(_nxt_obs)
+                nxt_act.append(_nxt_act)
+
+            return nxt_state, nxt_obs
+        else:
+            return super(erARHMM, self).forcast(hist_obs, hist_act, nxt_act, horizon, stoch, infer)
+
+    def step(self, hist_obs=None, hist_act=None,
+             stoch=True, infer='viterbi'):
+        pass
+
+    @ensure_args_are_viable_lists
+    def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='viterbi'):
+        if not self.learn_ctl:
+            return super(erARHMM, self).kstep_mse(obs, act, horizon=horizon, stoch=stoch, infer=infer)
+        else:
+            from sklearn.metrics import mean_squared_error, r2_score
+
+            mse, norm_mse = [], []
+            for _obs, _act in zip(obs, act):
+                _hist_obs, _hist_act = [], []
+                _target, _prediction = [], []
+
+                _nb_steps = _obs.shape[0] - horizon
+                for t in range(_nb_steps):
+                    _hist_obs.append(_obs[:t + 1, :])
+                    _hist_act.append(_act[:t + 1, :])
+
+                _k = [horizon for _ in range(_nb_steps)]
+
+                _, _obs_hat, _act_hat = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
+                                                     nxt_act=None, horizon=_k,
+                                                     stoch=stoch, infer=infer)
+
+                for t in range(_nb_steps):
+                    _target.append(np.hstack((_obs[t + horizon, :], _act[t + horizon, :])))
+                    _prediction.append(np.hstack((_obs_hat[t][-1, :], _act_hat[t][-1, :])))
+
+                _target = np.vstack(_target)
+                _prediction = np.vstack(_prediction)
+
+                _mse = mean_squared_error(_target, _prediction)
+                mse.append(_mse)
+
+                _norm_mse = r2_score(_target, _prediction,
+                                     multioutput='variance_weighted')
+                norm_mse.append(_norm_mse)
+
+            return np.mean(mse), np.mean(norm_mse)
