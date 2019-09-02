@@ -21,8 +21,8 @@ class erARHMM(rARHMM):
     @ensure_args_are_viable_lists
     def initialize(self, obs, act=None, **kwargs):
         super(erARHMM, self).initialize(obs, act, **kwargs)
-        # if self.learn_ctl:
-        #     self.controls.initialize(obs, act, **kwargs)
+        if self.learn_ctl:
+            self.controls.initialize(obs, act, **kwargs)
 
     def log_priors(self):
         logprior = super(erARHMM, self).log_priors()
@@ -117,7 +117,7 @@ class erARHMM(rARHMM):
                     _state = _state_seq[0][-1]
                 else:
                     _belief = self.filter(_hist_obs, _hist_act)
-                    _state = npr.choice(n=self.nb_states, p=_belief[0][-1, ...])
+                    _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
 
                 _nxt_state[0] = _state
                 _nxt_obs[0, :] = _hist_obs[-1, ...]
@@ -145,7 +145,7 @@ class erARHMM(rARHMM):
         if not self.learn_ctl:
             return super(erARHMM, self).kstep_mse(obs, act, horizon=horizon, stoch=stoch, infer=infer)
         else:
-            from sklearn.metrics import mean_squared_error, r2_score
+            from sklearn.metrics import mean_squared_error, explained_variance_score
 
             mse, norm_mse = [], []
             for _obs, _act in zip(obs, act):
@@ -173,8 +173,8 @@ class erARHMM(rARHMM):
                 _mse = mean_squared_error(_target, _prediction)
                 mse.append(_mse)
 
-                _norm_mse = r2_score(_target, _prediction,
-                                     multioutput='variance_weighted')
+                _norm_mse = explained_variance_score(_target, _prediction,
+                                                     multioutput='variance_weighted')
                 norm_mse.append(_norm_mse)
 
             return np.mean(mse), np.mean(norm_mse)

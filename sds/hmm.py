@@ -123,25 +123,14 @@ class HMM:
             _args = np.zeros((T, self.nb_states), np.int64)
             _z = np.zeros((T, ), np.int64)
 
-            _aux = np.zeros((self.nb_states,))
-            for k in range(self.nb_states):
-                _aux[k] = _logobs[0, k] + loginit[k]
-
-            _delta[0, :] = np.max(_aux, axis=0)
-            _args[0, :] = np.argmax(_delta[0, :], axis=0)
-
-            for t in range(1, T):
-                for j in range(self.nb_states):
-                    for i in range(self.nb_states):
-                        _aux[i] = _delta[t - 1, i] + _logtrans[t - 1, i, j] + _logobs[t, j]
-
-                    _delta[t, j] = np.max(_aux, axis=0)
-                    _args[t, j] = np.argmax(_aux, axis=0)
-
-            # backtrace
-            _z[T - 1] = np.argmax(_delta[T - 1, :], axis=0)
             for t in range(T - 2, -1, -1):
-                _z[t] = _args[t + 1, _z[t + 1]]
+                _aux = _logtrans[t, :] + _delta[t + 1, :] + _logobs[t + 1, :]
+                _delta[t, :] = np.max(_aux, axis=1)
+                _args[t + 1, :] = np.argmax(_aux, axis=1)
+
+            _z[0] = np.argmax(loginit + _delta[0, :] + _logobs[0, :], axis=0)
+            for t in range(1, T):
+                _z[t] = _args[t, _z[t - 1]]
 
             delta.append(_delta)
             z.append(_z)
@@ -257,7 +246,7 @@ class HMM:
                 _state = _state_seq[0][-1]
             else:
                 _belief = self.filter(_hist_obs, _hist_act)
-                _state = npr.choice(n=self.nb_states, p=_belief[0][-1, ...])
+                _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
 
             _nxt_state[0] = _state
             _nxt_obs[0, :] = _hist_obs[-1, ...]
@@ -279,7 +268,7 @@ class HMM:
             _state = _state_seq[0][-1]
         else:
             _belief = self.filter(hist_obs, hist_act)
-            _state = npr.choice(n=self.nb_states, p=_belief[0][-1, ...])
+            _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
 
         _act = hist_act[-1, :]
         _obs = hist_obs[-1, :]
@@ -290,7 +279,7 @@ class HMM:
 
     @ensure_args_are_viable_lists
     def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='viterbi'):
-        from sklearn.metrics import mean_squared_error, r2_score
+        from sklearn.metrics import mean_squared_error, explained_variance_score
 
         mse, norm_mse = [], []
         for _obs, _act in zip(obs, act):
@@ -301,7 +290,7 @@ class HMM:
             for t in range(_nb_steps):
                 _hist_obs.append(_obs[:t + 1, :])
                 _hist_act.append(_act[:t + 1, :])
-                _nxt_act.append(_act[t: t + 1 + horizon, :])
+                _nxt_act.append(_act[t: t + horizon, :])
 
             _k = [horizon for _ in range(_nb_steps)]
             _, _obs_hat = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
@@ -318,8 +307,8 @@ class HMM:
             _mse = mean_squared_error(_target, _prediction)
             mse.append(_mse)
 
-            _norm_mse = r2_score(_target, _prediction,
-                                 multioutput='variance_weighted')
+            _norm_mse = explained_variance_score(_target, _prediction,
+                                                 multioutput='variance_weighted')
             norm_mse.append(_norm_mse)
 
         return np.mean(mse), np.mean(norm_mse)

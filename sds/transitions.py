@@ -6,7 +6,7 @@ from autograd.scipy.stats import dirichlet
 import scipy as sc
 from scipy import special
 
-from sds.utils import bfgs, relu, adam
+from sds.utils import lbfgs, bfgs, adam, relu
 from sds.utils import ensure_args_are_viable_lists
 
 from sklearn.preprocessing import PolynomialFeatures
@@ -67,7 +67,7 @@ class StationaryTransition:
 
 class StickyTransition(StationaryTransition):
 
-    def __init__(self, nb_states, alpha=1, kappa=100):
+    def __init__(self, nb_states, alpha=1, kappa=500):
         super(StickyTransition, self).__init__(nb_states)
 
         self.alpha = alpha
@@ -156,7 +156,7 @@ class RecurrentTransition(StickyTransition):
             obj = _expected_log_zeta(zeta)
             return -obj / T
 
-        self.params = bfgs(_objective, self.params, nb_iters=nb_iters)
+        self.params = lbfgs(_objective, self.params, nb_iters=nb_iters)
 
 
 class NeuralRecurrentTransition(StickyTransition):
@@ -173,7 +173,7 @@ class NeuralRecurrentTransition(StickyTransition):
 
         _stdv = np.sqrt(1. / (self.dm_in + self.nb_states))
         self.weights = [_stdv * npr.randn(m, n) for m, n in zip(layer_sizes[:-1], layer_sizes[1:])]
-        self.biases = [npr.randn(n) for n in layer_sizes[1:]]
+        self.biases = [0. * npr.randn(n) for n in layer_sizes[1:]]
 
         nonlinearities = dict(relu=relu, tanh=np.tanh)
         self.nonlinearity = nonlinearities[nonlinearity]

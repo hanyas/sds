@@ -14,7 +14,7 @@ from scipy.optimize import linear_sum_assignment, minimize
 from functools import partial
 
 
-def sample_env(env, nb_rollouts, nb_steps, ctl=None):
+def sample_env(env, nb_rollouts, nb_steps, ctl=None, max_act=2.):
     obs, act = [], []
 
     dm_obs = env.observation_space.shape[0]
@@ -28,7 +28,7 @@ def sample_env(env, nb_rollouts, nb_steps, ctl=None):
 
         for t in range(nb_steps):
             if ctl is None:
-                u = np.random.uniform(-5., 5., size=(1,))
+                u = 2. * max_act * npr.randn(1, )
             else:
                 u = ctl.actions(x, stoch=True)
 
@@ -329,8 +329,8 @@ def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
     return x, val, g, (m, v)
 
 
-def _generic_sgd(method, loss, x0, callback=None, nb_iters=200,
-                 step_size=0.1, mass=0.9, state=None, full_output=False):
+def _generic_sgd(method, loss, x0, callback=None,
+                 nb_iters=200, state=None, full_output=False):
     """
     Generic stochastic gradient descent step.
     """
