@@ -1,8 +1,6 @@
 import autograd.numpy as np
 import autograd.numpy.random as npr
 
-import warnings
-
 from sds import rARHMM
 from sds.utils import permutation
 
@@ -11,9 +9,6 @@ from hips.plotting.colormaps import gradient_cmap
 
 import seaborn as sns
 
-np.set_printoptions(precision=5, suppress=True)
-
-warnings.simplefilter(action='ignore', category=FutureWarning)
 
 sns.set_style("white")
 sns.set_context("talk")

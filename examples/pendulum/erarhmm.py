@@ -7,7 +7,7 @@ from sds.utils import sample_env
 
 if __name__ == "__main__":
 
-    # np.random.seed(1337)
+    np.random.seed(1337)
 
     import matplotlib.pyplot as plt
 
@@ -28,33 +28,35 @@ if __name__ == "__main__":
 
     env = gym.make('Pendulum-RL-v0')
     env._max_episode_steps = 5000
-    # env.seed(1337)
+    env.seed(1337)
 
-    nb_rollouts, nb_steps = 25, 200
+    nb_rollouts, nb_steps = 20, 200
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
     reps_ctl = pickle.load(open("reps_pendulum_ctl.pkl", "rb"))
-    obs, act = sample_env(env, nb_rollouts, nb_steps, reps_ctl)
+    obs, act = sample_env(env, nb_rollouts, nb_steps)
 
     nb_states = 5
-    erarhmm = erARHMM(nb_states, dm_obs, dm_act, type='neural-recurrent', learn_ctl=False)
+
+    erarhmm = erARHMM(nb_states, dm_obs, dm_act,
+                      type='recurrent', learn_ctl=False)
     erarhmm.initialize(obs, act)
-    lls = erarhmm.em(obs, act, nb_iter=100, prec=0., verbose=True)
+    lls = erarhmm.em(obs, act, nb_iter=50, prec=0., verbose=True)
 
-    plt.figure(figsize=(5, 5))
-    plt.plot(lls)
-    plt.show()
-
-    plt.figure(figsize=(8, 8))
-    _idx = npr.choice(nb_rollouts)
-    _, _sample_obs, _sample_act = erarhmm.sample([act[_idx]], horizon=[100])
-
-    plt.subplot(211)
-    plt.plot(_sample_obs[0])
-    plt.subplot(212)
-    plt.plot(_sample_act[0])
-    plt.show()
+    # plt.figure(figsize=(5, 5))
+    # plt.plot(lls)
+    # plt.show()
+    #
+    # plt.figure(figsize=(8, 8))
+    # _idx = npr.choice(nb_rollouts)
+    # _, _sample_obs, _sample_act = erarhmm.sample([act[_idx]], horizon=[100])
+    #
+    # plt.subplot(211)
+    # plt.plot(_sample_obs[0])
+    # plt.subplot(212)
+    # plt.plot(_sample_act[0])
+    # plt.show()
 
     # _seq = npr.choice(len(obs))
     # _, z = erarhmm.viterbi(obs[_seq], act[_seq])
