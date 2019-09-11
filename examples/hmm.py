@@ -33,7 +33,7 @@ true_ll = true_hmm.log_probability(x)
 hmm = HMM(nb_states=3, dm_obs=2)
 hmm.initialize(x)
 
-lls = hmm.em(x, nb_iter=1000, prec=1.e-8, verbose=True)
+lls = hmm.em(x, nb_iter=1000, prec=0., verbose=True)
 print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
 plt.figure(figsize=(5, 5))

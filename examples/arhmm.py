@@ -29,7 +29,7 @@ true_ll = true_arhmm.log_probability(x)
 arhmm = ARHMM(nb_states=3, dm_obs=2)
 arhmm.initialize(x)
 
-lls = arhmm.em(x, nb_iter=100, prec=1e-4, verbose=True)
+lls = arhmm.em(x, nb_iter=100, prec=0., verbose=True)
 print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
 plt.figure(figsize=(5, 5))

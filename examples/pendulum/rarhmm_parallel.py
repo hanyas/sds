@@ -22,21 +22,14 @@ def create_job(args):
     rarhmm.initialize(_train_obs, _train_act)
     lls = rarhmm.em(_train_obs, _train_act, nb_iter=nb_iter, prec=prec, verbose=False)
 
-    _range = np.arange(nb_rollouts)
-    _mask = np.ones(nb_rollouts, dtype=bool)
-    _mask[_train_choice] = False
-    _test_choice = _range[_mask]
-
-    _test_obs = [obs[i] for i in _test_choice]
-    _test_act = [act[i] for i in _test_choice]
     mse, norm_mse = rarhmm.kstep_mse(obs, act, horizon=25, stoch=False)
-
-    return rarhmm, lls, mse, norm_mse
+    return rarhmm, lls[-1], mse, norm_mse
 
 
 def parallel_em(obs, act, nb_states, type, nb_iter=50, prec=1e-4, nb_jobs=50):
     args = [(obs, act, nb_states, type, nb_iter, prec) for _ in range(nb_jobs)]
-    results = Parallel(n_jobs=nb_jobs, verbose=10, backend='loky')(map(delayed(create_job), args))
+    results = Parallel(n_jobs=-1, verbose=10, backend='loky',
+                       max_nbytes='1000M')(map(delayed(create_job), args))
     rarhmms, lls, mse, norm_mse = list(map(list, zip(*results)))
     return rarhmms, lls, mse, norm_mse
 
@@ -50,6 +43,7 @@ if __name__ == "__main__":
     import rl
 
     env = gym.make('Pendulum-RL-v0')
+    # env = gym.make('Pendulum-RL-v1')
     env._max_episode_steps = 5000
 
     nb_rollouts, nb_steps = 50, 200
@@ -62,15 +56,12 @@ if __name__ == "__main__":
     models, liklhds, mse, norm_mse = parallel_em(obs=obs, act=act,
                                                  nb_states=nb_states,
                                                  type='neural-recurrent',
-                                                 nb_iter=100,
-                                                 prec=1e-4, nb_jobs=100)
-
-    all_models = []
-    for _nmse in norm_mse:
-        all_models.append(_nmse)
-    rarhmm = models[np.argmax(all_models)]
+                                                 nb_iter=150,
+                                                 prec=1e-4, nb_jobs=32)
+    rarhmm = models[np.argmax(norm_mse)]
 
     print("rarhmm, stochastic, neural")
-    print(np.c_[mse, norm_mse])
+    print(np.c_[liklhds, mse, norm_mse])
 
-    pickle.dump(rarhmm, open("rarhmm_pendulum_neural.pkl", "wb"))
+    pickle.dump(rarhmm, open("neural_rarhmm_pendulum_polar.pkl", "wb"))
+    # pickle.dump(rarhmm, open("neural_rarhmm_pendulum_cart.pkl", "wb"))
