@@ -53,8 +53,7 @@ class erARHMM(rARHMM):
 
     def permute(self, perm):
         super(erARHMM, self).permute(perm)
-        if self.learn_ctl:
-            self.controls.permute(perm)
+        self.controls.permute(perm)
 
     @ensure_args_are_viable_lists
     def mean_observation(self, obs, act=None):
@@ -132,19 +131,32 @@ class erARHMM(rARHMM):
                 nxt_obs.append(_nxt_obs)
                 nxt_act.append(_nxt_act)
 
-            return nxt_state, nxt_obs
+            return nxt_state, nxt_obs, nxt_act
         else:
             return super(erARHMM, self).forcast(hist_obs, hist_act, nxt_act, horizon, stoch, infer)
 
-    def step(self, hist_obs=None, hist_act=None,
-             stoch=True, infer='viterbi'):
-        pass
+    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='viterbi'):
+        if self.learn_ctl:
+            if infer == 'viterbi':
+                _, _state_seq = self.viterbi(hist_obs, hist_act)
+                _state = _state_seq[0][-1]
+            else:
+                _belief = self.filter(hist_obs, hist_act)
+                _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
+
+            _act = hist_act[-1, :]
+            _obs = hist_obs[-1, :]
+
+            nxt_state = self.transitions.sample(_state, _obs, _act)
+            nxt_obs = self.observations.sample(nxt_state, _obs, _act, stoch=stoch)
+            nxt_act = self.controls.sample(nxt_state, nxt_obs, stoch=stoch)
+            return nxt_state, nxt_obs, nxt_act
+        else:
+            return super(erARHMM, self).step(hist_obs, hist_act, stoch, infer)
 
     @ensure_args_are_viable_lists
     def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='viterbi'):
-        if not self.learn_ctl:
-            return super(erARHMM, self).kstep_mse(obs, act, horizon=horizon, stoch=stoch, infer=infer)
-        else:
+        if self.learn_ctl:
             from sklearn.metrics import mean_squared_error, explained_variance_score
 
             mse, norm_mse = [], []
@@ -178,3 +190,5 @@ class erARHMM(rARHMM):
                 norm_mse.append(_norm_mse)
 
             return np.mean(mse), np.mean(norm_mse)
+        else:
+            return super(erARHMM, self).kstep_mse(obs, act, horizon=horizon, stoch=stoch, infer=infer)

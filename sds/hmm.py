@@ -25,11 +25,28 @@ class HMM:
         self.transitions = StationaryTransition(self.nb_states)
         self.observations = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
 
+    @property
+    def params(self):
+        return self.init_state.params, \
+               self.transitions.params, \
+               self.observations.params
+
+    @params.setter
+    def params(self, value):
+        self.init_state.params = value[0]
+        self.transitions.params = value[1]
+        self.observations.params = value[2]
+
     @ensure_args_are_viable_lists
     def initialize(self, obs, act=None, **kwargs):
         self.init_state.initialize(obs, act)
         self.transitions.initialize(obs, act)
         self.observations.initialize(obs, act)
+
+    def permute(self, perm):
+        self.init_state.permute(perm)
+        self.transitions.permute(perm)
+        self.observations.permute(perm)
 
     def log_priors(self):
         logprior = 0.0
@@ -44,6 +61,14 @@ class HMM:
         logtrans = self.transitions.log_transition(obs, act)
         logobs = self.observations.log_likelihood(obs, act)
         return [loginit, logtrans, logobs]
+
+    def log_norm(self, obs, act=None):
+        loglikhds = self.log_likelihoods(obs, act)
+        alpha = self.forward(loglikhds)
+        return sum([logsumexp(_alpha[-1, :]) for _alpha in alpha])
+
+    def log_probability(self, obs, act=None):
+        return self.log_norm(obs, act) + self.log_priors()
 
     def forward(self, loglikhds, cython=True):
         loginit, logtrans, logobs = loglikhds
@@ -181,19 +206,6 @@ class HMM:
 
         return lls
 
-    def permute(self, perm):
-        self.init_state.permute(perm)
-        self.transitions.permute(perm)
-        self.observations.permute(perm)
-
-    def log_norm(self, obs, act=None):
-        loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.forward(loglikhds)
-        return sum([logsumexp(_alpha[-1, :]) for _alpha in alpha])
-
-    def log_probability(self, obs, act=None):
-        return self.log_norm(obs, act) + self.log_priors()
-
     @ensure_args_are_viable_lists
     def mean_observation(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
@@ -260,9 +272,7 @@ class HMM:
 
         return nxt_state, nxt_obs
 
-    def step(self, hist_obs=None, hist_act=None,
-             stoch=True, infer='viterbi'):
-
+    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='viterbi'):
         if infer == 'viterbi':
             _, _state_seq = self.viterbi(hist_obs, hist_act)
             _state = _state_seq[0][-1]

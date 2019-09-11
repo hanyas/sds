@@ -1,6 +1,8 @@
 from autograd import numpy as np
 import autograd.numpy.random as npr
 
+from autograd.scipy.special import logsumexp
+
 
 class CategoricalInitState:
 
@@ -8,7 +10,19 @@ class CategoricalInitState:
         self.nb_states = nb_states
         self.reg = reg
 
-        self.pi = np.ones((self.nb_states, )) / self.nb_states
+        self.log_pi = -np.log(self.nb_states) * np.ones(self.nb_states)
+
+    @property
+    def params(self):
+        return tuple([self.log_pi])
+
+    @params.setter
+    def params(self, value):
+        self.log_pi = value[0]
+
+    @property
+    def pi(self):
+        return np.exp(self.log_pi - logsumexp(self.log_pi))
 
     def initialize(self, x, u):
         pass
@@ -20,14 +34,14 @@ class CategoricalInitState:
         return np.argmax(self.pi)
 
     def log_init(self):
-        return np.log(self.pi / self.pi.sum())
+        return self.log_pi - logsumexp(self.log_pi)
 
     def log_prior(self):
         return 0.0
 
     def permute(self, perm):
-        self.pi = self.pi[perm]
+        self.log_pi = self.log_pi[perm]
 
     def mstep(self, w):
-        self.pi = sum([_w for _w in w]) + self.reg
-        self.pi /= np.sum(self.pi)
+        _pi = sum([_w for _w in w]) + self.reg
+        self.log_pi = np.log(_pi / sum(_pi))

@@ -21,6 +21,17 @@ class GaussianObservation:
         self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
 
     @property
+    def params(self):
+        return self.mu, self._sqrt_cov
+
+    @params.setter
+    def params(self, value):
+        self.mu, self._sqrt_cov = value
+
+    def mean(self, z, x=None, u=None):
+        return self.mu[z, :]
+
+    @property
     def cov(self):
         return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
 
@@ -28,9 +39,14 @@ class GaussianObservation:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
 
+    def sample(self, z, x=None, u=None, stoch=True):
+        if stoch:
+            return mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
+        else:
+            return self.mean(z)
+
     def initialize(self, x, u, **kwargs):
         kmeans = kwargs.get('kmeans', True)
-
         if kmeans:
             from sklearn.cluster import KMeans
             _obs = np.concatenate(x)
@@ -46,36 +62,20 @@ class GaussianObservation:
                 _cov[k, ...] = np.cov(np.vstack([_x[0, :] for _x in x]), rowvar=False)
             self.cov = _cov
 
-    # not vectorized
-    def mean(self, z, x, u):
-        return self.mu[z, :]
-
-    # not vectorized
-    def sample(self, z, x, u, stoch=True):
-        mu = self.mu[z, :]
-        if stoch:
-            return mvn(mean=mu, cov=self.cov[z, ...]).rvs()
-        else:
-            return self.mu[z, :]
-
-    def log_likelihood(self, x, u):
-        loglik = []
-        for _x in x:
-            T = _x.shape[0]
-            _loglik = np.zeros((T, self.nb_states))
-            for k in range(self.nb_states):
-                _mu = self.mean(k, x=None, u=None)
-                _loglik[:, k] = multivariate_normal_logpdf(_x, _mu, self.cov[k, ...])
-
-            loglik.append(_loglik)
-        return loglik
+    def permute(self, perm):
+        self.mu = self.mu[perm]
+        self._sqrt_cov = self._sqrt_cov[perm]
 
     def log_prior(self):
         return 0.0
 
-    def permute(self, perm):
-        self.mu = self.mu[perm]
-        self._sqrt_cov = self._sqrt_cov[perm]
+    def log_likelihood(self, x, u):
+        loglik = []
+        for _x in x:
+            _loglik = np.column_stack([multivariate_normal_logpdf(_x, self.mean(k), self.cov[k])
+                                       for k in range(self.nb_states)])
+            loglik.append(_loglik)
+        return loglik
 
     def mstep(self, gamma, x, u):
         _J = np.zeros((self.nb_states, self.dm_obs))
@@ -115,12 +115,29 @@ class LinearGaussianObservation:
         self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
 
     @property
+    def params(self):
+        return self.K, self.kff, self._sqrt_cov
+
+    @params.setter
+    def params(self, value):
+        self.K, self.kff, self._sqrt_cov = value
+
+    def mean(self, z, x):
+        return np.einsum('kh,...h->...k', self.K[z, ...], x) + self.kff[z, ...]
+
+    @property
     def cov(self):
         return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
 
     @cov.setter
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_act))
+
+    def sample(self, z, x, stoch=True):
+        if stoch:
+            return mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
+        else:
+            return self.mean(z, x)
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
@@ -148,37 +165,21 @@ class LinearGaussianObservation:
 
         self.cov = _cov
 
-    # vectorized in x only
-    def mean(self, z, x):
-        return np.einsum('kh,...h->...k', self.K[z, ...], x) + self.kff[z, ...]
-
-    # one sample at a time
-    def sample(self, z, x, stoch=True):
-        mu = self.mean(z, x)
-        if stoch:
-            return mvn(mean=mu, cov=self.cov[z, ...]).rvs()
-        else:
-            return mu
-
-    def log_likelihood(self, x, u):
-        loglik = []
-        for _x, _u in zip(x, u):
-            T = _x.shape[0]
-            _loglik = np.zeros((T, self.nb_states))
-            for k in range(self.nb_states):
-                _mu = self.mean(k, x=_x)
-                _loglik[:, k] = multivariate_normal_logpdf(_u, _mu, self.cov[k, ...])
-
-            loglik.append(_loglik)
-        return loglik
-
-    def log_prior(self):
-        return 0.0
-
     def permute(self, perm):
         self.K = self.K[perm, ...]
         self.kff = self.kff[perm, ...]
         self._sqrt_cov = self._sqrt_cov[perm, ...]
+
+    def log_prior(self):
+        return 0.0
+
+    def log_likelihood(self, x, u):
+        loglik = []
+        for _x, _u in zip(x, u):
+            _loglik = np.column_stack([multivariate_normal_logpdf(_u,  self.mean(k, x=_x), self.cov[k])
+                                       for k in range(self.nb_states)])
+            loglik.append(_loglik)
+        return loglik
 
     def mstep(self, gamma, x, u):
         xs, ys, ws = [], [], []
@@ -254,12 +255,30 @@ class AutoRegressiveGaussianObservation:
         self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
 
     @property
+    def params(self):
+        return self.A, self.B, self.c, self._sqrt_cov
+
+    @params.setter
+    def params(self, value):
+        self.A, self.B, self.c, self._sqrt_cov = value
+
+    def mean(self, z, x, u):
+        return np.einsum('kh,...h->...k', self.A[z, ...], x) +\
+               np.einsum('kh,...h->...k', self.B[z, ...], u) + self.c[z, :]
+
+    @property
     def cov(self):
         return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
 
     @cov.setter
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
+
+    def sample(self, z, x, u, stoch=True):
+        if stoch:
+            return mvn(self.mean(z, x, u), cov=self.cov[z, ...]).rvs()
+        else:
+            return self.mean(z, x, u)
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
@@ -288,39 +307,22 @@ class AutoRegressiveGaussianObservation:
 
         self.cov = _cov
 
-    # vectorized in x and u only
-    def mean(self, z, x, u):
-        return np.einsum('kh,...h->...k', self.A[z, ...], x) +\
-               np.einsum('kh,...h->...k', self.B[z, ...], u) + self.c[z, :]
-
-    # one sample at a time
-    def sample(self, z, x, u, stoch=True):
-        mu = self.mean(z, x, u)
-        if stoch:
-            return mvn(mu, cov=self.cov[z, ...]).rvs()
-        else:
-            return mu
-
-    def log_likelihood(self, x, u):
-        loglik = []
-        for _x, _u in zip(x, u):
-            T = _x.shape[0]
-            _loglik = np.zeros((T - 1, self.nb_states))
-            for k in range(self.nb_states):
-                _mu = self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act])
-                _loglik[:, k] = multivariate_normal_logpdf(_x[1:, :], _mu, self.cov[k, ...])
-
-            loglik.append(_loglik)
-        return loglik
-
-    def log_prior(self):
-        return 0.0
-
     def permute(self, perm):
         self.A = self.A[perm, ...]
         self.B = self.B[perm, ...]
         self.c = self.c[perm, :]
         self._sqrt_cov = self._sqrt_cov[perm, ...]
+
+    def log_prior(self):
+        return 0.0
+
+    def log_likelihood(self, x, u):
+        loglik = []
+        for _x, _u in zip(x, u):
+            _loglik = np.column_stack([multivariate_normal_logpdf(_x[1:, :], self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]), self.cov[k])
+                                       for k in range(self.nb_states)])
+            loglik.append(_loglik)
+        return loglik
 
     def mstep(self, gamma, x, u):
         xs, ys, ws = [], [], []
