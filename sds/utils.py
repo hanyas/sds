@@ -12,9 +12,17 @@ from autograd.wrap_util import wraps
 from scipy.optimize import linear_sum_assignment, minimize
 
 from functools import partial
+from itertools import islice
+import random
 
 
-def sample_env(env, nb_rollouts, nb_steps, ctl=None, max_act=2.):
+def batches(batch_size, data_size):
+    idx_all = random.sample(range(data_size), data_size)
+    idx_iter = iter(idx_all)
+    yield from iter(lambda: list(islice(idx_iter, batch_size)), [])
+
+
+def sample_env(env, nb_rollouts, nb_steps, ctl=None, max_act=2.5):
     obs, act = [], []
 
     dm_obs = env.observation_space.shape[0]
@@ -74,26 +82,6 @@ def ensure_args_are_viable_lists(f):
 
 
 def flatten_to_dim(X, d):
-    """
-    Flatten an array of dimension k + d into an array of dimension 1 + d.
-    Example:
-        X = npr.rand(10, 5, 2, 2)
-        flatten_to_dim(X, 4).shape # (10, 5, 2, 2)
-        flatten_to_dim(X, 3).shape # (10, 5, 2, 2)
-        flatten_to_dim(X, 2).shape # (50, 2, 2)
-        flatten_to_dim(X, 1).shape # (100, 2)
-    Parameters
-    ----------
-    X : array_like
-        The array to be flattened.  Must be at least d dimensional
-    d : int (> 0)
-        The number of dimensions to retain.  All leading dimensions are flattened.
-    Returns
-    -------
-    flat_X : array_like
-        The input X flattened into an array dimension d (if X.ndim == d)
-        or d+1 (if X.ndim > d)
-    """
     assert X.ndim >= d
     assert d > 0
     return np.reshape(X[None, ...], (-1,) + X.shape[-d:])
@@ -315,13 +303,10 @@ def unflatten_optimizer_step(step):
 @unflatten_optimizer_step
 def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
               b1=0.9, b2=0.999, eps=10**-8):
-    """
-    Adam as described in http://arxiv.org/pdf/1412.6980.pdf.
-    It's basically RMSprop with momentum and some correction terms.
-    """
+
     m, v = (np.zeros(len(x)), np.zeros(len(x))) if state is None else state
     val, g = value_and_grad(x, itr)
-    m = (1 - b1) * g + b1 * m    # First  moment estimate.
+    m = (1 - b1) * g + b1 * m         # First  moment estimate.
     v = (1 - b2) * (g**2) + b2 * v    # Second moment estimate.
     mhat = m / (1 - b1**(itr + 1))    # Bias correction.
     vhat = v / (1 - b2**(itr + 1))
@@ -329,11 +314,8 @@ def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
     return x, val, g, (m, v)
 
 
-def _generic_sgd(method, loss, x0, callback=None,
-                 nb_iters=200, state=None, full_output=False):
-    """
-    Generic stochastic gradient descent step.
-    """
+def _generic_sgd(method, loss, x0,  nb_iters=200, state=None, full_output=False):
+
     step = dict(adam=adam_step)[method]
 
     # Initialize outputs
@@ -349,12 +331,8 @@ def _generic_sgd(method, loss, x0, callback=None,
         return x
 
 
-def _generic_minimize(method, loss, x0, verbose=False, nb_iters=1000,
-                      state=None, full_output=False):
-    """
-    Minimize a given loss function with scipy.optimize.minimize.
-    """
-    # Flatten the loss
+def _generic_minimize(method, loss, x0, verbose=False, nb_iters=1000, full_output=False):
+
     _x0, unflatten = flatten(x0)
     _objective = lambda x_flat, itr: loss(unflatten(x_flat), itr)
 
