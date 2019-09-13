@@ -16,7 +16,7 @@ class rARHMM(ARHMM):
                                                    self.dm_act, degree=3)
         elif self.type == 'neural-recurrent':
             self.transitions = NeuralRecurrentTransition(self.nb_states, self.dm_obs,
-                                                         self.dm_act, hidden_layer_sizes=(25, ))
+                                                         self.dm_act, hidden_layer_sizes=(10, ))
 
         self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs,
                                                               self.dm_act)

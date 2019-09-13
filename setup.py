@@ -1,11 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: setup.py
-# @Date: 2019-06-05-19-15
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
 # python setup.py build_ext --inplace
+
 from distutils.core import setup
 from distutils.extension import Extension
 from Cython.Build import cythonize

@@ -96,71 +96,192 @@ class StickyTransition(StationaryTransition):
         self.logmat = np.log(_mat)
 
 
-class RecurrentTransition(StickyTransition):
+# class RecurrentTransition(StickyTransition):
+#
+#     def __init__(self, nb_states, dm_obs, dm_act, degree=1):
+#         super(RecurrentTransition, self).__init__(nb_states)
+#
+#         self.dm_obs = dm_obs
+#         self.dm_act = dm_act
+#
+#         self.degree = degree
+#
+#         self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree)) - 1
+#         self.basis = PolynomialFeatures(self.degree, include_bias=False)
+#
+#         self.coef = 0. * npr.randn(self.nb_states, self.nb_feat)
+#
+#     @property
+#     def params(self):
+#         return super(RecurrentTransition, self).params + (self.coef, )
+#
+#     @params.setter
+#     def params(self, value):
+#         self.coef = value[-1]
+#         super(RecurrentTransition, self.__class__).params.fset(self, value[:-1])
+#
+#     def sample(self, z, x, u):
+#         _mat = np.squeeze(np.exp(self.log_transition(x, u)[0] + self.reg))
+#         return npr.choice(self.nb_states, p=_mat[z, :])
+#
+#     def maximum(self, z, x, u):
+#         mat = np.squeeze(np.exp(self.log_transition(x, u)[0] + self.reg))
+#         return np.argmax(mat[z, :])
+#
+#     def permute(self, perm):
+#         super(RecurrentTransition, self).permute(perm)
+#         self.coef = self.coef[perm, :]
+#
+#     @ensure_args_are_viable_lists
+#     def log_transition(self, x, u):
+#         logtrans = []
+#         for _x, _u in zip(x, u):
+#             T = np.maximum(len(_x) - 1, 1)
+#             _logtrans = np.tile(self.logmat[None, :, :], (T, 1, 1))
+#
+#             _in = np.hstack((_x[:T, :], _u[:T, :self.dm_act]))
+#             _logtrans += (self.basis.fit_transform(_in) @ self.coef.T)[:, None, :]
+#
+#             logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
+#
+#         return logtrans
+#
+#     def mstep(self, zeta, x, u, nb_iters=100):
+#
+#         def _expected_log_zeta(zeta):
+#             elbo = self.log_prior()
+#             logtrans = self.log_transition(x, u)
+#             for _slice, _logtrans in zip(zeta, logtrans):
+#                 elbo += np.sum(_slice * _logtrans)
+#             return elbo
+#
+#         def _objective(params, itr):
+#             self.params = params
+#             obj = _expected_log_zeta(zeta)
+#             return - obj
+#
+#         self.params = lbfgs(_objective, self.params, nb_iters=nb_iters)
 
-    def __init__(self, nb_states, dm_obs, dm_act, degree=1):
-        super(RecurrentTransition, self).__init__(nb_states)
+
+class RecurrentTransition:
+    def __init__(self, nb_states, dm_obs, dm_act, degree=3):
+
+        self.nb_states = nb_states
 
         self.dm_obs = dm_obs
         self.dm_act = dm_act
 
         self.degree = degree
+        self.rpr = RecurrentPolyRegressor(self.nb_states, self.dm_obs,
+                                          self.dm_act, self.degree)
 
-        self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree)) - 1
-        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+    @property
+    def logmat(self):
+        return to_npy(self.rpr.logmat.data)
 
-        self.coef = 0. * npr.randn(self.nb_states, self.nb_feat)
+    @logmat.setter
+    def logmat(self, value):
+        self.rpr.logmat.data = to_torch(value)
+
+    @property
+    def coef(self):
+        return to_npy(self.rpr.coef.data)
+
+    @coef.setter
+    def coef(self, value):
+        self.rpr.coef.data = to_torch(value)
 
     @property
     def params(self):
-        return super(RecurrentTransition, self).params + (self.coef, )
+        return tuple([self.logmat, self.coef])
 
     @params.setter
     def params(self, value):
-        self.coef = value[-1]
-        super(RecurrentTransition, self.__class__).params.fset(self, value[:-1])
+        self.logmat = value[0]
+        self.coef = value[1]
+
+    def initialize(self, x, u, **kwargs):
+        pass
 
     def sample(self, z, x, u):
-        _mat = np.squeeze(np.exp(self.log_transition(x, u)[0] + self.reg))
-        return npr.choice(self.nb_states, p=_mat[z, :])
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return npr.choice(self.nb_states, p=mat[z, :])
 
     def maximum(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0] + self.reg))
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
         return np.argmax(mat[z, :])
 
     def permute(self, perm):
-        super(RecurrentTransition, self).permute(perm)
+        self.logmat = self.logmat[np.ix_(perm, perm)]
         self.coef = self.coef[perm, :]
+
+    def log_prior(self):
+        return 0.
 
     @ensure_args_are_viable_lists
     def log_transition(self, x, u):
         logtrans = []
         for _x, _u in zip(x, u):
             T = np.maximum(len(_x) - 1, 1)
-            _logtrans = np.tile(self.logmat[None, :, :], (T, 1, 1))
-
             _in = np.hstack((_x[:T, :], _u[:T, :self.dm_act]))
-            _logtrans += (self.basis.fit_transform(_in) @ self.coef.T)[:, None, :]
-
+            _logtrans = to_npy(self.rpr.forward(to_torch(_in)))
             logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
-
         return logtrans
 
     def mstep(self, zeta, x, u, nb_iters=100):
+        xu = []
+        for _x, _u in zip(x, u):
+            xu.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act])))
 
-        def _expected_log_zeta(zeta):
-            elbo = self.log_prior()
-            logtrans = self.log_transition(x, u)
-            for _slice, _logtrans in zip(zeta, logtrans):
-                elbo += np.sum(_slice * _logtrans)
-            return elbo
+        self.rpr.fit(to_torch(np.vstack(zeta)), to_torch(np.vstack(xu)), nb_iters)
 
-        def _objective(params, itr):
-            self.params = params
-            obj = _expected_log_zeta(zeta)
-            return - obj
 
-        self.params = lbfgs(_objective, self.params, nb_iters=nb_iters)
+class RecurrentPolyRegressor(nn.Module):
+    def __init__(self, nb_states, dm_obs, dm_act, degree=3):
+        super(RecurrentPolyRegressor, self).__init__()
+
+        self.nb_states = nb_states
+
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+
+        self.degree = degree
+
+        self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree))
+        self.basis = PolynomialFeatures(self.degree, include_bias=True)
+
+        self.coef = nn.Parameter(1e-4 * torch.randn(self.nb_states, self.nb_feat))
+
+        _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
+        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        self.logmat = nn.Parameter(torch.log(_mat))
+
+        self.optim = None
+
+    def forward(self, xu):
+        _feat = to_torch(self.basis.fit_transform(to_npy(xu)))
+        out = torch.mm(_feat, torch.transpose(self.coef, 0, 1))
+        _logtrans = self.logmat[None, :, :] + out[:, None, :]
+        return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
+
+    def elbo(self, zeta, xu):
+        logtrans = self.forward(xu)
+        return torch.sum(zeta * logtrans)
+
+    def fit(self, zeta, xu, nb_iter=100, batch_size=1024, lr=1.e-3):
+        self.optim = Adam(self.parameters(), lr=lr)
+
+        for n in range(nb_iter):
+            # for batch in batches(batch_size, xu.shape[0]):
+            for batch in batches(xu.shape[0], xu.shape[0]):
+                self.optim.zero_grad()
+                loss = - self.elbo(zeta[batch], xu[batch])
+                loss.backward()
+                self.optim.step()
+
+            # if n % 10 == 0:
+            #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
+            #     print("Loss: {:.4f}".format(loss))
 
 
 # class NeuralRecurrentTransition(StickyTransition):
@@ -349,7 +470,8 @@ class RecurrentNeuralRegressor(nn.Module):
         _logtrans = self.logmat[None, :, :] + out[:, None, :]
         return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
 
-    def elbo(self, zeta, logtrans):
+    def elbo(self, zeta, xu):
+        logtrans = self.forward(xu)
         return torch.sum(zeta * logtrans)
 
     def fit(self, zeta, xu, nb_iter=100, batch_size=1024, lr=1.e-3):
@@ -359,8 +481,7 @@ class RecurrentNeuralRegressor(nn.Module):
             # for batch in batches(batch_size, xu.shape[0]):
             for batch in batches(xu.shape[0], xu.shape[0]):
                 self.optim.zero_grad()
-                logtrans = self.forward(xu[batch])
-                loss = - self.elbo(zeta[batch], logtrans)
+                loss = - self.elbo(zeta[batch], xu[batch])
                 loss.backward()
                 self.optim.step()
 
