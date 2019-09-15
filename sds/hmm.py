@@ -188,14 +188,7 @@ class HMM:
 
     @ensure_args_are_viable_lists
     def em(self, obs, act=None, nb_iter=50, prec=1e-4, verbose=False,
-           init_mstep_kwargs=None, trans_mstep_kwargs=None, obs_mstep_kwargs=None):
-
-        if init_mstep_kwargs is None:
-            init_mstep_kwargs = {}
-        if trans_mstep_kwargs is None:
-            trans_mstep_kwargs = {}
-        if obs_mstep_kwargs is None:
-            obs_mstep_kwargs = {}
+           init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={}):
 
         lls = []
 
