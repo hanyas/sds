@@ -2,6 +2,7 @@ import autograd.numpy as np
 import autograd.numpy.random as npr
 
 from scipy.stats import multivariate_normal as mvn
+from scipy.stats import invwishart as invw
 
 from sds.utils import random_rotation
 from sds.utils import linear_regression
@@ -11,10 +12,12 @@ from sds.stats import multivariate_normal_logpdf
 
 class GaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, reg=1e-8):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
+
+        self.prior = prior
         self.reg = reg
 
         self.mu = npr.randn(self.nb_states, self.dm_obs)
@@ -67,7 +70,10 @@ class GaussianObservation:
         self._sqrt_cov = self._sqrt_cov[perm]
 
     def log_prior(self):
-        return 0.0
+        lp = 0.
+        if self.prior:
+            pass
+        return lp
 
     def log_likelihood(self, x, u):
         loglik = []
@@ -77,7 +83,7 @@ class GaussianObservation:
             loglik.append(_loglik)
         return loglik
 
-    def mstep(self, gamma, x, u):
+    def mstep(self, gamma, x, u, **kwargs):
         _J = np.zeros((self.nb_states, self.dm_obs))
         _h = np.zeros((self.nb_states, self.dm_obs))
         for _x, _w in zip(x, gamma):
@@ -103,10 +109,12 @@ class GaussianObservation:
 
 class LinearGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, reg=1e-8):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
+
+        self.prior = prior
         self.reg = reg
 
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_obs)
@@ -171,7 +179,14 @@ class LinearGaussianObservation:
         self._sqrt_cov = self._sqrt_cov[perm, ...]
 
     def log_prior(self):
-        return 0.0
+        lp = 0.
+        if self.prior:
+            for k in range(self.nb_states):
+                coef_ = np.column_stack((self.K[k, ...], self.kff[k, ...])).flatten()
+                lp += mvn(mean=self.prior['mu0'] * np.zeros((coef_.shape[0], )),
+                          cov=self.prior['sigma0'] * np.eye(coef_.shape[0])).logpdf(coef_)\
+                      + invw(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act)).logpdf(self.cov[k, ...])
+        return lp
 
     def log_likelihood(self, x, u):
         loglik = []
@@ -181,49 +196,77 @@ class LinearGaussianObservation:
             loglik.append(_loglik)
         return loglik
 
-    def mstep(self, gamma, x, u):
+    def mstep(self, gamma, x, u, **kwargs):
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, gamma):
             xs.append(np.hstack((_x, np.ones((_x.shape[0], 1)))))
             ys.append(_u)
             ws.append(_w)
 
-        _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs), self.reg * np.ones(1)))
-        _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
-        _h = np.zeros((self.nb_states, self.dm_obs + 1, self.dm_act))
+        _cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
+        for k in range(self.nb_states):
+            coef_, sigma = linear_regression(Xs=np.vstack(xs), ys=np.vstack(ys),
+                                             weights=np.vstack(ws)[:, k], fit_intercept=False,
+                                             **self.prior)
+            self.K[k, ...] = coef_[:, :self.dm_obs]
+            self.kff[k, ...] = coef_[:, -1]
+            _cov[k, ...] = sigma
 
-        # solving p = (xT w x)^-1 xT w y
-        for _x, _y, _w in zip(xs, ys, ws):
-            for k in range(self.nb_states):
-                wx = _x * _w[:, k:k + 1]
-                _J[k] += np.dot(wx.T, _x)
-                _h[k] += np.dot(wx.T, _y)
-
-        mu = np.linalg.solve(_J, _h)
-        self.K = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
-        self.kff = mu[:, -1, :]
-
-        sqerr = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        weight = self.reg * np.ones(self.nb_states)
-        for _x, _y, _w in zip(xs, ys, ws):
-            yhat = np.matmul(_x[None, :, :], mu)
-            resid = _y[None, :, :] - yhat
-            sqerr += np.einsum('tk,kti,ktj->kij', _w, resid, resid)
-            weight += np.sum(_w, axis=0)
-
-        _cov = sqerr / weight[:, None, None]
-
-        usage = sum([_gamma.sum(0) for _gamma in gamma])
-        unused = np.where(usage < 1)[0]
-        used = np.where(usage > 1)[0]
-        if len(unused) > 0:
-            for k in unused:
-                i = npr.choice(used)
-                self.K[k] = self.K[i] + 0.01 * npr.randn(*self.K[i].shape)
-                self.kff[k] = self.kff[i] + 0.01 * npr.randn(*self.kff[i].shape)
-                _cov[k] = _cov[i]
+        # usage = sum([_gamma.sum(0) for _gamma in gamma])
+        # unused = np.where(usage < 1)[0]
+        # used = np.where(usage > 1)[0]
+        # if len(unused) > 0:
+        #     for k in unused:
+        #         i = npr.choice(used)
+        #         self.K[k] = self.K[i] + 0.01 * npr.randn(*self.K[i].shape)
+        #         self.kff[k] = self.kff[i] + 0.01 * npr.randn(*self.kff[i].shape)
+        #         _cov[k] = _cov[i]
 
         self.cov = _cov
+
+    # def mstep(self, gamma, x, u, **kwargs):
+    #     xs, ys, ws = [], [], []
+    #     for _x, _u, _w in zip(x, u, gamma):
+    #         xs.append(np.hstack((_x, np.ones((_x.shape[0], 1)))))
+    #         ys.append(_u)
+    #         ws.append(_w)
+    #
+    #     _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs), self.reg * np.ones(1)))
+    #     _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
+    #     _h = np.zeros((self.nb_states, self.dm_obs + 1, self.dm_act))
+    #
+    #     # solving p = (xT w x)^-1 xT w y
+    #     for _x, _y, _w in zip(xs, ys, ws):
+    #         for k in range(self.nb_states):
+    #             wx = _x * _w[:, k:k + 1]
+    #             _J[k] += np.dot(wx.T, _x)
+    #             _h[k] += np.dot(wx.T, _y)
+    #
+    #     mu = np.linalg.solve(_J, _h)
+    #     self.K = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
+    #     self.kff = mu[:, -1, :]
+    #
+    #     sqerr = np.zeros((self.nb_states, self.dm_act, self.dm_act))
+    #     weight = self.reg * np.ones(self.nb_states)
+    #     for _x, _y, _w in zip(xs, ys, ws):
+    #         yhat = np.matmul(_x[None, :, :], mu)
+    #         resid = _y[None, :, :] - yhat
+    #         sqerr += np.einsum('tk,kti,ktj->kij', _w, resid, resid)
+    #         weight += np.sum(_w, axis=0)
+    #
+    #     _cov = sqerr / weight[:, None, None]
+    #
+    #     usage = sum([_gamma.sum(0) for _gamma in gamma])
+    #     unused = np.where(usage < 1)[0]
+    #     used = np.where(usage > 1)[0]
+    #     if len(unused) > 0:
+    #         for k in unused:
+    #             i = npr.choice(used)
+    #             self.K[k] = self.K[i] + 0.01 * npr.randn(*self.K[i].shape)
+    #             self.kff[k] = self.kff[i] + 0.01 * npr.randn(*self.kff[i].shape)
+    #             _cov[k] = _cov[i]
+    #
+    #     self.cov = _cov
 
     def smooth(self, gamma, x, u):
         mean = []
@@ -237,10 +280,12 @@ class LinearGaussianObservation:
 
 class AutoRegressiveGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act=0, reg=1e-8):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
+
+        self.prior = prior
         self.reg = reg
 
         self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
@@ -314,7 +359,15 @@ class AutoRegressiveGaussianObservation:
         self._sqrt_cov = self._sqrt_cov[perm, ...]
 
     def log_prior(self):
-        return 0.0
+        lp = 0.
+        if self.prior:
+            for k in range(self.nb_states):
+                coef_ = np.column_stack((self.A[k, ...], self.B[k, ...], self.c[k, ...])).flatten()
+                lp += mvn(mean=self.prior['mu0'] * np.zeros((coef_.shape[0], )),
+                          cov=self.prior['sigma0'] * np.eye(coef_.shape[0])).logpdf(coef_)\
+                      + invw(self.prior['nu0'],
+                             self.prior['psi0'] * np.eye(self.dm_obs)).logpdf(self.cov[k, ...])
+        return lp
 
     def log_likelihood(self, x, u):
         loglik = []
@@ -324,52 +377,82 @@ class AutoRegressiveGaussianObservation:
             loglik.append(_loglik)
         return loglik
 
-    def mstep(self, gamma, x, u):
+    def mstep(self, gamma, x, u, **kwargs):
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, gamma):
             xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
             ys.append(_x[1:, :])
             ws.append(_w[1:, :])
 
-        _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs),
-                                  self.reg * np.ones(self.dm_act),
-                                  self.reg * np.ones(1)))
-        _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
-        _h = np.zeros((self.nb_states, self.dm_obs + self.dm_act + 1, self.dm_obs))
+        _cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        for k in range(self.nb_states):
+            coef_, sigma = linear_regression(Xs=np.vstack(xs), ys=np.vstack(ys),
+                                             weights=np.vstack(ws)[:, k], fit_intercept=False,
+                                             **self.prior)
+            self.A[k, ...] = coef_[:, :self.dm_obs]
+            self.B[k, ...] = coef_[:, self.dm_obs:self.dm_obs + self.dm_act]
+            self.c[k, ...] = coef_[:, -1]
+            _cov[k, ...] = sigma
 
-        for _x, _y, _w in zip(xs, ys, ws):
-            for k in range(self.nb_states):
-                wx = _x * _w[:, k:k + 1]
-                _J[k] += np.dot(wx.T, _x)
-                _h[k] += np.dot(wx.T, _y)
-
-        mu = np.linalg.solve(_J, _h)
-        self.A = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
-        self.B = np.swapaxes(mu[:, self.dm_obs:self.dm_obs + self.dm_act, :], 1, 2)
-        self.c = mu[:, -1, :]
-
-        sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        weight = self.reg * np.ones(self.nb_states)
-        for _x, _y, _w in zip(xs, ys, ws):
-            yhat = np.matmul(_x[None, :, :], mu)
-            resid = _y[None, :, :] - yhat
-            sqerr += np.einsum('tk,kti,ktj->kij', _w, resid, resid)
-            weight += np.sum(_w, axis=0)
-
-        _cov = sqerr / weight[:, None, None]
-
-        usage = sum([_gamma.sum(0) for _gamma in gamma])
-        unused = np.where(usage < 1)[0]
-        used = np.where(usage > 1)[0]
-        if len(unused) > 0:
-            for k in unused:
-                i = npr.choice(used)
-                self.A[k] = self.A[i] + 0.01 * npr.randn(*self.A[i].shape)
-                self.B[k] = self.B[i] + 0.01 * npr.randn(*self.B[i].shape)
-                self.c[k] = self.c[i] + 0.01 * npr.randn(*self.c[i].shape)
-                _cov[k] = _cov[i]
+        # usage = sum([_gamma.sum(0) for _gamma in gamma])
+        # unused = np.where(usage < 1)[0]
+        # used = np.where(usage > 1)[0]
+        # if len(unused) > 0:
+        #     for k in unused:
+        #         i = npr.choice(used)
+        #         self.A[k] = self.A[i] + 0.01 * npr.randn(*self.A[i].shape)
+        #         self.B[k] = self.B[i] + 0.01 * npr.randn(*self.B[i].shape)
+        #         self.c[k] = self.c[i] + 0.01 * npr.randn(*self.c[i].shape)
+        #         _cov[k] = _cov[i]
 
         self.cov = _cov
+
+    # def mstep(self, gamma, x, u, **kwargs):
+    #     xs, ys, ws = [], [], []
+    #     for _x, _u, _w in zip(x, u, gamma):
+    #         xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
+    #         ys.append(_x[1:, :])
+    #         ws.append(_w[1:, :])
+    #
+    #     _J_diag = np.concatenate((self.reg * np.ones(self.dm_obs),
+    #                               self.reg * np.ones(self.dm_act),
+    #                               self.reg * np.ones(1)))
+    #     _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
+    #     _h = np.zeros((self.nb_states, self.dm_obs + self.dm_act + 1, self.dm_obs))
+    #
+    #     for _x, _y, _w in zip(xs, ys, ws):
+    #         for k in range(self.nb_states):
+    #             wx = _x * _w[:, k:k + 1]
+    #             _J[k] += np.dot(wx.T, _x)
+    #             _h[k] += np.dot(wx.T, _y)
+    #
+    #     mu = np.linalg.solve(_J, _h)
+    #     self.A = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
+    #     self.B = np.swapaxes(mu[:, self.dm_obs:self.dm_obs + self.dm_act, :], 1, 2)
+    #     self.c = mu[:, -1, :]
+    #
+    #     sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+    #     weight = self.reg * np.ones(self.nb_states)
+    #     for _x, _y, _w in zip(xs, ys, ws):
+    #         yhat = np.matmul(_x[None, :, :], mu)
+    #         resid = _y[None, :, :] - yhat
+    #         sqerr += np.einsum('tk,kti,ktj->kij', _w, resid, resid)
+    #         weight += np.sum(_w, axis=0)
+    #
+    #     _cov = sqerr / weight[:, None, None]
+    #
+    #     usage = sum([_gamma.sum(0) for _gamma in gamma])
+    #     unused = np.where(usage < 1)[0]
+    #     used = np.where(usage > 1)[0]
+    #     if len(unused) > 0:
+    #         for k in unused:
+    #             i = npr.choice(used)
+    #             self.A[k] = self.A[i] + 0.01 * npr.randn(*self.A[i].shape)
+    #             self.B[k] = self.B[i] + 0.01 * npr.randn(*self.B[i].shape)
+    #             self.c[k] = self.c[i] + 0.01 * npr.randn(*self.c[i].shape)
+    #             _cov[k] = _cov[i]
+    #
+    #     self.cov = _cov
 
     def smooth(self, gamma, x, u):
         mean = []
@@ -379,3 +462,85 @@ class AutoRegressiveGaussianObservation:
                 _mu[:, k, :] = self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act])
             mean.append(np.einsum('nk,nkl->nl', _gamma[1:, ...], _mu))
         return mean
+
+
+class AutoRegressiveGaussianDynamicsAndControl:
+    def __init__(self, nb_states, dm_obs, dm_act,
+                 prior, learn_dyn=True, learn_ctl=False, reg=1e-32):
+        self.nb_states = nb_states
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+
+        self.prior = prior
+        self.reg = reg
+
+        self.learn_dyn = learn_dyn
+        self.learn_ctl = learn_ctl
+
+        self.dynamics = AutoRegressiveGaussianObservation(self.nb_states,
+                                                          self.dm_obs, self.dm_act,
+                                                          prior=self.prior['dynamics_prior'],
+                                                          reg=self.reg)
+
+        self.controls = LinearGaussianObservation(self.nb_states,
+                                                  self.dm_obs, self.dm_act,
+                                                  prior=self.prior['control_prior'],
+                                                  reg=self.reg)
+
+    def learnables(self, values):
+        self.learn_dyn = values[0]
+        self.learn_ctl = values[1]
+
+    @property
+    def params(self):
+        return self.dynamics.params, self.controls.params
+
+    @params.setter
+    def params(self, value):
+        self.dynamics.params = value[0]
+        self.controls.params = value[1]
+
+    def initialize(self, x, u, **kwargs):
+        self.dynamics.initialize(x, u, **kwargs)
+        self.controls.initialize(x, u, **kwargs)
+
+    def permute(self, perm):
+        self.dynamics.permute(perm)
+        self.controls.permute(perm)
+
+    def log_prior(self):
+        lp = 0.
+        if self.learn_dyn:
+            lp += self.dynamics.log_prior()
+        if self.learn_ctl:
+            lp += self.controls.log_prior()
+        return lp
+
+    def log_likelihood(self, x, u):
+        loglik = []
+
+        logdyn = self.dynamics.log_likelihood(x, u)
+        if self.learn_ctl:
+            logctl = self.controls.log_likelihood(x, u)
+            for _logdyn, _logctl in zip(logdyn, logctl):
+                loglik.append(_logdyn + _logctl)
+        else:
+            loglik = logdyn
+
+        return loglik
+
+    def mstep(self, gamma, x, u, **kwargs):
+        if self.learn_dyn:
+            dynamics_kwargs = kwargs.get('dynamics_kwargs', {})
+            self.dynamics.mstep(gamma, x, u, **dynamics_kwargs)
+        if self.learn_ctl:
+            control_kwargs = kwargs.get('control_kwargs', {})
+            self.controls.mstep(gamma, x, u, **control_kwargs)
+
+    def smooth(self, gamma, x, u):
+        mu_dyn = self.dynamics.smooth(gamma, x, u)
+        if self.learn_ctl:
+            mu_ctl = self.controls.smooth(gamma, x, u)
+            return mu_dyn, mu_ctl
+        else:
+            return mu_dyn

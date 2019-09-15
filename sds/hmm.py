@@ -16,14 +16,18 @@ to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] el
 
 class HMM:
 
-    def __init__(self, nb_states, dm_obs, dm_act=0):
+    def __init__(self, nb_states, dm_obs, dm_act=0,
+                 init_state_prior={}, trans_prior={}, obs_prior={},
+                 init_state_kwargs={}, trans_kwargs={}, obs_kwargs={}):
+
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
 
-        self.init_state = CategoricalInitState(self.nb_states)
-        self.transitions = StationaryTransition(self.nb_states)
-        self.observations = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
+        self.init_state = CategoricalInitState(self.nb_states, prior=init_state_prior, **init_state_kwargs)
+        self.transitions = StationaryTransition(self.nb_states, prior=trans_prior, **trans_kwargs)
+        self.observations = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act,
+                                                prior=obs_prior, **obs_kwargs)
 
     @property
     def params(self):
@@ -119,7 +123,8 @@ class HMM:
         return beta
 
     def marginals(self, alpha, beta):
-        return [np.exp(_alpha + _beta - logsumexp(_alpha + _beta, axis=1,  keepdims=True)) for _alpha, _beta in zip(alpha, beta)]
+        return [np.exp(_alpha + _beta - logsumexp(_alpha + _beta, axis=1,  keepdims=True))
+                for _alpha, _beta in zip(alpha, beta)]
 
     def two_slice(self, loglikhds, alpha, beta):
         loginit, logtrans, logobs = loglikhds
@@ -171,13 +176,27 @@ class HMM:
 
         return gamma, zeta
 
-    def mstep(self, gamma, zeta, obs, act=None):
-        self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
-        self.transitions.mstep(zeta, obs, act, nb_iters=100)
-        self.observations.mstep(gamma, obs, act)
+    def mstep(self, gamma, zeta,
+              obs, act,
+              init_mstep_kwargs,
+              trans_mstep_kwargs,
+              obs_mstep_kwargs):
+
+        self.init_state.mstep([_gamma[0, :] for _gamma in gamma], **init_mstep_kwargs)
+        self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
+        self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
 
     @ensure_args_are_viable_lists
-    def em(self, obs, act=None, nb_iter=50, prec=1e-4, verbose=False):
+    def em(self, obs, act=None, nb_iter=50, prec=1e-4, verbose=False,
+           init_mstep_kwargs=None, trans_mstep_kwargs=None, obs_mstep_kwargs=None):
+
+        if init_mstep_kwargs is None:
+            init_mstep_kwargs = {}
+        if trans_mstep_kwargs is None:
+            trans_mstep_kwargs = {}
+        if obs_mstep_kwargs is None:
+            obs_mstep_kwargs = {}
+
         lls = []
 
         ll = self.log_probability(obs, act)
@@ -190,7 +209,10 @@ class HMM:
         it = 1
         while it <= nb_iter:
             gamma, zeta = self.estep(obs, act)
-            self.mstep(gamma, zeta, obs, act)
+            self.mstep(gamma, zeta, obs, act,
+                       init_mstep_kwargs,
+                       trans_mstep_kwargs,
+                       obs_mstep_kwargs)
 
             ll = self.log_probability(obs, act)
             lls.append(ll)

@@ -6,8 +6,10 @@ from autograd.scipy.special import logsumexp
 
 class CategoricalInitState:
 
-    def __init__(self, nb_states, reg=1e-8):
+    def __init__(self, nb_states, prior, reg=1e-16):
         self.nb_states = nb_states
+
+        self.prior = prior
         self.reg = reg
 
         self.log_pi = -np.log(self.nb_states) * np.ones(self.nb_states)
@@ -37,11 +39,14 @@ class CategoricalInitState:
         return self.log_pi - logsumexp(self.log_pi)
 
     def log_prior(self):
-        return 0.0
+        lp = 0.
+        if self.prior:
+            pass
+        return lp
 
     def permute(self, perm):
         self.log_pi = self.log_pi[perm]
 
-    def mstep(self, w):
+    def mstep(self, w, **kwargs):
         _pi = sum([_w for _w in w]) + self.reg
         self.log_pi = np.log(_pi / sum(_pi))

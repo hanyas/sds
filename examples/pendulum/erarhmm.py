@@ -1,6 +1,8 @@
 import autograd.numpy as np
 import autograd.numpy.random as npr
 
+import torch
+
 from sds import erARHMM
 from sds.utils import sample_env
 
@@ -8,6 +10,7 @@ from sds.utils import sample_env
 if __name__ == "__main__":
 
     np.random.seed(1337)
+    torch.manual_seed(1337)
 
     import matplotlib.pyplot as plt
 
@@ -38,21 +41,22 @@ if __name__ == "__main__":
     obs, act = sample_env(env, nb_rollouts, nb_steps)
 
     nb_states = 5
-    erarhmm = erARHMM(nb_states, dm_obs, dm_act,
-                      type='neural-recurrent', learn_ctl=True)
+    dynamics_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
+    obs_prior = {'dynamics_prior': dynamics_prior, 'control_prior': {}}
+    trans_kwargs = {'hidden_layer_sizes': (10,)}
+    erarhmm = erARHMM(nb_states, dm_obs, dm_act, trans_type='neural-recurrent',
+                      obs_prior=obs_prior, trans_kwargs=trans_kwargs,
+                      learn_ctl=False)
     erarhmm.initialize(obs, act)
-    lls = erarhmm.em(obs, act, nb_iter=100, prec=0., verbose=True)
+
+    lls = erarhmm.em(obs, act, nb_iter=50, prec=0., verbose=True)
 
     plt.figure(figsize=(5, 5))
     plt.plot(lls)
     plt.show()
 
     plt.figure(figsize=(8, 8))
-    _idx = npr.choice(nb_rollouts)
-    _, _sample_obs, _sample_act = erarhmm.sample([act[_idx]], horizon=[100])
-
-    plt.subplot(211)
-    plt.plot(_sample_obs[0])
-    plt.subplot(212)
-    plt.plot(_sample_act[0])
+    idx = npr.choice(nb_rollouts)
+    _, sample_obs = erarhmm.sample([act[idx]], horizon=[100])
+    plt.plot(sample_obs[0])
     plt.show()

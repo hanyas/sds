@@ -9,11 +9,17 @@ from sds.utils import ensure_args_are_viable_lists
 
 class ARHMM(HMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act=0):
-        super(ARHMM, self).__init__(nb_states, dm_obs, dm_act)
+    def __init__(self, nb_states, dm_obs, dm_act=0,
+                 init_state_prior={}, init_obs_prior={}, trans_prior={}, obs_prior={},
+                 init_state_kwargs={}, init_obs_kwargs={}, trans_kwargs={}, obs_kwargs={}):
+        super(ARHMM, self).__init__(nb_states, dm_obs, dm_act,
+                                    init_state_prior=init_state_prior, trans_prior=trans_prior,
+                                    init_state_kwargs=init_state_kwargs, trans_kwargs=trans_kwargs)
 
-        self.init_observation = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
-        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
+        self.init_observation = GaussianObservation(self.nb_states, self.dm_obs, self.dm_act,
+                                                    prior=init_obs_prior, **init_obs_kwargs)
+        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs, self.dm_act,
+                                                              prior=obs_prior, **obs_kwargs)
 
     @ensure_args_are_viable_lists
     def initialize(self, obs, act=None, **kwargs):

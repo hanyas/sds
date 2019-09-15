@@ -22,7 +22,7 @@ def batches(batch_size, data_size):
     yield from iter(lambda: list(islice(idx_iter, batch_size)), [])
 
 
-def sample_env(env, nb_rollouts, nb_steps, ctl=None, max_act=2.5):
+def sample_env(env, nb_rollouts, nb_steps, ctl=None):
     obs, act = [], []
 
     dm_obs = env.observation_space.shape[0]
@@ -36,7 +36,8 @@ def sample_env(env, nb_rollouts, nb_steps, ctl=None, max_act=2.5):
 
         for t in range(nb_steps):
             if ctl is None:
-                u = 2. * max_act * npr.randn(1, )
+                _max_u = env.action_space.high
+                u = 2. * _max_u * npr.randn(1, )
             else:
                 u = ctl.actions(x, stoch=True)
 
@@ -152,7 +153,7 @@ def relu(x):
 
 
 def logistic_regression(X, y, bias=None, K=None,
-                        W0=None, mu0=0, sigmasq0=1,
+                        W0=None, mu0=0, sigma0=1,
                         verbose=False, maxiter=1000):
     """
     Fit a multiclass logistic regression
@@ -167,7 +168,7 @@ def logistic_regression(X, y, bias=None, K=None,
 
         L(W) = sum_i sum_k y_ik * w_k^T x_i - logsumexp(W x_i)
 
-    The prior is w_k ~ Norm(mu0, diag(sigmasq0)).
+    The prior is w_k ~ Norm(mu0, diag(sigma0)).
     """
     N, D = X.shape
     assert y.shape[0] == N
@@ -194,7 +195,7 @@ def logistic_regression(X, y, bias=None, K=None,
         W = np.reshape(W_flat, (K, D))
         scores = np.dot(X, W.T) + bias
         lp = np.sum(y_oh * scores) - np.sum(logsumexp(scores, axis=1))
-        prior = np.sum(-0.5 * (W - mu0)**2 / sigmasq0)
+        prior = np.sum(-0.5 * (W - mu0)**2 / sigma0)
         return -(lp + prior) / N
 
     W0 = W0 if W0 is not None else np.zeros((K, D))
@@ -216,8 +217,8 @@ def logistic_regression(X, y, bias=None, K=None,
 
 
 def linear_regression(Xs, ys, weights=None,
-                      mu0=0, sigmasq0=1,
-                      nu0=1, Psi0=1,
+                      mu0=0, sigma0=1.e8,
+                      nu0=1, psi0=1,
                       fit_intercept=True):
 
     Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
@@ -230,8 +231,8 @@ def linear_regression(Xs, ys, weights=None,
     assert all([y.shape[1] == P for y in ys])
     assert all([X.shape[0] == y.shape[0] for X, y in zip(Xs, ys)])
 
-    mu0 = mu0 * np.zeros((P, D))
-    sigmasq0 = sigmasq0 * np.eye(D)
+    mu0 = mu0 * np.ones((P, D))
+    sigma0 = sigma0 * np.eye(D)
 
     # Make sure the weights are the weights
     if weights is not None:
@@ -242,10 +243,10 @@ def linear_regression(Xs, ys, weights=None,
     # Add weak prior on intercept
     if fit_intercept:
         mu0 = np.column_stack((mu0, np.zeros(P)))
-        sigmasq0 = block_diag(sigmasq0, np.eye(1))
+        sigma0 = block_diag(sigma0, np.eye(1))
 
     # Compute the posterior
-    J = np.linalg.inv(sigmasq0)
+    J = np.linalg.inv(sigma0)
     h = np.dot(J, mu0.T)
 
     for X, y, weight in zip(Xs, ys, weights):
@@ -262,7 +263,7 @@ def linear_regression(Xs, ys, weights=None,
 
     # Compute the residual and the posterior variance
     nu = nu0
-    Psi = Psi0 * np.eye(P)
+    Psi = psi0 * np.eye(P)
     for X, y, weight in zip(Xs, ys, weights):
         yhat = np.dot(X, W.T) + b
         resid = y - yhat
@@ -314,13 +315,13 @@ def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
     return x, val, g, (m, v)
 
 
-def _generic_sgd(method, loss, x0,  nb_iters=200, state=None, full_output=False):
+def _generic_sgd(method, loss, x0,  nb_iter=200, state=None, full_output=False):
 
     step = dict(adam=adam_step)[method]
 
     # Initialize outputs
     x, losses, grads = x0, [], []
-    for itr in range(nb_iters):
+    for itr in range(nb_iter):
         x, val, g, state = step(value_and_grad(loss), x, itr, state)
         losses.append(val)
         grads.append(g)
@@ -331,7 +332,7 @@ def _generic_sgd(method, loss, x0,  nb_iters=200, state=None, full_output=False)
         return x
 
 
-def _generic_minimize(method, loss, x0, verbose=False, nb_iters=1000, full_output=False):
+def _generic_minimize(method, loss, x0, verbose=False, nb_iter=1000, full_output=False):
 
     _x0, unflatten = flatten(x0)
     _objective = lambda x_flat, itr: loss(unflatten(x_flat), itr)
@@ -351,7 +352,7 @@ def _generic_minimize(method, loss, x0, verbose=False, nb_iters=1000, full_outpu
     result = minimize(_objective, _x0, args=(-1,), jac=grad(_objective),
                       method=method,
                       callback=callback if verbose else None,
-                      options=dict(maxiter=nb_iters, disp=verbose))
+                      options=dict(maxiter=nb_iter, disp=verbose))
 
     if full_output:
         return unflatten(result.x), result

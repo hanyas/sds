@@ -8,11 +8,14 @@ from joblib import Parallel, delayed
 
 
 def create_job(kwargs):
+    # model arguments
+    nb_states = kwargs.pop('nb_states')
+    trans_type = kwargs.pop('trans_type')
+    obs_prior = kwargs.pop('obs_prior')
+
+    # em arguments
     obs = kwargs.pop('obs')
     act = kwargs.pop('act')
-    nb_states = kwargs.pop('nb_states')
-
-    type = kwargs.pop('type')
     prec = kwargs.pop('prec')
     nb_iter = kwargs.pop('nb_iter')
 
@@ -21,8 +24,10 @@ def create_job(kwargs):
     dm_obs = train_obs[0].shape[-1]
     dm_act = train_act[0].shape[-1]
 
-    rarhmm = rARHMM(nb_states, dm_obs, dm_act, type)
+    rarhmm = rARHMM(nb_states, dm_obs, dm_act, trans_type=trans_type,
+                    obs_prior=obs_prior, trans_kwargs=trans_kwargs)
     rarhmm.initialize(train_obs, train_act)
+
     lls = rarhmm.em(train_obs, train_act, nb_iter=nb_iter, prec=prec, verbose=False)
 
     mse, norm_mse = rarhmm.kstep_mse(obs, act, horizon=10, stoch=False)
@@ -56,15 +61,18 @@ if __name__ == "__main__":
     obs, act = sample_env(env, nb_rollouts, nb_steps)
 
     nb_states = 5
+    obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
+    trans_kwargs = {'hidden_layer_sizes': (10,)}
     models, liklhds, mse, norm_mse = parallel_em(nb_jobs=32,
-                                                 obs=obs, act=act,
-                                                 nb_states=nb_states,
-                                                 type='neural-recurrent',
+                                                 nb_states=nb_states, obs=obs, act=act,
+                                                 trans_type='neural-recurrent',
+                                                 obs_prior=obs_prior,
+                                                 trans_kwargs=trans_kwargs,
                                                  nb_iter=150, prec=1e-4)
     rarhmm = models[np.argmax(norm_mse)]
 
     print("rarhmm, stochastic, neural")
     print(np.c_[liklhds, mse, norm_mse])
 
-    pickle.dump(rarhmm, open("neural_rarhmm_pendulum_polar.pkl", "wb"))
+    # pickle.dump(rarhmm, open("neural_rarhmm_pendulum_polar.pkl", "wb"))
     # pickle.dump(rarhmm, open("neural_rarhmm_pendulum_cart.pkl", "wb"))

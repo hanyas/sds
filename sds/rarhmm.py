@@ -1,22 +1,22 @@
 from sds import ARHMM
-
 from sds.transitions import RecurrentTransition, NeuralRecurrentTransition
-from sds.observations import AutoRegressiveGaussianObservation
 
 
 class rARHMM(ARHMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act=0, type='recurrent'):
-        super(rARHMM, self).__init__(nb_states, dm_obs, dm_act)
+    def __init__(self, nb_states, dm_obs, dm_act=0, trans_type='recurrent',
+                 init_state_prior={}, init_obs_prior={}, trans_prior={}, obs_prior={},
+                 init_state_kwargs={}, init_obs_kwargs={}, trans_kwargs={}, obs_kwargs={}):
 
-        self.type = type
+        super(rARHMM, self).__init__(nb_states, dm_obs, dm_act,
+                                     init_state_prior=init_state_prior, init_obs_prior=init_obs_prior, obs_prior=obs_prior,
+                                     init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs, obs_kwargs=obs_kwargs)
 
-        if self.type == 'recurrent':
-            self.transitions = RecurrentTransition(self.nb_states, self.dm_obs,
-                                                   self.dm_act, degree=3)
-        elif self.type == 'neural-recurrent':
-            self.transitions = NeuralRecurrentTransition(self.nb_states, self.dm_obs,
-                                                         self.dm_act, hidden_layer_sizes=(10, ))
+        self.trans_type = trans_type
 
-        self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.dm_obs,
-                                                              self.dm_act)
+        if self.trans_type == 'recurrent':
+            self.transitions = RecurrentTransition(self.nb_states, self.dm_obs, self.dm_act,
+                                                   prior=trans_prior, **trans_kwargs)
+        elif self.trans_type == 'neural-recurrent':
+            self.transitions = NeuralRecurrentTransition(self.nb_states, self.dm_obs, self.dm_act,
+                                                         prior=trans_prior, **trans_kwargs)

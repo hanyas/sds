@@ -2,72 +2,31 @@ import autograd.numpy as np
 import autograd.numpy.random as npr
 
 from sds import rARHMM
-from sds.observations import LinearGaussianObservation
+from sds.observations import AutoRegressiveGaussianDynamicsAndControl
 
 from sds.utils import ensure_args_are_viable_lists
 
 
 class erARHMM(rARHMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act, type='recurrent',
+    def __init__(self, nb_states, dm_obs, dm_act, trans_type='recurrent',
+                 init_state_prior={}, init_obs_prior={}, trans_prior={}, obs_prior={},
+                 init_state_kwargs={}, init_obs_kwargs={}, trans_kwargs={}, obs_kwargs={},
                  learn_dyn=True, learn_ctl=False):
-        super(erARHMM, self).__init__(nb_states, dm_obs, dm_act, type)
+
+        super(erARHMM, self).__init__(nb_states, dm_obs, dm_act, trans_type,
+                                      init_state_prior=init_state_prior, init_obs_prior=init_obs_prior, trans_prior=trans_prior,
+                                      init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs, trans_kwargs=trans_kwargs)
 
         self.learn_dyn = learn_dyn
         self.learn_ctl = learn_ctl
 
-        self.controls = LinearGaussianObservation(self.nb_states, self.dm_obs, self.dm_act)
+        self.observations = AutoRegressiveGaussianDynamicsAndControl(nb_states=self.nb_states, dm_obs=self.dm_obs, dm_act=self.dm_act,
+                                                                     prior=obs_prior, learn_dyn=self.learn_dyn, learn_ctl=self.learn_ctl,
+                                                                     **obs_kwargs)
 
-    @ensure_args_are_viable_lists
-    def initialize(self, obs, act=None, **kwargs):
-        super(erARHMM, self).initialize(obs, act, **kwargs)
-        if self.learn_ctl:
-            self.controls.initialize(obs, act, **kwargs)
-
-    def log_priors(self):
-        logprior = super(erARHMM, self).log_priors()
-        if self.learn_ctl:
-            logprior += self.controls.log_prior()
-        return logprior
-
-    @ensure_args_are_viable_lists
-    def log_likelihoods(self, obs, act=None):
-        loginit, logtrans, logobs = super(erARHMM, self).log_likelihoods(obs, act)
-
-        if self.learn_ctl:
-            total_logobs = []
-            logctl = self.controls.log_likelihood(obs, act)
-            for _logobs, _logctl in zip(logobs, logctl):
-                total_logobs.append(_logobs + _logctl)
-            return [loginit, logtrans, total_logobs]
-        else:
-            return [loginit, logtrans, logobs]
-
-    def mstep(self, gamma, zeta, obs, act=None):
-        if self.learn_dyn:
-            self.init_state.mstep([_gamma[0, :] for _gamma in gamma])
-            self.transitions.mstep(zeta, obs, act, nb_iters=100)
-            self.observations.mstep(gamma, obs, act)
-        if self.learn_ctl:
-            self.controls.mstep(gamma, obs, act)
-
-    def permute(self, perm):
-        super(erARHMM, self).permute(perm)
-        self.controls.permute(perm)
-
-    @ensure_args_are_viable_lists
-    def mean_observation(self, obs, act=None):
-        if self.learn_ctl:
-            loglikhds = self.log_likelihoods(obs, act)
-            alpha = self.forward(loglikhds)
-            beta = self.backward(loglikhds)
-            gamma = self.marginals(alpha, beta)
-
-            mu_obs = self.observations.smooth(gamma, obs, act)
-            mu_ctl = self.controls.smooth(gamma, obs, act)
-            return mu_obs, mu_ctl
-        else:
-            return super(erARHMM, self).mean_observation(obs, act)
+    def learnables(self, values):
+        self.observations.learnables = values
 
     def sample(self, act=None, horizon=None, stoch=True):
         if self.learn_ctl:
@@ -82,11 +41,11 @@ class erARHMM(rARHMM):
 
                 _state[0] = self.init_state.sample()
                 _obs[0, :] = self.init_observation.sample(_state[0], x=None, u=None, stoch=stoch)
-                _act[0, :] = self.controls.sample(_state[0], _obs[0, :], stoch=stoch)
+                _act[0, :] = self.observations.controls.sample(_state[0], _obs[0, :], stoch=stoch)
                 for t in range(1, horizon[n]):
                     _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
-                    _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
-                    _act[t, :] = self.controls.sample(_state[t], _obs[t, :], stoch=stoch)
+                    _obs[t, :] = self.observations.dynamics.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
+                    _act[t, :] = self.observations.controls.sample(_state[t], _obs[t, :], stoch=stoch)
 
                 state.append(_state)
                 obs.append(_obs)
@@ -124,8 +83,8 @@ class erARHMM(rARHMM):
 
                 for t in range(horizon[n]):
                     _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
-                    _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
-                    _nxt_act[t + 1, :] = self.controls.sample(_nxt_state[t + 1], _nxt_obs[t + 1, :], stoch=stoch)
+                    _nxt_obs[t + 1, :] = self.observations.dynamics.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
+                    _nxt_act[t + 1, :] = self.observations.controls.sample(_nxt_state[t + 1], _nxt_obs[t + 1, :], stoch=stoch)
 
                 nxt_state.append(_nxt_state)
                 nxt_obs.append(_nxt_obs)
@@ -148,8 +107,8 @@ class erARHMM(rARHMM):
             _obs = hist_obs[-1, :]
 
             nxt_state = self.transitions.sample(_state, _obs, _act)
-            nxt_obs = self.observations.sample(nxt_state, _obs, _act, stoch=stoch)
-            nxt_act = self.controls.sample(nxt_state, nxt_obs, stoch=stoch)
+            nxt_obs = self.observations.dynamics.sample(nxt_state, _obs, _act, stoch=stoch)
+            nxt_act = self.observations.controls.sample(nxt_state, nxt_obs, stoch=stoch)
             return nxt_state, nxt_obs, nxt_act
         else:
             return super(erARHMM, self).step(hist_obs, hist_act, stoch, infer)

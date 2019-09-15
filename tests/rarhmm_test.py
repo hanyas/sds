@@ -23,7 +23,7 @@ true_ll = true_rarhmm.log_probability(x)
 # true_z, x = true_rarhmm.sample(horizon=T)
 # true_ll = true_rarhmm.log_probability(x)
 
-my_rarhmm = rARHMM(nb_states=3, dm_obs=2, type='recurrent')
+my_rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='recurrent')
 my_rarhmm.initialize(x)
 my_ll = my_rarhmm.em(x, nb_iter=100, prec=1e-12)
 
