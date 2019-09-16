@@ -100,10 +100,10 @@ class StickyTransition(StationaryTransition):
         self.logmat = np.log(_mat)
 
 
-# class RecurrentTransition(StickyTransition):
+# class PolyRecurrentTransition(StickyTransition):
 #
 #     def __init__(self, nb_states, dm_obs, dm_act, prior, degree=1):
-#         super(RecurrentTransition, self).__init__(nb_states, prior)
+#         super(PolyRecurrentTransition, self).__init__(nb_states, prior)
 #
 #         self.dm_obs = dm_obs
 #         self.dm_act = dm_act
@@ -117,12 +117,12 @@ class StickyTransition(StationaryTransition):
 #
 #     @property
 #     def params(self):
-#         return super(RecurrentTransition, self).params + (self.coef, )
+#         return super(PolyRecurrentTransition, self).params + (self.coef, )
 #
 #     @params.setter
 #     def params(self, value):
 #         self.coef = value[-1]
-#         super(RecurrentTransition, self.__class__).params.fset(self, value[:-1])
+#         super(PolyRecurrentTransition, self.__class__).params.fset(self, value[:-1])
 #
 #     def sample(self, z, x, u):
 #         _mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
@@ -133,7 +133,7 @@ class StickyTransition(StationaryTransition):
 #         return np.argmax(mat[z, :])
 #
 #     def permute(self, perm):
-#         super(RecurrentTransition, self).permute(perm)
+#         super(PolyRecurrentTransition, self).permute(perm)
 #         self.coef = self.coef[perm, :]
 #
 #     @ensure_args_are_viable_lists
@@ -167,7 +167,7 @@ class StickyTransition(StationaryTransition):
 #         self.params = lbfgs(_objective, self.params, nb_iter=nb_iter)
 
 
-class RecurrentTransition:
+class PolyRecurrentTransition:
     def __init__(self, nb_states, dm_obs, dm_act, prior, degree=3):
         self.nb_states = nb_states
 

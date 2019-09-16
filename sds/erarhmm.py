@@ -8,7 +8,7 @@ from sds.utils import ensure_args_are_viable_lists
 
 class erARHMM(rARHMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act, trans_type='recurrent',
+    def __init__(self, nb_states, dm_obs, dm_act, trans_type='poly',
                  init_state_prior={}, init_obs_prior={}, trans_prior={}, obs_prior={}, ctl_prior={},
                  init_state_kwargs={}, init_obs_kwargs={}, trans_kwargs={}, obs_kwargs={}, ctl_kwargs={},
                  learn_dyn=True, learn_ctl=False):

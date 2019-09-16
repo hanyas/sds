@@ -29,17 +29,15 @@ def create_job(kwargs):
     rarhmm.initialize(train_obs, train_act)
 
     lls = rarhmm.em(train_obs, train_act, nb_iter=nb_iter, prec=prec, verbose=False)
-
-    mse, norm_mse = rarhmm.kstep_mse(obs, act, horizon=10, stoch=False)
-    return rarhmm, lls[-1], mse, norm_mse
+    return rarhmm, lls[-1]
 
 
 def parallel_em(nb_jobs=50, **kwargs):
     kwargs_list = [kwargs for _ in range(nb_jobs)]
     results = Parallel(n_jobs=-1, verbose=10, backend='loky',
                        max_nbytes='1000M')(map(delayed(create_job), kwargs_list))
-    rarhmms, lls, mse, norm_mse = list(map(list, zip(*results)))
-    return rarhmms, lls, mse, norm_mse
+    rarhmms, lls = list(map(list, zip(*results)))
+    return rarhmms, lls
 
 
 if __name__ == "__main__":
@@ -64,16 +62,16 @@ if __name__ == "__main__":
     obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
     trans_kwargs = {'hidden_layer_sizes': (10,)}
     # trans_kwargs = {'degree': 3}
-    models, liklhds, mse, norm_mse = parallel_em(nb_jobs=32,
-                                                 nb_states=nb_states, obs=obs, act=act,
-                                                 trans_type='neural-recurrent',
-                                                 obs_prior=obs_prior,
-                                                 trans_kwargs=trans_kwargs,
-                                                 nb_iter=150, prec=1e-4)
-    rarhmm = models[np.argmax(norm_mse)]
+    models, liklhds = parallel_em(nb_jobs=32,
+                                  nb_states=nb_states, obs=obs, act=act,
+                                  trans_type='neural',
+                                  obs_prior=obs_prior,
+                                  trans_kwargs=trans_kwargs,
+                                  nb_iter=150, prec=1e-4)
+    rarhmm = models[np.argmax(liklhds)]
 
-    print("rarhmm, stochastic, neural")
-    print(np.c_[liklhds, mse, norm_mse])
+    print("rarhmm, stochastic, " + rarhmm.trans_type)
+    print(np.c_[liklhds])
 
-    # pickle.dump(rarhmm, open("neural_rarhmm_pendulum_polar.pkl", "wb"))
-    # pickle.dump(rarhmm, open("neural_rarhmm_pendulum_cart.pkl", "wb"))
+    # pickle.dump(rarhmm, open(rarhmm.trans_type + "_rarhmm_pendulum_polar.pkl", "wb"))
+    # pickle.dump(rarhmm, open(rarhmm.trans_type + "_rarhmm_pendulum_cart.pkl", "wb"))
