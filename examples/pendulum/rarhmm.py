@@ -42,8 +42,9 @@ if __name__ == "__main__":
 
     nb_states = 5
     obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
-    trans_kwargs = {'hidden_layer_sizes': (10,)}
-    rarhmm = rARHMM(nb_states, dm_obs, dm_act, trans_type='neural-recurrent',
+    # trans_kwargs = {'hidden_layer_sizes': (10,)}
+    trans_kwargs = {'degree': 3}
+    rarhmm = rARHMM(nb_states, dm_obs, dm_act, trans_type='recurrent',
                     obs_prior=obs_prior, trans_kwargs=trans_kwargs)
     rarhmm.initialize(obs, act)
 

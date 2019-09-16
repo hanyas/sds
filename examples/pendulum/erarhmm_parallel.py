@@ -61,9 +61,9 @@ if __name__ == "__main__":
     obs, act = sample_env(env, nb_rollouts, nb_steps)
 
     nb_states = 5
-    dynamics_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
-    obs_prior = {'dynamics_prior': dynamics_prior, 'control_prior': {}}
+    obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
     trans_kwargs = {'hidden_layer_sizes': (10,)}
+    # trans_kwargs = {'degree': 3}
     models, liklhds, mse, norm_mse = parallel_em(nb_jobs=32,
                                                  nb_states=nb_states, obs=obs, act=act,
                                                  trans_type='neural-recurrent',

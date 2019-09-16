@@ -180,7 +180,7 @@ class HMM:
               obs, act,
               init_mstep_kwargs,
               trans_mstep_kwargs,
-              obs_mstep_kwargs):
+              obs_mstep_kwargs, **kwargs):
 
         self.init_state.mstep([_gamma[0, :] for _gamma in gamma], **init_mstep_kwargs)
         self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
@@ -188,7 +188,7 @@ class HMM:
 
     @ensure_args_are_viable_lists
     def em(self, obs, act=None, nb_iter=50, prec=1e-4, verbose=False,
-           init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={}):
+           init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={}, **kwargs):
 
         lls = []
 
@@ -205,7 +205,7 @@ class HMM:
             self.mstep(gamma, zeta, obs, act,
                        init_mstep_kwargs,
                        trans_mstep_kwargs,
-                       obs_mstep_kwargs)
+                       obs_mstep_kwargs, **kwargs)
 
             ll = self.log_probability(obs, act)
             lls.append(ll)
@@ -229,6 +229,7 @@ class HMM:
         gamma = self.marginals(alpha, beta)
         return self.observations.smooth(gamma, obs, act)
 
+    @ensure_args_are_viable_lists
     def filter(self, obs, act=None):
         logliklhds = self.log_likelihoods(obs, act)
         alpha = self.forward(logliklhds)
@@ -245,7 +246,7 @@ class HMM:
             _state = np.zeros((horizon[n],), np.int64)
 
             _state[0] = self.init_state.sample()
-            _obs[0, :] = self.observations.sample(_state[0], x=None, u=None, stoch=stoch)
+            _obs[0, :] = self.observations.sample(_state[0], stoch=stoch)
             for t in range(1, horizon[n]):
                 _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
                 _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
@@ -254,6 +255,22 @@ class HMM:
             obs.append(_obs)
 
         return state, obs
+
+    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='viterbi'):
+        if infer == 'viterbi':
+            _, _state_seq = self.viterbi(hist_obs, hist_act)
+            _state = _state_seq[0][-1]
+        else:
+            _belief = self.filter(hist_obs, hist_act)
+            _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
+
+        _act = hist_act[-1, :]
+        _obs = hist_obs[-1, :]
+
+        nxt_state = self.transitions.sample(_state, _obs, _act)
+        nxt_obs = self.observations.sample(nxt_state, _obs, _act, stoch=stoch)
+
+        return nxt_state, nxt_obs
 
     def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
                 horizon=None, stoch=True, infer='viterbi'):
@@ -287,21 +304,6 @@ class HMM:
 
         return nxt_state, nxt_obs
 
-    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='viterbi'):
-        if infer == 'viterbi':
-            _, _state_seq = self.viterbi(hist_obs, hist_act)
-            _state = _state_seq[0][-1]
-        else:
-            _belief = self.filter(hist_obs, hist_act)
-            _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
-
-        _act = hist_act[-1, :]
-        _obs = hist_obs[-1, :]
-
-        nxt_state = self.transitions.sample(_state, _obs, _act)
-        nxt_obs = self.observations.sample(nxt_state, _obs, _act, stoch=stoch)
-        return nxt_state, nxt_obs
-
     @ensure_args_are_viable_lists
     def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='viterbi'):
         from sklearn.metrics import mean_squared_error, explained_variance_score
@@ -317,9 +319,9 @@ class HMM:
                 _hist_act.append(_act[:t + 1, :])
                 _nxt_act.append(_act[t: t + horizon, :])
 
-            _k = [horizon for _ in range(_nb_steps)]
+            _hr = [horizon for _ in range(_nb_steps)]
             _, _obs_hat = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
-                                       nxt_act=_nxt_act, horizon=_k,
+                                       nxt_act=_nxt_act, horizon=_hr,
                                        stoch=stoch, infer=infer)
 
             for t in range(_nb_steps):
@@ -330,10 +332,9 @@ class HMM:
             _prediction = np.vstack(_prediction)
 
             _mse = mean_squared_error(_target, _prediction)
-            mse.append(_mse)
+            _norm_mse = explained_variance_score(_target, _prediction, multioutput='variance_weighted')
 
-            _norm_mse = explained_variance_score(_target, _prediction,
-                                                 multioutput='variance_weighted')
+            mse.append(_mse)
             norm_mse.append(_norm_mse)
 
         return np.mean(mse), np.mean(norm_mse)

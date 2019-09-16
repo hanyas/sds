@@ -63,6 +63,7 @@ if __name__ == "__main__":
     nb_states = 5
     obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
     trans_kwargs = {'hidden_layer_sizes': (10,)}
+    # trans_kwargs = {'degree': 3}
     models, liklhds, mse, norm_mse = parallel_em(nb_jobs=32,
                                                  nb_states=nb_states, obs=obs, act=act,
                                                  trans_type='neural-recurrent',

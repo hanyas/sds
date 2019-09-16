@@ -8,13 +8,13 @@ from scipy import special
 
 from sds.utils import lbfgs, bfgs, adam, relu
 from sds.utils import ensure_args_are_viable_lists
-from sds.utils import batches
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
 from torch import distributions
+from torch.utils.data import BatchSampler, SubsetRandomSampler
 
 from sklearn.preprocessing import PolynomialFeatures
 
@@ -71,7 +71,7 @@ class StationaryTransition:
             logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
         return logtrans
 
-    def mstep(self, gamma, x, u, reg=1.e-16):
+    def mstep(self, gamma, x, u, reg=1.e-8):
         counts = sum([np.sum(_gamma, axis=0) for _gamma in gamma]) + reg
         _mat = counts / np.sum(counts, axis=-1, keepdims=True)
         self.logmat = np.log(_mat)
@@ -93,7 +93,7 @@ class StickyTransition(StationaryTransition):
             lp += dirichlet.logpdf(self.matrix[k], alpha)
         return lp
 
-    def mstep(self, gamma, x, u, reg=1.e-32):
+    def mstep(self, gamma, x, u, reg=1.e-8):
         counts = sum([np.sum(_gamma, axis=0) for _gamma in gamma]) + reg
         counts += self.prior['kappa'] * np.eye(self.nb_states)
         _mat = counts / counts.sum(axis=-1, keepdims=True)
@@ -251,10 +251,11 @@ class RecurrentPolyRegressor(nn.Module):
         self.prior = prior
         self.degree = degree
 
-        self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree))
-        self.basis = PolynomialFeatures(self.degree, include_bias=True)
+        self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
-        self.coef = nn.Parameter(1e-4 * torch.randn(self.nb_states, self.nb_feat))
+        _stdv = torch.sqrt(torch.as_tensor(1. / (self.dm_obs + self.dm_act + self.nb_states)))
+        self.coef = nn.Parameter(_stdv * torch.randn(self.nb_states, self.nb_feat))
 
         _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
         _mat /= torch.sum(_mat, dim=1, keepdim=True)
@@ -283,12 +284,14 @@ class RecurrentPolyRegressor(nn.Module):
         logtrans = self.forward(xu)
         return torch.sum(zeta * logtrans) + self.log_prior()
 
-    def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1.e-3):
-        batch_size = xu.shape[0] if batch_size is None else batch_size
+    def fit(self, zeta, xu, nb_iter=150, batch_size=None, lr=1.e-3):
         self.optim = Adam(self.parameters(), lr=lr)
 
+        batch_size = xu.shape[0] if batch_size is None else batch_size
+        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
+
         for n in range(nb_iter):
-            for batch in batches(batch_size, xu.shape[0]):
+            for batch in batches:
                 self.optim.zero_grad()
                 loss = - self.elbo(zeta[batch], xu[batch])
                 loss.backward()
@@ -382,8 +385,6 @@ class NeuralRecurrentTransition:
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
-
-        self.prior = prior
 
         sizes = [self.dm_obs + self.dm_act] + list(hidden_layer_sizes) + [self.nb_states]
         self.rnr = RecurrentNeuralRegressor(sizes, prior=prior, nonlin=nonlinearity)
@@ -504,11 +505,13 @@ class RecurrentNeuralRegressor(nn.Module):
         return torch.sum(zeta * logtrans) + self.log_prior()
 
     def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1.e-3):
-        batch_size = xu.shape[0] if batch_size is None else batch_size
         self.optim = Adam(self.parameters(), lr=lr)
 
+        batch_size = xu.shape[0] if batch_size is None else batch_size
+        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
+
         for n in range(nb_iter):
-            for batch in batches(batch_size, xu.shape[0]):
+            for batch in batches:
                 self.optim.zero_grad()
                 loss = - self.elbo(zeta[batch], xu[batch])
                 loss.backward()

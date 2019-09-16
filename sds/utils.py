@@ -12,14 +12,6 @@ from autograd.wrap_util import wraps
 from scipy.optimize import linear_sum_assignment, minimize
 
 from functools import partial
-from itertools import islice
-import random
-
-
-def batches(batch_size, data_size):
-    idx_all = random.sample(range(data_size), data_size)
-    idx_iter = iter(idx_all)
-    yield from iter(lambda: list(islice(idx_iter, batch_size)), [])
 
 
 def sample_env(env, nb_rollouts, nb_steps, ctl=None):
@@ -61,7 +53,6 @@ def lod2dol(*dicts):
                 d[key].append(dict[key])
             except KeyError:
                 d[key] = [dict[key]]
-
     return d
 
 
@@ -78,7 +69,6 @@ def ensure_args_are_viable_lists(f):
         act = [np.atleast_2d(act)] if not isinstance(act, (list, tuple)) else act
 
         return f(self, obs, act, **kwargs)
-
     return wrapper
 
 
@@ -86,20 +76,6 @@ def flatten_to_dim(X, d):
     assert X.ndim >= d
     assert d > 0
     return np.reshape(X[None, ...], (-1,) + X.shape[-d:])
-
-
-def undefined_division(a, b):
-    # handle bad division
-    with np.errstate(divide='ignore', invalid='ignore'):
-        c = np.true_divide(a, b)
-        c[~ np.isfinite(c)] = 0.0  # -inf inf NaN
-    return c
-
-
-def normalize(x, dim):
-    norm = np.sum(x, axis=dim, keepdims=True)
-    c = undefined_division(x, norm)
-    return c, norm.flatten()
 
 
 def state_overlap(z1, z2, K1=None, K2=None):

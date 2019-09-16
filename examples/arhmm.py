@@ -26,7 +26,7 @@ T = [1250, 1150, 1025]
 true_z, x = true_arhmm.sample(horizon=T)
 true_ll = true_arhmm.log_probability(x)
 
-obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': 4, 'psi0': 1.}
+obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': 2, 'psi0': 1.}
 arhmm = ARHMM(nb_states=3, dm_obs=2, obs_prior=obs_prior)
 arhmm.initialize(x)
 

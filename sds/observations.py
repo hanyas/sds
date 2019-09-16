@@ -12,7 +12,7 @@ from sds.stats import multivariate_normal_logpdf
 
 class GaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1.e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -109,7 +109,7 @@ class GaussianObservation:
 
 class LinearGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1.e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -280,7 +280,7 @@ class LinearGaussianObservation:
 
 class AutoRegressiveGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1.e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -365,8 +365,7 @@ class AutoRegressiveGaussianObservation:
                 coef_ = np.column_stack((self.A[k, ...], self.B[k, ...], self.c[k, ...])).flatten()
                 lp += mvn(mean=self.prior['mu0'] * np.zeros((coef_.shape[0], )),
                           cov=self.prior['sigma0'] * np.eye(coef_.shape[0])).logpdf(coef_)\
-                      + invw(self.prior['nu0'],
-                             self.prior['psi0'] * np.eye(self.dm_obs)).logpdf(self.cov[k, ...])
+                      + invw(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs)).logpdf(self.cov[k, ...])
         return lp
 
     def log_likelihood(self, x, u):
@@ -462,85 +461,3 @@ class AutoRegressiveGaussianObservation:
                 _mu[:, k, :] = self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act])
             mean.append(np.einsum('nk,nkl->nl', _gamma[1:, ...], _mu))
         return mean
-
-
-class AutoRegressiveGaussianDynamicsAndControl:
-    def __init__(self, nb_states, dm_obs, dm_act,
-                 prior, learn_dyn=True, learn_ctl=False, reg=1e-32):
-        self.nb_states = nb_states
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
-
-        self.prior = prior
-        self.reg = reg
-
-        self.learn_dyn = learn_dyn
-        self.learn_ctl = learn_ctl
-
-        self.dynamics = AutoRegressiveGaussianObservation(self.nb_states,
-                                                          self.dm_obs, self.dm_act,
-                                                          prior=self.prior['dynamics_prior'],
-                                                          reg=self.reg)
-
-        self.controls = LinearGaussianObservation(self.nb_states,
-                                                  self.dm_obs, self.dm_act,
-                                                  prior=self.prior['control_prior'],
-                                                  reg=self.reg)
-
-    def learnables(self, values):
-        self.learn_dyn = values[0]
-        self.learn_ctl = values[1]
-
-    @property
-    def params(self):
-        return self.dynamics.params, self.controls.params
-
-    @params.setter
-    def params(self, value):
-        self.dynamics.params = value[0]
-        self.controls.params = value[1]
-
-    def initialize(self, x, u, **kwargs):
-        self.dynamics.initialize(x, u, **kwargs)
-        self.controls.initialize(x, u, **kwargs)
-
-    def permute(self, perm):
-        self.dynamics.permute(perm)
-        self.controls.permute(perm)
-
-    def log_prior(self):
-        lp = 0.
-        if self.learn_dyn:
-            lp += self.dynamics.log_prior()
-        if self.learn_ctl:
-            lp += self.controls.log_prior()
-        return lp
-
-    def log_likelihood(self, x, u):
-        loglik = []
-
-        logdyn = self.dynamics.log_likelihood(x, u)
-        if self.learn_ctl:
-            logctl = self.controls.log_likelihood(x, u)
-            for _logdyn, _logctl in zip(logdyn, logctl):
-                loglik.append(_logdyn + _logctl)
-        else:
-            loglik = logdyn
-
-        return loglik
-
-    def mstep(self, gamma, x, u, **kwargs):
-        if self.learn_dyn:
-            dynamics_kwargs = kwargs.get('dynamics_kwargs', {})
-            self.dynamics.mstep(gamma, x, u, **dynamics_kwargs)
-        if self.learn_ctl:
-            control_kwargs = kwargs.get('control_kwargs', {})
-            self.controls.mstep(gamma, x, u, **control_kwargs)
-
-    def smooth(self, gamma, x, u):
-        mu_dyn = self.dynamics.smooth(gamma, x, u)
-        if self.learn_ctl:
-            mu_ctl = self.controls.smooth(gamma, x, u)
-            return mu_dyn, mu_ctl
-        else:
-            return mu_dyn
