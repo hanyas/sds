@@ -28,7 +28,7 @@ true_ll = true_rarhmm.log_probability(x)
 
 obs_prior = {'mu0': 0., 'sigma0': 1e12, 'nu0': 2, 'psi0': 1.}
 trans_kwargs = {'degree': 3}
-rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='recurrent',
+rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='poly',
                 obs_prior=obs_prior, trans_kwargs=trans_kwargs)
 rarhmm.initialize(x)
 

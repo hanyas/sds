@@ -44,7 +44,7 @@ if __name__ == "__main__":
     obs_prior = {'mu0': 0., 'sigma0': 1.e12, 'nu0': dm_obs + 2, 'psi0': 1.e-4}
     # trans_kwargs = {'hidden_layer_sizes': (10,)}
     trans_kwargs = {'degree': 3}
-    rarhmm = rARHMM(nb_states, dm_obs, dm_act, trans_type='recurrent',
+    rarhmm = rARHMM(nb_states, dm_obs, dm_act, trans_type='poly',
                     obs_prior=obs_prior, trans_kwargs=trans_kwargs)
     rarhmm.initialize(obs, act)
 
