@@ -1,10 +1,12 @@
 from autograd import numpy as np
 from autograd.numpy import random as npr
-from autograd.scipy.special import logsumexp
+
+from autograd.scipy.special import logsumexp, logit
 from autograd.scipy.stats import dirichlet
 
 import scipy as sc
 from scipy import special
+from scipy.stats import multivariate_normal as mvn
 
 from sds.utils import lbfgs, bfgs, adam, relu
 from sds.utils import ensure_args_are_viable_lists
@@ -12,14 +14,17 @@ from sds.utils import ensure_args_are_viable_lists
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 from torch import distributions
 from torch.utils.data import BatchSampler, SubsetRandomSampler
 
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn import linear_model
 
-to_torch = lambda arr: torch.from_numpy(arr).float()
-to_npy = lambda arr: arr.detach().double().numpy()
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+to_torch = lambda arr: torch.from_numpy(arr).float().to(device)
+to_npy = lambda arr: arr.detach().double().cpu().numpy()
 
 
 class StationaryTransition:
@@ -58,8 +63,6 @@ class StationaryTransition:
 
     def log_prior(self):
         lp = 0.
-        if self.prior:
-            pass
         return lp
 
     @ensure_args_are_viable_lists
@@ -71,7 +74,7 @@ class StationaryTransition:
             logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
         return logtrans
 
-    def mstep(self, gamma, x, u, reg=1.e-8):
+    def mstep(self, gamma, x, u, reg=1e-16):
         counts = sum([np.sum(_gamma, axis=0) for _gamma in gamma]) + reg
         _mat = counts / np.sum(counts, axis=-1, keepdims=True)
         self.logmat = np.log(_mat)
@@ -80,7 +83,7 @@ class StationaryTransition:
 class StickyTransition(StationaryTransition):
 
     def __init__(self, nb_states, prior, **kwargs):
-        super(StickyTransition, self).__init__(nb_states)
+        super(StickyTransition, self).__init__(nb_states, prior={})
         if not prior:
             prior = {'alpha': 1, 'kappa': 100}
         self.prior = prior
@@ -93,11 +96,325 @@ class StickyTransition(StationaryTransition):
             lp += dirichlet.logpdf(self.matrix[k], alpha)
         return lp
 
-    def mstep(self, gamma, x, u, reg=1.e-8):
+    def mstep(self, gamma, x, u, reg=1e-16):
         counts = sum([np.sum(_gamma, axis=0) for _gamma in gamma]) + reg
         counts += self.prior['kappa'] * np.eye(self.nb_states)
         _mat = counts / counts.sum(axis=-1, keepdims=True)
         self.logmat = np.log(_mat)
+
+
+class PolyRecurrentTransition:
+    def __init__(self, nb_states, dm_obs, dm_act, prior, degree=1):
+        self.nb_states = nb_states
+
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+
+        self.prior = prior
+
+        self.degree = degree
+        self.regressor = PolyRecurrentRegressor(self.nb_states, self.dm_obs, self.dm_act,
+                                                prior=self.prior, degree=self.degree)
+        self.regressor.to(device)
+
+    @property
+    def logmat(self):
+        return to_npy(self.regressor.logmat.data)
+
+    @logmat.setter
+    def logmat(self, value):
+        self.regressor.logmat.data = to_torch(value)
+
+    @property
+    def coef(self):
+        return to_npy(self.regressor.coef.data)
+
+    @coef.setter
+    def coef(self, value):
+        self.regressor.coef.data = to_torch(value)
+
+    @property
+    def params(self):
+        return tuple([self.logmat, self.coef])
+
+    @params.setter
+    def params(self, value):
+        self.logmat = value[0]
+        self.coef = value[1]
+
+    def initialize(self, x, u, **kwargs):
+        pass
+
+    def sample(self, z, x, u):
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return npr.choice(self.nb_states, p=mat[z, :])
+
+    def maximum(self, z, x, u):
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return np.argmax(mat[z, :])
+
+    def permute(self, perm):
+        self.logmat = self.logmat[np.ix_(perm, perm)]
+        self.coef = self.coef[perm, :]
+
+    def log_prior(self):
+        self.regressor.eval()
+        if self.prior:
+            return to_npy(self.regressor.log_prior())
+        else:
+            return self.regressor.log_prior()
+
+    @ensure_args_are_viable_lists
+    def log_transition(self, x, u):
+        self.regressor.eval()
+
+        logtrans = []
+        for _x, _u in zip(x, u):
+            T = np.maximum(len(_x) - 1, 1)
+            _in = np.hstack((_x[:T, :], _u[:T, :self.dm_act]))
+            _logtrans = to_npy(self.regressor.forward(to_torch(_in)))
+            logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
+        return logtrans
+
+    def mstep(self, zeta, x, u, **kwargs):
+        xu = []
+        for _x, _u in zip(x, u):
+            xu.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act])))
+
+        self.regressor.fit(to_torch(np.vstack(zeta)), to_torch(np.vstack(xu)), **kwargs)
+
+
+class PolyRecurrentRegressor(nn.Module):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, degree=1):
+        super(PolyRecurrentRegressor, self).__init__()
+
+        self.nb_states = nb_states
+
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+
+        self.prior = prior
+        self.degree = degree
+
+        self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+
+        _stdv = torch.sqrt(torch.as_tensor(1. / (self.dm_obs + self.dm_act + self.nb_states)))
+        self.coef = nn.Parameter(_stdv * torch.randn(self.nb_states, self.nb_feat))
+
+        # _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
+        _mat = torch.ones(self.nb_states, self.nb_states)
+        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        self.logmat = nn.Parameter(torch.log(_mat))
+
+        self._mean = torch.as_tensor([0., 0., 0., 0.])
+        self._std = torch.as_tensor([1., 1., 8.0, 2.5])
+
+        self.optim = None
+
+    def log_prior(self):
+        lp = 0.
+        if self.prior:
+            if 'alpha' in self.prior and 'kappa' in self.prior:
+                _matrix = torch.exp(self.logmat - torch.logsumexp(self.logmat, dim=-1, keepdim=True))
+                for k in range(self.nb_states):
+                    alpha = self.prior['alpha'] * torch.ones(self.nb_states)\
+                            + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
+                    _dirichlet = torch.distributions.dirichlet.Dirichlet(alpha.to(device))
+                    lp += _dirichlet.log_prob(_matrix[k].to(device))
+            for w in self.parameters():
+                lp += self.prior['l2'] * torch.norm(w)
+        return lp
+
+    def forward(self, xu):
+        norm_xu = ((xu - self._mean.to(device)) / self._std.to(device)).to(device)
+        _feat = to_torch(self.basis.fit_transform(to_npy(norm_xu)))
+        output = torch.mm(_feat, torch.transpose(self.coef, 0, 1))
+        _logtrans = self.logmat[None, :, :] + output[:, None, :]
+        return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
+
+    def elbo(self, zeta, xu):
+        logtrans = self.forward(xu)
+        return torch.sum(zeta * logtrans) + self.log_prior()
+
+    def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1e-3):
+        self.optim = Adam(self.parameters(), lr=lr)
+
+        batch_size = xu.shape[0] if batch_size is None else batch_size
+        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
+
+        for n in range(nb_iter):
+            for batch in batches:
+                self.optim.zero_grad()
+                loss = - self.elbo(zeta[batch], xu[batch])
+                loss.backward()
+                self.optim.step()
+
+            # if n % 100 == 0:
+            #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
+            #     print("Loss: {:.4f}".format(loss))
+
+
+class NeuralRecurrentTransition:
+
+    def __init__(self, nb_states, dm_obs, dm_act, prior,
+                 hidden_layer_sizes=(50, ), nonlinearity='relu'):
+        self.nb_states = nb_states
+        self.dm_obs = dm_obs
+        self.dm_act = dm_act
+
+        self.prior = prior
+        self.nonlinearity = nonlinearity
+
+        sizes = [self.dm_obs + self.dm_act] + list(hidden_layer_sizes) + [self.nb_states]
+        self.regressor = NeuralRecurrentRegressor(sizes, prior=self.prior, nonlin=self.nonlinearity)
+        self.regressor.to(device)
+
+    @property
+    def logmat(self):
+        return to_npy(self.regressor.logmat.data)
+
+    @logmat.setter
+    def logmat(self, value):
+        self.regressor.logmat.data = to_torch(value)
+
+    @property
+    def weights(self):
+        return [to_npy(self.regressor.layer.weight.data), to_npy(self.regressor.output.weight.data)]
+
+    @weights.setter
+    def weights(self, value):
+        self.regressor.layer.weight.data = to_torch(value[0])
+        self.regressor.output.weight.data = to_torch(value[1])
+
+    @property
+    def biases(self):
+        return [to_npy(self.regressor.layer.bias.data), to_npy(self.regressor.output.bias.data)]
+
+    @biases.setter
+    def biases(self, value):
+        self.regressor.layer.bias.data = to_torch(value[0])
+        self.regressor.output.bias.data = to_torch(value[1])
+
+    @property
+    def params(self):
+        return tuple([self.logmat, self.weights, self.biases])
+
+    @params.setter
+    def params(self, value):
+        self.logmat = value[0]
+        self.weights = value[1]
+        self.biases = value[2]
+
+    def initialize(self, x, u, **kwargs):
+        pass
+
+    def sample(self, z, x, u):
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return npr.choice(self.nb_states, p=mat[z, :])
+
+    def maximum(self, z, x, u):
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return np.argmax(mat[z, :])
+
+    def permute(self, perm):
+        self.logmat = self.logmat[np.ix_(perm, perm)]
+        self.weights[-1] = self.weights[-1][:, perm]
+        self.biases[-1] = self.biases[-1][perm]
+
+    def log_prior(self):
+        self.regressor.eval()
+        if self.prior:
+            return to_npy(self.regressor.log_prior())
+        else:
+            return self.regressor.log_prior()
+
+    @ensure_args_are_viable_lists
+    def log_transition(self, x, u):
+        self.regressor.eval()
+
+        logtrans = []
+        for _x, _u in zip(x, u):
+            T = np.maximum(len(_x) - 1, 1)
+            _in = np.hstack((_x[:T, :], _u[:T, :self.dm_act]))
+            _logtrans = to_npy(self.regressor.forward(to_torch(_in)))
+            logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
+        return logtrans
+
+    def mstep(self, zeta, x, u, **kwargs):
+        xu = []
+        for _x, _u in zip(x, u):
+            xu.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act])))
+
+        self.regressor.fit(to_torch(np.vstack(zeta)), to_torch(np.vstack(xu)), **kwargs)
+
+
+class NeuralRecurrentRegressor(nn.Module):
+    def __init__(self, sizes, prior, nonlin='relu'):
+        super(NeuralRecurrentRegressor, self).__init__()
+
+        self.sizes = sizes
+        self.nb_states = self.sizes[-1]
+
+        self.prior = prior
+
+        nlist = dict(relu=F.relu, tanh=F.tanh,
+                     softmax=F.log_softmax, linear=F.linear)
+
+        self.nonlin = nlist[nonlin]
+        self.layer = nn.Linear(self.sizes[0], self.sizes[1])
+        self.output = nn.Linear(self.sizes[1], self.sizes[2])
+
+        # _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
+        _mat = torch.ones(self.nb_states, self.nb_states)
+        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        self.logmat = nn.Parameter(torch.log(_mat))
+
+        self._mean = torch.as_tensor([0., 0., 0., 0.])
+        self._std = torch.as_tensor([1., 1., 8.0, 2.5])
+
+        self.optim = None
+
+    def log_prior(self):
+        lp = 0.
+        if self.prior:
+            if 'alpha' in self.prior and 'kappa' in self.prior:
+                _matrix = torch.exp(self.logmat - torch.logsumexp(self.logmat, dim=-1, keepdim=True))
+                for k in range(self.nb_states):
+                    alpha = self.prior['alpha'] * torch.ones(self.nb_states)\
+                            + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
+                    _dirichlet = torch.distributions.dirichlet.Dirichlet(alpha.to(device))
+                    lp += _dirichlet.log_prob(_matrix[k].to(device))
+            for w in self.parameters():
+                lp += self.prior['l2'] * torch.norm(w)
+        return lp
+
+    def forward(self, xu):
+        norm_xu = ((xu - self._mean.to(device)) / self._std.to(device)).to(device)
+        out = self.output(self.nonlin(self.layer(norm_xu)))
+        _logtrans = self.logmat[None, :, :] + out[:, None, :]
+        return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
+
+    def elbo(self, zeta, xu):
+        logtrans = self.forward(xu)
+        return torch.sum(zeta * logtrans) + self.log_prior()
+
+    def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1e-3):
+        self.optim = Adam(self.parameters(), lr=lr)
+
+        batch_size = xu.shape[0] if batch_size is None else batch_size
+        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
+
+        for n in range(nb_iter):
+            for batch in batches:
+                self.optim.zero_grad()
+                loss = - self.elbo(zeta[batch], xu[batch])
+                loss.backward()
+                self.optim.step()
+
+            # if n % 100 == 0:
+            #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
+            #     print("Loss: {:.4f}".format(loss))
 
 
 # class PolyRecurrentTransition(StickyTransition):
@@ -165,141 +482,6 @@ class StickyTransition(StationaryTransition):
 #             return - obj
 #
 #         self.params = lbfgs(_objective, self.params, nb_iter=nb_iter)
-
-
-class PolyRecurrentTransition:
-    def __init__(self, nb_states, dm_obs, dm_act, prior, degree=3):
-        self.nb_states = nb_states
-
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
-
-        self.degree = degree
-        self.rpr = RecurrentPolyRegressor(self.nb_states, self.dm_obs,
-                                          self.dm_act, prior=prior, degree=self.degree)
-
-    @property
-    def logmat(self):
-        return to_npy(self.rpr.logmat.data)
-
-    @logmat.setter
-    def logmat(self, value):
-        self.rpr.logmat.data = to_torch(value)
-
-    @property
-    def coef(self):
-        return to_npy(self.rpr.coef.data)
-
-    @coef.setter
-    def coef(self, value):
-        self.rpr.coef.data = to_torch(value)
-
-    @property
-    def params(self):
-        return tuple([self.logmat, self.coef])
-
-    @params.setter
-    def params(self, value):
-        self.logmat = value[0]
-        self.coef = value[1]
-
-    def initialize(self, x, u, **kwargs):
-        pass
-
-    def sample(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-        return npr.choice(self.nb_states, p=mat[z, :])
-
-    def maximum(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-        return np.argmax(mat[z, :])
-
-    def permute(self, perm):
-        self.logmat = self.logmat[np.ix_(perm, perm)]
-        self.coef = self.coef[perm, :]
-
-    def log_prior(self):
-        return self.rpr.log_prior()
-
-    @ensure_args_are_viable_lists
-    def log_transition(self, x, u):
-        logtrans = []
-        for _x, _u in zip(x, u):
-            T = np.maximum(len(_x) - 1, 1)
-            _in = np.hstack((_x[:T, :], _u[:T, :self.dm_act]))
-            _logtrans = to_npy(self.rpr.forward(to_torch(_in)))
-            logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
-        return logtrans
-
-    def mstep(self, zeta, x, u, **kwargs):
-        xu = []
-        for _x, _u in zip(x, u):
-            xu.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act])))
-
-        self.rpr.fit(to_torch(np.vstack(zeta)), to_torch(np.vstack(xu)), **kwargs)
-
-
-class RecurrentPolyRegressor(nn.Module):
-    def __init__(self, nb_states, dm_obs, dm_act, prior, degree=3):
-        super(RecurrentPolyRegressor, self).__init__()
-
-        self.nb_states = nb_states
-
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
-
-        self.prior = prior
-        self.degree = degree
-
-        self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree)) - 1
-        self.basis = PolynomialFeatures(self.degree, include_bias=False)
-
-        _stdv = torch.sqrt(torch.as_tensor(1. / (self.dm_obs + self.dm_act + self.nb_states)))
-        self.coef = nn.Parameter(_stdv * torch.randn(self.nb_states, self.nb_feat))
-
-        _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
-        _mat /= torch.sum(_mat, dim=1, keepdim=True)
-        self.logmat = nn.Parameter(torch.log(_mat))
-
-        self.optim = None
-
-    def log_prior(self):
-        lp = 0.
-        if self.prior:
-            _matrix = torch.exp(self.logmat - torch.logsumexp(self.logmat, dim=-1, keepdim=True))
-            for k in range(self.nb_states):
-                alpha = self.prior['alpha'] * torch.ones(self.nb_states)\
-                        + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
-                _dirichlet = torch.distributions.dirichlet.Dirichlet(alpha)
-                lp += _dirichlet.log_prob(_matrix[k])
-        return lp
-
-    def forward(self, xu):
-        _feat = to_torch(self.basis.fit_transform(to_npy(xu)))
-        out = torch.mm(_feat, torch.transpose(self.coef, 0, 1))
-        _logtrans = self.logmat[None, :, :] + out[:, None, :]
-        return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
-
-    def elbo(self, zeta, xu):
-        logtrans = self.forward(xu)
-        return torch.sum(zeta * logtrans) + self.log_prior()
-
-    def fit(self, zeta, xu, nb_iter=150, batch_size=None, lr=1.e-3):
-        self.optim = Adam(self.parameters(), lr=lr)
-
-        batch_size = xu.shape[0] if batch_size is None else batch_size
-        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
-
-        for n in range(nb_iter):
-            for batch in batches:
-                self.optim.zero_grad()
-                loss = - self.elbo(zeta[batch], xu[batch])
-                loss.backward()
-                self.optim.step()
-
-            # if n % 10 == 0:
-            #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
-            #     print("Loss: {:.4f}".format(loss))
 
 
 # class NeuralRecurrentTransition(StickyTransition):
@@ -376,147 +558,3 @@ class RecurrentPolyRegressor(nn.Module):
 #         opt_state = self.opt_state if hasattr(self, "opt_state") else None
 #         self.params, self.opt_state = adam(_objective, self.params, state=opt_state,
 #                                            nb_iter=nb_iter, full_output=True)
-
-
-class NeuralRecurrentTransition:
-
-    def __init__(self, nb_states, dm_obs, dm_act, prior,
-                 hidden_layer_sizes=(50, ), nonlinearity='relu'):
-        self.nb_states = nb_states
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
-
-        sizes = [self.dm_obs + self.dm_act] + list(hidden_layer_sizes) + [self.nb_states]
-        self.rnr = RecurrentNeuralRegressor(sizes, prior=prior, nonlin=nonlinearity)
-
-    @property
-    def logmat(self):
-        return to_npy(self.rnr.logmat.data)
-
-    @logmat.setter
-    def logmat(self, value):
-        self.rnr.logmat.data = to_torch(value)
-
-    @property
-    def weights(self):
-        return [to_npy(self.rnr.layer.weight.data), to_npy(self.rnr.output.weight.data)]
-
-    @weights.setter
-    def weights(self, value):
-        self.rnr.layer.weight.data = to_torch(value[0])
-        self.rnr.output.weight.data = to_torch(value[1])
-
-    @property
-    def biases(self):
-        return [to_npy(self.rnr.layer.bias.data), to_npy(self.rnr.output.bias.data)]
-
-    @biases.setter
-    def biases(self, value):
-        self.rnr.layer.bias.data = to_torch(value[0])
-        self.rnr.output.bias.data = to_torch(value[1])
-
-    @property
-    def params(self):
-        return tuple([self.logmat, self.weights, self.biases])
-
-    @params.setter
-    def params(self, value):
-        self.logmat = value[0]
-        self.weights = value[1]
-        self.biases = value[2]
-
-    def initialize(self, x, u, **kwargs):
-        pass
-
-    def sample(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-        return npr.choice(self.nb_states, p=mat[z, :])
-
-    def maximum(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-        return np.argmax(mat[z, :])
-
-    def permute(self, perm):
-        self.logmat = self.logmat[np.ix_(perm, perm)]
-        self.weights[-1] = self.weights[-1][:, perm]
-        self.biases[-1] = self.biases[-1][perm]
-
-    def log_prior(self):
-        return self.rnr.log_prior()
-
-    @ensure_args_are_viable_lists
-    def log_transition(self, x, u):
-        logtrans = []
-        for _x, _u in zip(x, u):
-            T = np.maximum(len(_x) - 1, 1)
-            _in = np.hstack((_x[:T, :], _u[:T, :self.dm_act]))
-            _logtrans = to_npy(self.rnr.forward(to_torch(_in)))
-            logtrans.append(_logtrans - logsumexp(_logtrans, axis=-1, keepdims=True))
-        return logtrans
-
-    def mstep(self, zeta, x, u, **kwargs):
-        xu = []
-        for _x, _u in zip(x, u):
-            xu.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act])))
-
-        self.rnr.fit(to_torch(np.vstack(zeta)), to_torch(np.vstack(xu)), **kwargs)
-
-
-class RecurrentNeuralRegressor(nn.Module):
-    def __init__(self, sizes, prior, nonlin='relu'):
-        super(RecurrentNeuralRegressor, self).__init__()
-
-        self.sizes = sizes
-        self.nb_states = self.sizes[-1]
-
-        self.prior = prior
-
-        nlist = dict(relu=F.relu, tanh=F.tanh,
-                     softmax=F.log_softmax, linear=F.linear)
-
-        self.nonlin = nlist[nonlin]
-        self.layer = nn.Linear(self.sizes[0], self.sizes[1])
-        self.output = nn.Linear(self.sizes[1], self.sizes[2])
-
-        _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
-        _mat /= torch.sum(_mat, dim=1, keepdim=True)
-        self.logmat = nn.Parameter(torch.log(_mat))
-
-        self.optim = None
-
-    def log_prior(self):
-        lp = 0.
-        if self.prior:
-            _matrix = torch.exp(self.logmat - torch.logsumexp(self.logmat, dim=-1, keepdim=True))
-            for k in range(self.nb_states):
-                alpha = self.prior['alpha'] * torch.ones(self.nb_states)\
-                        + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
-                _dirichlet = torch.distributions.dirichlet.Dirichlet(alpha)
-                lp += _dirichlet.log_prob(_matrix[k])
-        return lp
-
-    def forward(self, xu):
-        out = self.output(self.nonlin(self.layer(xu)))
-        _logtrans = self.logmat[None, :, :] + out[:, None, :]
-        return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
-
-    def elbo(self, zeta, xu):
-        logtrans = self.forward(xu)
-        return torch.sum(zeta * logtrans) + self.log_prior()
-
-    def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1.e-3):
-        self.optim = Adam(self.parameters(), lr=lr)
-
-        batch_size = xu.shape[0] if batch_size is None else batch_size
-        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
-
-        for n in range(nb_iter):
-            for batch in batches:
-                self.optim.zero_grad()
-                loss = - self.elbo(zeta[batch], xu[batch])
-                loss.backward()
-                self.optim.step()
-
-            # if n % 10 == 0:
-            #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
-            #     print("Loss: {:.4f}".format(loss))
