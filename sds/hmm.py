@@ -64,75 +64,98 @@ class HMM:
         loginit = self.init_state.log_init()
         logtrans = self.transitions.log_transition(obs, act)
         logobs = self.observations.log_likelihood(obs, act)
-        return [loginit, logtrans, logobs]
+        return loginit, logtrans, logobs
 
     def log_norm(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.forward(loglikhds)
-        return sum([logsumexp(_alpha[-1, :]) for _alpha in alpha])
+        alpha, norm = self.forward(*loglikhds)
+        return sum([np.sum(_norm) for _norm in norm])
 
     def log_probability(self, obs, act=None):
         return self.log_norm(obs, act) + self.log_priors()
 
-    def forward(self, loglikhds, cython=True):
-        loginit, logtrans, logobs = loglikhds
+    def forward(self, loginit, logtrans, logobs, logctl=None, cython=True):
+        if logctl is None:
+            logctl = []
+            for _logobs in logobs:
+                logctl.append(np.zeros((_logobs.shape[0], self.nb_states)))
 
-        alpha = []
-        for _logobs, _logtrans in zip(logobs, logtrans):
+        alpha, norm = [], []
+        for _logobs, _logctl, _logtrans in zip(logobs, logctl, logtrans):
             T = _logobs.shape[0]
             _alpha = np.zeros((T, self.nb_states))
+            _norm = np.zeros((T, ))
 
             if cython:
-                forward_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), to_c(_alpha))
+                forward_cy(to_c(loginit), to_c(_logtrans),
+                           to_c(_logobs), to_c(_logctl),
+                           to_c(_alpha), to_c(_norm))
             else:
                 for k in range(self.nb_states):
                     _alpha[0, k] = loginit[k] + _logobs[0, k]
+                _norm[0] = logsumexp(_alpha[0], axis=-1, keepdims=True)
+                _alpha[0] = _alpha[0] - _norm[0]
 
                 _aux = np.zeros((self.nb_states,))
                 for t in range(1, T):
                     for k in range(self.nb_states):
                         for j in range(self.nb_states):
                             _aux[j] = _alpha[t - 1, j] + _logtrans[t - 1, j, k]
-                        _alpha[t, k] = logsumexp(_aux) + _logobs[t, k]
+                        _alpha[t, k] = logsumexp(_aux) + _logobs[t, k] + _logctl[t, k]
+
+                    _norm[t] = logsumexp(_alpha[t], axis=-1, keepdims=True)
+                    _alpha[t] = _alpha[t] - _norm[t]
 
             alpha.append(_alpha)
-        return alpha
+            norm.append(_norm)
+        return alpha, norm
 
-    def backward(self, loglikhds, cython=True):
-        loginit, logtrans, logobs = loglikhds
+    def backward(self, loginit, logtrans, logobs,
+                 logctl=None, scale=None, cython=True):
+        if logctl is None:
+            logctl = []
+            for _logobs in logobs:
+                logctl.append(np.zeros((_logobs.shape[0], self.nb_states)))
 
         beta = []
-        for _logobs, _logtrans in zip(logobs, logtrans):
+        for _logobs, _logctl, _logtrans, _scale in zip(logobs, logctl, logtrans, scale):
             T = _logobs.shape[0]
             _beta = np.zeros((T, self.nb_states))
 
             if cython:
-                backward_cy(to_c(loginit), to_c(_logtrans), to_c(_logobs), to_c(_beta))
+                backward_cy(to_c(loginit), to_c(_logtrans),
+                            to_c(_logobs), to_c(_logctl),
+                            to_c(_beta), to_c(_scale))
             else:
                 for k in range(self.nb_states):
-                    _beta[T - 1, k] = 0.0
+                    _beta[T - 1, k] = 0.0 - _scale[T - 1]
 
                 _aux = np.zeros((self.nb_states,))
                 for t in range(T - 2, -1, -1):
                     for k in range(self.nb_states):
                         for j in range(self.nb_states):
-                            _aux[j] = _logtrans[t, k, j] + _beta[t + 1, j] + _logobs[t + 1, j]
-                        _beta[t, k] = logsumexp(_aux)
+                            _aux[j] = _logtrans[t, k, j] + _beta[t + 1, j]\
+                                      + _logobs[t + 1, j] + _logctl[t + 1, j]
+                        _beta[t, k] = logsumexp(_aux) - _scale[t]
 
             beta.append(_beta)
         return beta
 
-    def marginals(self, alpha, beta):
+    def posterior(self, alpha, beta):
         return [np.exp(_alpha + _beta - logsumexp(_alpha + _beta, axis=1,  keepdims=True))
                 for _alpha, _beta in zip(alpha, beta)]
 
-    def two_slice(self, loglikhds, alpha, beta):
-        loginit, logtrans, logobs = loglikhds
+    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, logctl=None):
+        if logctl is None:
+            logctl = []
+            for _logobs in logobs:
+                logctl.append(np.zeros((_logobs.shape[0], self.nb_states)))
 
         zeta = []
-        for _logobs, _logtrans, _alpha, _beta in zip(logobs, logtrans, alpha, beta):
-            _zeta = _alpha[:-1, :, None] + _beta[1:, None, :] +\
-                    _logobs[1:, :][:, None, :] + _logtrans
+        for _logobs, _logctl, _logtrans, _alpha, _beta in\
+                zip(logobs, logctl, logtrans, alpha, beta):
+            _zeta = _alpha[:-1, :, None] + _beta[1:, None, :] + _logtrans\
+                    + _logobs[1:, :][:, None, :] + _logctl[1:, :][:, None, :]
 
             _zeta -= _zeta.max((1, 2))[:, None, None]
             _zeta = np.exp(_zeta)
@@ -142,7 +165,7 @@ class HMM:
         return zeta
 
     def viterbi(self, obs, act=None):
-        loginit, logtrans, logobs = self.log_likelihoods(obs, act)
+        loginit, logtrans, logobs = self.log_likelihoods(obs, act)[0:3]
 
         delta = []
         z = []
@@ -169,10 +192,10 @@ class HMM:
 
     def estep(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.forward(loglikhds)
-        beta = self.backward(loglikhds)
-        gamma = self.marginals(alpha, beta)
-        zeta = self.two_slice(loglikhds, alpha, beta)
+        alpha, norm = self.forward(*loglikhds)
+        beta = self.backward(*loglikhds, scale=norm)
+        gamma = self.posterior(alpha, beta)
+        zeta = self.joint_posterior(alpha, beta, *loglikhds)
 
         return gamma, zeta
 
@@ -182,7 +205,10 @@ class HMM:
               trans_mstep_kwargs,
               obs_mstep_kwargs, **kwargs):
 
-        self.init_state.mstep([_gamma[0, :] for _gamma in gamma], **init_mstep_kwargs)
+        if hasattr(self, 'init_observation'):
+            self.init_observation.mstep(gamma, obs, act)
+
+        self.init_state.mstep(gamma, **init_mstep_kwargs)
         self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
         self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
 
@@ -192,7 +218,7 @@ class HMM:
 
         lls = []
 
-        ll = self.log_probability(obs, act)
+        ll = self.log_norm(obs, act)
         lls.append(ll)
         if verbose:
             print("it=", 0, "ll=", ll)
@@ -207,7 +233,7 @@ class HMM:
                        trans_mstep_kwargs,
                        obs_mstep_kwargs, **kwargs)
 
-            ll = self.log_probability(obs, act)
+            ll = self.log_norm(obs, act)
             lls.append(ll)
             if verbose:
                 print("it=", it, "ll=", ll)
@@ -224,15 +250,15 @@ class HMM:
     @ensure_args_are_viable_lists
     def mean_observation(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
-        alpha = self.forward(loglikhds)
-        beta = self.backward(loglikhds)
-        gamma = self.marginals(alpha, beta)
+        alpha, norm = self.forward(*loglikhds)
+        beta = self.backward(*loglikhds, scale=norm)
+        gamma = self.posterior(alpha, beta)
         return self.observations.smooth(gamma, obs, act)
 
     @ensure_args_are_viable_lists
     def filter(self, obs, act=None):
         logliklhds = self.log_likelihoods(obs, act)
-        alpha = self.forward(logliklhds)
+        alpha, _ = self.forward(*logliklhds)
         belief = [np.exp(_alpha - logsumexp(_alpha, axis=1, keepdims=True)) for _alpha in alpha]
         return belief
 
@@ -256,24 +282,24 @@ class HMM:
 
         return state, obs
 
-    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='viterbi'):
+    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='forward'):
         if infer == 'viterbi':
-            _, _state_seq = self.viterbi(hist_obs, hist_act)
-            _state = _state_seq[0][-1]
+            _, state_seq = self.viterbi(hist_obs, hist_act)
+            state = state_seq[0][-1]
         else:
-            _belief = self.filter(hist_obs, hist_act)
-            _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
+            belief = self.filter(hist_obs, hist_act)
+            state = npr.choice(self.nb_states, p=belief[0][-1, ...])
 
-        _act = hist_act[-1, :]
-        _obs = hist_obs[-1, :]
+        act = hist_act[-1, :]
+        obs = hist_obs[-1, :]
 
-        nxt_state = self.transitions.sample(_state, _obs, _act)
-        nxt_obs = self.observations.sample(nxt_state, _obs, _act, stoch=stoch)
+        nxt_state = self.transitions.sample(state, obs, act)
+        nxt_obs = self.observations.sample(nxt_state, obs, act, stoch=stoch)
 
         return nxt_state, nxt_obs
 
     def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
-                horizon=None, stoch=True, infer='viterbi'):
+                horizon=None, stoch=True, infer='forward'):
         nxt_state = []
         nxt_obs = []
 
@@ -305,7 +331,7 @@ class HMM:
         return nxt_state, nxt_obs
 
     @ensure_args_are_viable_lists
-    def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='viterbi'):
+    def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='forward'):
         from sklearn.metrics import mean_squared_error, explained_variance_score
 
         mse, norm_mse = [], []
