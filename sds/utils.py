@@ -14,11 +14,14 @@ from scipy.optimize import linear_sum_assignment, minimize
 from functools import partial
 
 
-def sample_env(env, nb_rollouts, nb_steps, ctl=None):
+def sample_env(env, nb_rollouts, nb_steps,
+               ctl=None, noise_std=0.1):
     obs, act = [], []
 
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
+
+    ulim = env.action_space.high
 
     for n in range(nb_rollouts):
         _obs = np.empty((nb_steps, dm_obs))
@@ -28,10 +31,12 @@ def sample_env(env, nb_rollouts, nb_steps, ctl=None):
 
         for t in range(nb_steps):
             if ctl is None:
-                _max_u = env.action_space.high
-                u = 2. * _max_u * npr.randn(1, )
+                u = 2. * ulim * npr.randn(1, )
             else:
-                u = ctl.actions(x, stoch=True)
+                u = ctl(x)
+                u = u + noise_std * npr.randn(1, )
+
+            # u = np.clip(u, -ulim, ulim)
 
             _obs[t, :] = x
             _act[t, :] = u
@@ -131,21 +136,7 @@ def relu(x):
 def logistic_regression(X, y, bias=None, K=None,
                         W0=None, mu0=0, sigma0=1,
                         verbose=False, maxiter=1000):
-    """
-    Fit a multiclass logistic regression
 
-        y_i ~ Cat(softmax(W x_i))
-
-    y is a one hot vector in {0, 1}^K
-    x_i is a vector in R^D
-    W is a matrix R^{K x D}
-
-    The log likelihood is,
-
-        L(W) = sum_i sum_k y_ik * w_k^T x_i - logsumexp(W x_i)
-
-    The prior is w_k ~ Norm(mu0, diag(sigma0)).
-    """
     N, D = X.shape
     assert y.shape[0] == N
 
@@ -193,8 +184,8 @@ def logistic_regression(X, y, bias=None, K=None,
 
 
 def linear_regression(Xs, ys, weights=None,
-                      mu0=0, sigma0=1.e8,
-                      nu0=1, psi0=1,
+                      mu0=0, sigma0=1e32,
+                      nu0=5, psi0=1e-32,
                       fit_intercept=True):
 
     Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
@@ -231,7 +222,7 @@ def linear_regression(Xs, ys, weights=None,
         h += np.dot(X.T * weight, y)
 
     # Solve for the MAP estimate
-    W = np.linalg.solve(J, h).T
+    W = np.dot(h.T, np.linalg.inv(J))  # np.linalg.solve(J, h).T
     if fit_intercept:
         W, b = W[:, :-1], W[:, -1]
     else:
