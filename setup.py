@@ -9,17 +9,9 @@ import numpy as np
 ext_modules = []
 
 ext_modules.append(
-    Extension(
-        'sds.cython.logsumexp_cy',
-        sources=["sds/cython/logsumexp_cy.pyx"],
-        language="c++")
-)
-
-ext_modules.append(
-    Extension(
-        'sds.cython.hmm_cy',
-        sources=["sds/cython/hmm_cy.pyx"],
-        language="c++")
+    Extension('sds.cython.hmm_cy',
+              sources=["sds/cython/hmm_cy.pyx"],
+              language="c++")
 )
 
 
