@@ -104,17 +104,22 @@ class StickyTransition(StationaryTransition):
 
 
 class PolyRecurrentTransition:
-    def __init__(self, nb_states, dm_obs, dm_act, prior, degree=1):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, norm=None, degree=1):
         self.nb_states = nb_states
 
         self.dm_obs = dm_obs
         self.dm_act = dm_act
 
         self.prior = prior
+        if norm is None:
+            self.norm = {'mean': np.zeros((1, self.dm_obs + self.dm_act)),
+                         'std': np.ones((1, self.dm_obs + self.dm_act))}
+        else:
+            self.norm = norm
 
         self.degree = degree
         self.regressor = PolyRecurrentRegressor(self.nb_states, self.dm_obs, self.dm_act,
-                                                prior=self.prior, degree=self.degree)
+                                                prior=self.prior, norm=self.norm, degree=self.degree)
         self.regressor.to(device)
 
     @property
@@ -185,7 +190,7 @@ class PolyRecurrentTransition:
 
 
 class PolyRecurrentRegressor(nn.Module):
-    def __init__(self, nb_states, dm_obs, dm_act, prior, degree=1):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, norm, degree=1):
         super(PolyRecurrentRegressor, self).__init__()
 
         self.nb_states = nb_states
@@ -194,6 +199,8 @@ class PolyRecurrentRegressor(nn.Module):
         self.dm_act = dm_act
 
         self.prior = prior
+        self.norm = norm
+
         self.degree = degree
 
         self.nb_feat = int(sc.special.comb(self.degree + (self.dm_obs + self.dm_act), self.degree)) - 1
@@ -207,8 +214,8 @@ class PolyRecurrentRegressor(nn.Module):
         _mat /= torch.sum(_mat, dim=1, keepdim=True)
         self.logmat = nn.Parameter(torch.log(_mat))
 
-        self._mean = torch.as_tensor([0., 0., 0., 0.])
-        self._std = torch.as_tensor([1., 1., 8.0, 2.5])
+        self._mean = torch.as_tensor(self.norm['mean'], dtype=torch.float32, device=device)
+        self._std = torch.as_tensor(self.norm['std'], dtype=torch.float32, device=device)
 
         self.optim = None
 
@@ -227,7 +234,7 @@ class PolyRecurrentRegressor(nn.Module):
         return lp
 
     def forward(self, xu):
-        norm_xu = ((xu - self._mean.to(device)) / self._std.to(device)).to(device)
+        norm_xu = (xu - self._mean) / self._std
         _feat = to_torch(self.basis.fit_transform(to_npy(norm_xu)))
         output = torch.mm(_feat, torch.transpose(self.coef, 0, 1))
         _logtrans = self.logmat[None, :, :] + output[:, None, :]
@@ -257,17 +264,25 @@ class PolyRecurrentRegressor(nn.Module):
 
 class NeuralRecurrentTransition:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior,
+    def __init__(self, nb_states, dm_obs, dm_act, prior, norm=None,
                  hidden_layer_sizes=(50, ), nonlinearity='relu'):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
 
         self.prior = prior
+
+        if norm is None:
+            self.norm = {'mean': np.zeros((1, self.dm_obs + self.dm_act)),
+                         'std': np.ones((1, self.dm_obs + self.dm_act))}
+        else:
+            self.norm = norm
+
         self.nonlinearity = nonlinearity
 
         sizes = [self.dm_obs + self.dm_act] + list(hidden_layer_sizes) + [self.nb_states]
-        self.regressor = NeuralRecurrentRegressor(sizes, prior=self.prior, nonlin=self.nonlinearity)
+        self.regressor = NeuralRecurrentRegressor(sizes, prior=self.prior, norm=self.norm,
+                                                  nonlin=self.nonlinearity)
         self.regressor.to(device)
 
     @property
@@ -350,13 +365,14 @@ class NeuralRecurrentTransition:
 
 
 class NeuralRecurrentRegressor(nn.Module):
-    def __init__(self, sizes, prior, nonlin='relu'):
+    def __init__(self, sizes, prior, norm, nonlin='relu'):
         super(NeuralRecurrentRegressor, self).__init__()
 
         self.sizes = sizes
         self.nb_states = self.sizes[-1]
 
         self.prior = prior
+        self.norm = norm
 
         nlist = dict(relu=F.relu, tanh=F.tanh,
                      softmax=F.log_softmax, linear=F.linear)
@@ -370,8 +386,8 @@ class NeuralRecurrentRegressor(nn.Module):
         _mat /= torch.sum(_mat, dim=1, keepdim=True)
         self.logmat = nn.Parameter(torch.log(_mat))
 
-        self._mean = torch.as_tensor([0., 0., 0., 0.])
-        self._std = torch.as_tensor([1., 1., 8.0, 2.5])
+        self._mean = torch.as_tensor(self.norm['mean'], dtype=torch.float32, device=device)
+        self._std = torch.as_tensor(self.norm['std'], dtype=torch.float32, device=device)
 
         self.optim = None
 
@@ -390,7 +406,7 @@ class NeuralRecurrentRegressor(nn.Module):
         return lp
 
     def forward(self, xu):
-        norm_xu = ((xu - self._mean.to(device)) / self._std.to(device)).to(device)
+        norm_xu = (xu - self._mean) / self._std
         out = self.output(self.nonlin(self.layer(norm_xu)))
         _logtrans = self.logmat[None, :, :] + out[:, None, :]
         return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
