@@ -65,7 +65,7 @@ class GaussianObservation:
 
         self.mu = km.cluster_centers_
         self.cov = np.array([np.cov(_obs[km.labels_ == k].T)
-                         for k in range(self.nb_states)])
+                             for k in range(self.nb_states)])
 
     def permute(self, perm):
         self.mu = self.mu[perm]
@@ -112,7 +112,7 @@ class GaussianObservation:
 
 class LinearGaussianControl:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-128):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -125,8 +125,8 @@ class LinearGaussianControl:
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
         if self.prior:
-            _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
             for k in range(self.nb_states):
+                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
                 self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
         else:
             self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
@@ -162,9 +162,9 @@ class LinearGaussianControl:
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
         if self.prior:
-            _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
             for k in range(self.nb_states):
-                self._sqrt_cov[k, ...] = np.linalg.choelsky(_cov * np.eye(self.dm_act))
+                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
+                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
         else:
             self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
 
@@ -350,7 +350,7 @@ class LinearGaussianControl:
 
 class AutoregRessiveLinearGaussianControl:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-128):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -364,8 +364,8 @@ class AutoregRessiveLinearGaussianControl:
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
         if self.prior:
-            _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
             for k in range(self.nb_states):
+                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
                 self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
         else:
             self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
@@ -405,7 +405,7 @@ class AutoregRessiveLinearGaussianControl:
         if self.prior:
             _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
             for k in range(self.nb_states):
-                self._sqrt_cov[k, ...] = np.linalg.choelsky(_cov * np.eye(self.dm_act))
+                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
         else:
             self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
 
@@ -473,7 +473,7 @@ class AutoregRessiveLinearGaussianControl:
 
 class AutoRegressiveGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-128):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -487,8 +487,8 @@ class AutoRegressiveGaussianObservation:
         self.c = np.zeros((self.nb_states, self.dm_obs))
 
         if self.prior:
-            _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs))
             for k in range(self.nb_states):
+                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs))
                 self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
                 self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
                 self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
