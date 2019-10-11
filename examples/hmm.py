@@ -28,7 +28,7 @@ for k in range(true_hmm.nb_states):
 T = [95, 85, 75]
 
 true_z, x = true_hmm.sample(horizon=T)
-true_ll = true_hmm.log_probability(x)
+true_ll = true_hmm.log_norm(x)
 
 hmm = HMM(nb_states=3, dm_obs=2)
 hmm.initialize(x)

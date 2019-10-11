@@ -36,7 +36,7 @@ def sample_env(env, nb_rollouts, nb_steps,
                 u = ctl(x)
                 u = u + noise_std * npr.randn(1, )
 
-            # u = np.clip(u, -ulim, ulim)
+            u = np.clip(u, -ulim, ulim)
 
             _obs[t, :] = x
             _act[t, :] = u
