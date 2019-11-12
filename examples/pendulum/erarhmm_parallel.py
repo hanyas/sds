@@ -39,6 +39,9 @@ def create_job(kwargs):
                       learn_ctl=False)
     # erarhmm.initialize(train_obs, train_act)
 
+    erarhmm.stochastic_em(train_obs, train_act, nb_epochs=100, verbose=False,
+                          method='adam', step_size=5e-4)
+
     erarhmm.em(train_obs, train_act,
                nb_iter=nb_iter, prec=prec, verbose=False,
                obs_mstep_kwargs=obs_mstep_kwargs,
@@ -66,15 +69,17 @@ def parallel_em(nb_jobs=50, **kwargs):
 if __name__ == "__main__":
 
     import os
-    import pickle
+    import torch
 
     import gym
     import rl
 
     env = gym.make('Pendulum-RL-v0')
     env._max_episode_steps = 5000
+    env.unwrapped._dt = 0.01
+    env.unwrapped._sigma = 1e-8
 
-    nb_rollouts, nb_steps = 50, 100
+    nb_rollouts, nb_steps = 50, 250
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
@@ -82,20 +87,24 @@ if __name__ == "__main__":
 
     nb_states = 5
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 2, 'psi0': 1e-2}
+    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 2, 'psi0': 1.0}
     ctl_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_act + 2, 'psi0': 5e-1}
     trans_prior = {'l2': 1e-16, 'alpha': 1, 'kappa': 100}
 
     obs_mstep_kwargs = {'use_prior': False}
     ctl_mstep_kwargs = {'use_prior': False}
 
-    trans_type = 'poly'
-    trans_kwargs = {'degree': 1}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 512, 'lr': 1e-3}
+    trans_type = 'neural'
+    trans_kwargs = {'hidden_layer_sizes': (25,),
+                    'norm': {'mean': np.array([0., 0., 0.]),
+                             'std': np.array([np.pi, 8., 2.5])}}
+    trans_mstep_kwargs = {'nb_iter': 100}  # 'batch_size': 1024, 'lr': 1e-3}
 
-    # trans_type = 'neural'
-    # trans_kwargs = {'hidden_layer_sizes': (10,)}
-    # trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': None, 'lr': 1e-3}
+    # trans_type = 'poly'
+    # trans_kwargs = {'degree': 1,
+    #                 'norm': {'mean': np.array([0., 0., 0.]),
+    #                          'std': np.array([np.pi, 8., 2.5])}}
+    # trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 1024, 'lr': 1e-3}
 
     models, lls, scores = parallel_em(nb_jobs=12,
                                       nb_states=nb_states, obs=obs, act=act,
@@ -107,11 +116,11 @@ if __name__ == "__main__":
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       ctl_mstep_kwargs=ctl_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=100, prec=1e-4)
+                                      nb_iter=25, prec=1e-4)
     erarhmm = models[np.argmax(scores)]
 
     print("erarhmm, stochastic, " + erarhmm.trans_type)
     print(np.c_[lls, scores])
 
-    # pickle.dump(erarhmm, open(erarhmm.trans_type + "_erarhmm_pendulum_polar.pkl", "wb"))
-    # pickle.dump(erarhmm, open(erarhmm.trans_type + "_erarhmm_pendulum_cart.pkl", "wb"))
+    # torch.save(erarhmm, open(erarhmm.trans_type + "_erarhmm_pendulum_polar.pkl", "wb"))
+    # torch.save(erarhmm, open(erarhmm.trans_type + "_erarhmm_pendulum_cart.pkl", "wb"))
