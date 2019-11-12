@@ -15,7 +15,8 @@ from functools import partial
 
 
 def sample_env(env, nb_rollouts, nb_steps,
-               ctl=None, noise_std=0.1):
+               ctl=None, noise_std=0.1,
+               apply_limit=True):
     obs, act = [], []
 
     dm_obs = env.observation_space.shape[0]
@@ -31,12 +32,13 @@ def sample_env(env, nb_rollouts, nb_steps,
 
         for t in range(nb_steps):
             if ctl is None:
-                u = 2. * ulim * npr.randn(1, )
+                u = ulim * npr.randn(1, )
             else:
                 u = ctl(x)
                 u = u + noise_std * npr.randn(1, )
 
-            u = np.clip(u, -ulim, ulim)
+            if apply_limit:
+                u = np.clip(u, -ulim, ulim)
 
             _obs[t, :] = x
             _act[t, :] = u
@@ -185,7 +187,7 @@ def logistic_regression(X, y, bias=None, K=None,
 
 def linear_regression(Xs, ys, weights=None,
                       mu0=0, sigma0=1e32,
-                      nu0=5, psi0=1e-32,
+                      nu0=1, psi0=1e-32,
                       fit_intercept=True):
 
     Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
@@ -222,7 +224,7 @@ def linear_regression(Xs, ys, weights=None,
         h += np.dot(X.T * weight, y)
 
     # Solve for the MAP estimate
-    W = np.dot(h.T, np.linalg.inv(J))  # np.linalg.solve(J, h).T
+    W = np.linalg.solve(J, h).T  # np.dot(h.T, np.linalg.inv(J))
     if fit_intercept:
         W, b = W[:, :-1], W[:, -1]
     else:
@@ -269,6 +271,16 @@ def unflatten_optimizer_step(step):
 
 
 @unflatten_optimizer_step
+def sgd_step(value_and_grad, x, itr, state=None, step_size=0.001, mass=0.9):
+    # Stochastic gradient descent with momentum.
+    velocity = state if state is not None else np.zeros(len(x))
+    val, g = value_and_grad(x, itr)
+    velocity = mass * velocity - (1.0 - mass) * g
+    x = x + step_size * velocity
+    return x, val, g, velocity
+
+
+@unflatten_optimizer_step
 def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
               b1=0.9, b2=0.999, eps=10**-8):
 
@@ -284,7 +296,7 @@ def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
 
 def _generic_sgd(method, loss, x0,  nb_iter=200, state=None, full_output=False):
 
-    step = dict(adam=adam_step)[method]
+    step = dict(adam=adam_step, sgd=sgd_step)[method]
 
     # Initialize outputs
     x, losses, grads = x0, [], []
