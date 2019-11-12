@@ -1,6 +1,9 @@
 import autograd.numpy as np
 import autograd.numpy.random as npr
 
+from autograd import value_and_grad
+from sds.utils import adam_step, sgd_step
+
 from autograd.scipy.special import logsumexp
 
 from sds.initial import CategoricalInitState
@@ -231,7 +234,8 @@ class HMM:
             self.mstep(gamma, zeta, obs, act,
                        init_mstep_kwargs,
                        trans_mstep_kwargs,
-                       obs_mstep_kwargs, **kwargs)
+                       obs_mstep_kwargs,
+                       **kwargs)
 
             ll = self.log_norm(obs, act)
             lls.append(ll)
@@ -244,6 +248,60 @@ class HMM:
                 last_ll = ll
 
             it += 1
+
+        return lls
+
+    @ensure_args_are_viable_lists
+    def stochastic_em(self, obs, act=None, nb_epochs=250, batch_size=5,
+                      verbose=False, method='adam', **kwargs):
+
+        nb_traj = len(obs)
+        nb_points = sum([_obs.shape[0] for _obs in obs])
+        nb_batches = int(np.ceil(nb_traj / batch_size))
+
+        def _get_minibatch(itr):
+            idx = itr % nb_batches
+            sl = slice(idx * batch_size, (idx + 1) * batch_size)
+            return obs[sl], act[sl]
+
+        # Define the objective (negative ELBO)
+        def _objective(params, itr):
+            # Grab a minibatch of data
+            obs, act = _get_minibatch(itr)
+            nb_steps = sum([_obs.shape[0] for _obs in obs])
+
+            # E step: compute expected latent states with current parameters
+            gamma, zeta = self.estep(obs, act)
+
+            # M step: set the parameter and compute the (normalized) objective function
+            self.params = params
+            loginit, logtrans, logobs = self.log_likelihoods(obs, act)
+
+            # Compute the expected log probability
+            # (Scale by number of length of this minibatch.)
+            obj = self.log_priors()
+            for _gamma, _zeta, _logtrans, _logobs in zip(gamma, zeta, logtrans, logobs):
+                obj += np.sum(_gamma[0] * loginit) * nb_traj
+                obj += np.sum(_zeta * _logtrans) * (nb_points - nb_traj) / (nb_steps - 1)
+                obj += np.sum(_gamma * _logobs) * nb_points / nb_steps
+            assert np.isfinite(obj)
+
+            return - obj / nb_points
+
+        lls = [self.log_norm(obs, act)]
+        if verbose:
+            print("epoch=", 0, "ll=", lls[-1])
+
+        # Run the optimizer
+        step = dict(adam=adam_step, sgd=sgd_step)[method]
+        state = None
+        for itr in range(1, nb_epochs * nb_traj):
+            self.params, val, g, state = step(value_and_grad(_objective), self.params,
+                                              itr, state=state, **kwargs)
+            if itr % nb_traj == 0:
+                lls.append(self.log_norm(obs, act))
+                if verbose:
+                    print("epoch=", itr // nb_traj, "ll=", lls[-1])
 
         return lls
 
@@ -274,7 +332,7 @@ class HMM:
             _state[0] = self.init_state.sample()
             _obs[0, :] = self.observations.sample(_state[0], stoch=stoch)
             for t in range(1, horizon[n]):
-                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
                 _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
 
             state.append(_state)
@@ -293,7 +351,7 @@ class HMM:
         act = hist_act[-1, :]
         obs = hist_obs[-1, :]
 
-        nxt_state = self.transitions.sample(state, obs, act)
+        nxt_state = self.transitions.sample(state, obs, act, stoch=stoch)
         nxt_obs = self.observations.sample(nxt_state, obs, act, stoch=stoch)
 
         return nxt_state, nxt_obs
@@ -316,13 +374,13 @@ class HMM:
                 _state = _state_seq[0][-1]
             else:
                 _belief = self.filter(_hist_obs, _hist_act)
-                _state = npr.choice(self.nb_states, p=_belief[0][-1, ...])
+                _state = np.argmax(_belief[0][-1, ...])
 
             _nxt_state[0] = _state
             _nxt_obs[0, :] = _hist_obs[-1, ...]
 
             for t in range(horizon[n]):
-                _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
                 _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
 
             nxt_state.append(_nxt_state)

@@ -22,7 +22,7 @@ class CategoricalInitState:
 
     @property
     def params(self):
-        return tuple([self.logpi])
+        return self.logpi
 
     @params.setter
     def params(self, value):
@@ -97,7 +97,8 @@ class GaussianInitObservation:
 
     def sample(self, stoch=True):
         if stoch:
-            return mvn(mean=self.mu, cov=self.cov).rvs()
+            _x = mvn(mean=self.mu, cov=self.cov).rvs()
+            return np.atleast_1d(_x)
         else:
             return self.mean()
 
@@ -172,7 +173,8 @@ class GaussianInitControl:
 
     def sample(self, stoch=True):
         if stoch:
-            return mvn(mean=self.mu, cov=self.cov).rvs()
+            _u = mvn(mean=self.mu, cov=self.cov).rvs()
+            return np.atleast_1d(_u)
         else:
             return self.mean()
 

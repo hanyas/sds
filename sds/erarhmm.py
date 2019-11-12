@@ -3,7 +3,7 @@ import autograd.numpy as np
 from sds import rARHMM
 
 from sds.initial import GaussianInitControl
-from sds.observations import AutoregRessiveLinearGaussianControl
+from sds.controls import AutoregRessiveLinearGaussianControl, LinearGaussianControl
 from sds.utils import ensure_args_are_viable_lists
 
 
@@ -23,6 +23,9 @@ class erARHMM(rARHMM):
 
         self.init_control = GaussianInitControl(self.nb_states, self.dm_obs, self.dm_act,
                                                 prior=init_ctl_prior, **init_ctl_kwargs)
+
+        # self.controls = LinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
+        #                                       prior=ctl_prior, **ctl_kwargs)
 
         self.controls = AutoregRessiveLinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
                                                             prior=ctl_prior, **ctl_kwargs)
@@ -62,15 +65,16 @@ class erARHMM(rARHMM):
               trans_mstep_kwargs,
               obs_mstep_kwargs, **kwargs):
 
+        weights = kwargs.get('weights', None)
         if self.learn_dyn:
             self.init_observation.mstep(gamma, obs, act)
             self.init_control.mstep(gamma, obs, act)
             self.init_state.mstep(gamma, **init_mstep_kwargs)
-            self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
-            self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
+            self.transitions.mstep(zeta, obs, act, weights, **trans_mstep_kwargs)
+            self.observations.mstep(gamma, obs, act, weights, **obs_mstep_kwargs)
         if self.learn_ctl:
             ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
-            self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
+            self.controls.mstep(gamma, obs, act, weights, **ctl_mstep_kwargs)
 
     def permute(self, perm):
         super(erARHMM, self).permute(perm)
