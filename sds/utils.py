@@ -186,8 +186,8 @@ def logistic_regression(X, y, bias=None, K=None,
 
 
 def linear_regression(Xs, ys, weights=None,
-                      mu0=0, sigma0=1e32,
-                      nu0=1, psi0=1e-32,
+                      mu0=0., sigma0=1e32,
+                      nu0=0, psi0=1e-32,
                       fit_intercept=True):
 
     Xs = Xs if isinstance(Xs, (list, tuple)) else [Xs]
@@ -224,7 +224,7 @@ def linear_regression(Xs, ys, weights=None,
         h += np.dot(X.T * weight, y)
 
     # Solve for the MAP estimate
-    W = np.linalg.solve(J, h).T  # np.dot(h.T, np.linalg.inv(J))
+    W = np.dot(h.T, np.linalg.pinv(J))  # np.linalg.solve(J, h).T
     if fit_intercept:
         W, b = W[:, :-1], W[:, -1]
     else:
