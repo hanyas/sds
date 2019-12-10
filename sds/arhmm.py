@@ -28,7 +28,7 @@ class ARHMM(HMM):
         loginit = self.init_state.log_init()
         logtrans = self.transitions.log_transition(obs, act)
 
-        ilog = self.init_observation.log_likelihood(obs, None)
+        ilog = self.init_observation.log_likelihood(obs)
         arlog = self.observations.log_likelihood(obs, act)
 
         logobs = []
@@ -44,7 +44,7 @@ class ARHMM(HMM):
         beta = self.backward(*loglikhds, scale=norm)
         gamma = self.posterior(alpha, beta)
 
-        imu = self.init_observation.smooth(gamma, obs, act)
+        imu = self.init_observation.smooth(gamma, obs)
         armu = self.observations.smooth(gamma, obs, act)
 
         mu = []
@@ -62,7 +62,7 @@ class ARHMM(HMM):
             _state = np.zeros((horizon[n],), np.int64)
 
             _state[0] = self.init_state.sample()
-            _obs[0, :] = self.init_observation.sample(stoch=stoch)
+            _obs[0, :] = self.init_observation.sample(_state[0], stoch=stoch)
             for t in range(1, horizon[n]):
                 _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
                 _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
