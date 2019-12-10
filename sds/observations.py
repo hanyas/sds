@@ -98,7 +98,7 @@ class GaussianObservation:
         self.mu = _h / _J
 
         sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        weight = np.zeros((self.nb_states, ))
+        weight = self.reg * np.ones((self.nb_states, ))
         for _x, _w in zip(x, gamma):
             resid = _x[:, None, :] - self.mu
             sqerr += np.sum(_w[:, :, None, None] * resid[:, :, None, :] * resid[:, :, :, None], axis=0)
@@ -170,7 +170,7 @@ class AutoRegressiveGaussianObservation:
         else:
             return self.mean(z, x, u)
 
-    def reinit(self):
+    def reset(self):
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         self.B = np.zeros((self.nb_states, self.dm_obs, self.dm_act))
@@ -198,7 +198,7 @@ class AutoRegressiveGaussianObservation:
         if localize:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
-            km.fit((np.vstack(x)))
+            km.fit(np.hstack((np.vstack(x), np.vstack(u))))
             zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
             zs = [z[:-1] for z in zs]
         else:
@@ -239,7 +239,9 @@ class AutoRegressiveGaussianObservation:
     def log_likelihood(self, x, u):
         loglik = []
         for _x, _u in zip(x, u):
-            _loglik = np.column_stack([multivariate_normal_logpdf(_x[1:, :], self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]), self.cov[k])
+            _loglik = np.column_stack([multivariate_normal_logpdf(_x[1:, :],
+                                                                  self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]),
+                                                                  self.cov[k])
                                        for k in range(self.nb_states)])
             loglik.append(_loglik)
         return loglik
