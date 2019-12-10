@@ -1,4 +1,5 @@
 import autograd.numpy as np
+from scipy.special import logsumexp
 
 from sds import rARHMM
 
@@ -9,7 +10,7 @@ from sds.utils import ensure_args_are_viable_lists
 
 class erARHMM(rARHMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act, trans_type='neural',
+    def __init__(self, nb_states, dm_obs, dm_act, trans_type='neural', ar_ctl=False, lags=1,
                  init_state_prior={}, init_obs_prior={}, init_ctl_prior={}, trans_prior={}, obs_prior={}, ctl_prior={},
                  init_state_kwargs={}, init_obs_kwargs={}, init_ctl_kwargs={}, trans_kwargs={}, obs_kwargs={}, ctl_kwargs={},
                  learn_dyn=True, learn_ctl=False):
@@ -20,20 +21,25 @@ class erARHMM(rARHMM):
 
         self.learn_dyn = learn_dyn
         self.learn_ctl = learn_ctl
+        self.ar_ctl = ar_ctl
+        self.lags = lags
 
-        self.init_control = GaussianInitControl(self.nb_states, self.dm_obs, self.dm_act,
-                                                prior=init_ctl_prior, **init_ctl_kwargs)
+        if self.ar_ctl:
+            self.init_control = GaussianInitControl(self.nb_states, self.dm_obs, self.dm_act,
+                                                    prior=init_ctl_prior, lags=lags, **init_ctl_kwargs)
 
-        # self.controls = LinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
-        #                                       prior=ctl_prior, **ctl_kwargs)
-
-        self.controls = AutoregRessiveLinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
-                                                            prior=ctl_prior, **ctl_kwargs)
+            self.controls = AutoregRessiveLinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
+                                                                prior=ctl_prior, lags=lags, **ctl_kwargs)
+        else:
+            self.controls = LinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
+                                                  prior=ctl_prior, **ctl_kwargs)
 
     @ensure_args_are_viable_lists
     def initialize(self, obs, act=None, **kwargs):
         super(erARHMM, self).initialize(obs, act, **kwargs)
         if self.learn_ctl:
+            if self.ar_ctl:
+                self.init_control.initialize(obs, act, **kwargs)
             self.controls.initialize(obs, act, **kwargs)
 
     def log_priors(self):
@@ -48,12 +54,15 @@ class erARHMM(rARHMM):
     def log_likelihoods(self, obs, act=None):
         loginit, logtrans, logobs = super(erARHMM, self).log_likelihoods(obs, act)
         if self.learn_ctl:
-            ilog = self.init_control.log_likelihood(obs, act)
-            arlog = self.controls.log_likelihood(obs, act)
+            if self.ar_ctl:
+                ilog = self.init_control.log_likelihood(obs, act)
+                arlog = self.controls.log_likelihood(obs, act)
 
-            logctl = []
-            for _ilog, _arlog in zip(ilog, arlog):
-                logctl.append(np.vstack((_ilog, _arlog)))
+                logctl = []
+                for _ilog, _arlog in zip(ilog, arlog):
+                    logctl.append(np.vstack((_ilog, _arlog)))
+            else:
+                logctl = self.controls.log_likelihood(obs, act)
 
             return loginit, logtrans, logobs, logctl
         else:
@@ -67,12 +76,13 @@ class erARHMM(rARHMM):
 
         weights = kwargs.get('weights', None)
         if self.learn_dyn:
-            self.init_observation.mstep(gamma, obs, act)
-            self.init_control.mstep(gamma, obs, act)
+            self.init_observation.mstep(gamma, obs)
             self.init_state.mstep(gamma, **init_mstep_kwargs)
             self.transitions.mstep(zeta, obs, act, weights, **trans_mstep_kwargs)
             self.observations.mstep(gamma, obs, act, weights, **obs_mstep_kwargs)
         if self.learn_ctl:
+            if self.ar_ctl:
+                self.init_control.mstep(gamma, obs, act)
             ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
             self.controls.mstep(gamma, obs, act, weights, **ctl_mstep_kwargs)
 
@@ -88,3 +98,36 @@ class erARHMM(rARHMM):
         gamma = self.posterior(alpha, beta)
 
         return self.controls.smooth(gamma, obs, act)
+
+    @ensure_args_are_viable_lists
+    def filter_control(self, obs, act=None, stoch=False, mix=False):
+        loglikhds = self.log_likelihoods(obs, act)
+        alpha, _ = self.forward(*loglikhds)
+        state, ctl = [], []
+        for _alpha, _obs, _act in zip(alpha, obs, act):
+            _weight = np.exp(_alpha - logsumexp(_alpha, axis=-1, keepdims=True))
+            _state = np.argmax(_weight, axis=-1)
+
+            _ctl = np.zeros((len(_act), self.dm_act))
+            for t in range(len(_obs)):
+                if mix:
+                    for k in range(self.nb_states):
+                        if self.ar_ctl:
+                            if t < self.lags:
+                                _ctl[t, :] += _weight[t, k] * self.init_control.sample(k, _obs[t, :], stoch)
+                            else:
+                                _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t - self.lags:t + 1], stoch)
+                        else:
+                            _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t, :], stoch)
+                else:
+                    if self.ar_ctl:
+                        if t < self.lags:
+                            _ctl[t, :] = self.init_control.sample(_state[t], _obs[t, :], stoch)
+                        else:
+                            _ctl[t, :] = self.controls.sample(_state[t], _obs[t - self.lags:t + 1], stoch)
+                    else:
+                        _ctl[t, :] = self.controls.sample(_state[t], _obs[t, :], stoch)
+
+            state.append(_state)
+            ctl.append(_ctl)
+        return state, ctl
