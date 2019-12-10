@@ -46,7 +46,9 @@ class HMM:
 
     @ensure_args_are_viable_lists
     def initialize(self, obs, act=None, **kwargs):
-        self.init_state.initialize(obs, act)
+        self.init_state.initialize()
+        if hasattr(self, 'init_observation'):
+            self.init_observation.initialize(obs)
         self.transitions.initialize(obs, act)
         self.observations.initialize(obs, act)
 
@@ -209,54 +211,101 @@ class HMM:
               obs_mstep_kwargs, **kwargs):
 
         if hasattr(self, 'init_observation'):
-            self.init_observation.mstep(gamma, obs, act)
+            self.init_observation.mstep(gamma, obs)
 
         self.init_state.mstep(gamma, **init_mstep_kwargs)
         self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
         self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
 
     @ensure_args_are_viable_lists
-    def em(self, obs, act=None, nb_iter=50, prec=1e-4, verbose=False,
+    def em(self, train_obs, train_act=None, nb_iter=50, prec=1e-4, verbose=False,
            init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={}, **kwargs):
 
-        lls = []
+        train_lls = []
+        train_ll = self.log_norm(train_obs, train_act)
+        train_lls.append(train_ll)
+        last_train_ll = train_ll
 
-        ll = self.log_norm(obs, act)
-        lls.append(ll)
         if verbose:
-            print("it=", 0, "ll=", ll)
-
-        last_ll = ll
+            print("it=", 0, "train_ll=", train_ll)
 
         it = 1
         while it <= nb_iter:
-            gamma, zeta = self.estep(obs, act)
-            self.mstep(gamma, zeta, obs, act,
+            gamma, zeta = self.estep(train_obs, train_act)
+            self.mstep(gamma, zeta, train_obs, train_act,
                        init_mstep_kwargs,
                        trans_mstep_kwargs,
                        obs_mstep_kwargs,
                        **kwargs)
 
-            ll = self.log_norm(obs, act)
-            lls.append(ll)
-            if verbose:
-                print("it=", it, "ll=", ll)
+            train_ll = self.log_norm(train_obs, train_act)
+            train_lls.append(train_ll)
 
-            if (ll - last_ll) < prec:
+            if verbose:
+                print("it=", it, "train_ll=", train_ll)
+
+            if (train_ll - last_train_ll) < prec:
                 break
             else:
-                last_ll = ll
+                last_train_ll = train_ll
 
             it += 1
 
-        return lls
+        return train_lls
+
+    @ensure_args_are_viable_lists
+    def earlystop_em(self, train_obs, train_act=None, nb_iter=50, prec=1e-4, verbose=False,
+                     init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={},
+                     test_obs=None, test_act=None, **kwargs):
+
+        assert test_obs is not None and test_act is not None
+
+        train_lls = []
+        train_ll = self.log_norm(train_obs, train_act)
+        train_lls.append(train_ll)
+        last_train_ll = train_ll
+
+        test_lls = []
+        test_ll = self.log_norm(test_obs, test_act)
+        test_lls.append(test_ll)
+        last_test_ll = test_ll
+
+        if verbose:
+            print("it=", 0, "train_ll=", train_ll, "test_ll=", test_ll)
+
+        it = 1
+        while it <= nb_iter:
+            gamma, zeta = self.estep(train_obs, train_act)
+            self.mstep(gamma, zeta, train_obs, train_act,
+                       init_mstep_kwargs,
+                       trans_mstep_kwargs,
+                       obs_mstep_kwargs,
+                       **kwargs)
+
+            train_ll = self.log_norm(train_obs, train_act)
+            train_lls.append(train_ll)
+
+            test_ll = self.log_norm(test_obs, test_act)
+            test_lls.append(test_ll)
+
+            if verbose:
+                print("it=", it, "train_ll=", train_ll, "test_ll=", test_ll)
+
+            if (test_ll - last_test_ll) < prec:
+                break
+            else:
+                last_test_ll = test_ll
+
+            it += 1
+
+        return train_lls
 
     @ensure_args_are_viable_lists
     def stochastic_em(self, obs, act=None, nb_epochs=250, batch_size=5,
                       verbose=False, method='adam', **kwargs):
 
         nb_traj = len(obs)
-        nb_points = sum([_obs.shape[0] for _obs in obs])
+        nb_total_steps = sum([_obs.shape[0] for _obs in obs])
         nb_batches = int(np.ceil(nb_traj / batch_size))
 
         def _get_minibatch(itr):
@@ -281,12 +330,11 @@ class HMM:
             # (Scale by number of length of this minibatch.)
             obj = self.log_priors()
             for _gamma, _zeta, _logtrans, _logobs in zip(gamma, zeta, logtrans, logobs):
-                obj += np.sum(_gamma[0] * loginit) * nb_traj
-                obj += np.sum(_zeta * _logtrans) * (nb_points - nb_traj) / (nb_steps - 1)
-                obj += np.sum(_gamma * _logobs) * nb_points / nb_steps
-            assert np.isfinite(obj)
+                obj += np.sum(_gamma[0] * loginit) * nb_traj / batch_size
+                obj += np.sum(_zeta * _logtrans) * (nb_total_steps - nb_traj) / (nb_steps - batch_size)
+                obj += np.sum(_gamma * _logobs) * nb_total_steps / nb_steps
 
-            return - obj / nb_points
+            return - obj / nb_total_steps
 
         lls = [self.log_norm(obs, act)]
         if verbose:
