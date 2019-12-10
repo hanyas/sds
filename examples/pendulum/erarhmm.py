@@ -54,18 +54,18 @@ if __name__ == "__main__":
 
     nb_states = 5
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 2, 'psi0': 1.0}
+    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 2, 'psi0': 1e-2}
     ctl_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_act + 2, 'psi0': 5e-1}
-    trans_prior = {'l2': 1e-16, 'alpha': 1, 'kappa': 100}
+    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 5}
 
     obs_mstep_kwargs = {'use_prior': False}
     ctl_mstep_kwargs = {'use_prior': False}
 
     trans_type = 'neural'
-    trans_kwargs = {'hidden_layer_sizes': (10,),
+    trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0.]),
                              'std': np.array([np.pi, 8., 2.5])}}
-    trans_mstep_kwargs = {'nb_iter': 100}  # 'batch_size': 1024, 'lr': 1e-3}
+    trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 1024, 'lr': 1e-3}
 
     # trans_type = 'poly'
     # trans_kwargs = {'degree': 1,
@@ -81,9 +81,6 @@ if __name__ == "__main__":
                       learn_ctl=False)
     # erarhmm.initialize(obs, act)
 
-    erarhmm.stochastic_em(obs, act, nb_epochs=250, verbose=True,
-                         method='adam', step_size=5e-4)
-
     lls = erarhmm.em(obs, act, nb_iter=100, prec=0., verbose=True,
                      obs_mstep_kwargs=obs_mstep_kwargs,
                      trans_mstep_kwargs=trans_mstep_kwargs)
@@ -94,8 +91,19 @@ if __name__ == "__main__":
 
     plt.figure(figsize=(8, 8))
     idx = npr.choice(nb_rollouts)
-    _, sample_obs = erarhmm.sample([act[idx]], horizon=[nb_steps])
-    plt.plot(sample_obs[0])
+    _, state = erarhmm.viterbi(obs, act)
+    _seq = npr.choice(len(obs))
+
+    plt.subplot(211)
+    plt.plot(obs[_seq])
+    plt.xlim(0, len(obs[_seq]))
+
+    plt.subplot(212)
+    plt.imshow(state[_seq][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    plt.xlim(0, len(obs[_seq]))
+    plt.ylabel("$z_{\\mathrm{inferred}}$")
+    plt.yticks([])
+
     plt.show()
 
     # torch.save(erarhmm, open(erarhmm.trans_type + "_erarhmm_pendulum_polar.pkl", "wb"))

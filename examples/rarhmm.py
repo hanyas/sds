@@ -18,7 +18,7 @@ color_names = ["windows blue", "red", "amber", "faded green", "dusty purple", "o
 colors = sns.xkcd_palette(color_names)
 cmap = gradient_cmap(colors)
 
-true_rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='neural')
+true_rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='poly')
 
 # trajectory lengths
 T = [1250, 1150, 1025]
@@ -26,7 +26,7 @@ T = [1250, 1150, 1025]
 true_z, x = true_rarhmm.sample(horizon=T)
 true_ll = true_rarhmm.log_norm(x)
 
-rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='neural')
+rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='poly')
 rarhmm.initialize(x)
 
 lls = rarhmm.em(x, nb_iter=100, prec=0., verbose=True)
