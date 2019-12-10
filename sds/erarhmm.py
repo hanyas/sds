@@ -114,19 +114,19 @@ class erARHMM(rARHMM):
                     for k in range(self.nb_states):
                         if self.ar_ctl:
                             if t < self.lags:
-                                _ctl[t, :] += _weight[t, k] * self.init_control.sample(k, _obs[t, :], stoch)
+                                _ctl[t, :] += _weight[t, k] * self.init_control.sample(k, _obs[t, :])
                             else:
-                                _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t - self.lags:t + 1], stoch)
+                                _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t - self.lags:t + 1])
                         else:
-                            _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t, :], stoch)
+                            _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t, :])
                 else:
                     if self.ar_ctl:
                         if t < self.lags:
-                            _ctl[t, :] = self.init_control.sample(_state[t], _obs[t, :], stoch)
+                            _ctl[t, :] = self.init_control.sample(_state[t], _obs[t, :])
                         else:
-                            _ctl[t, :] = self.controls.sample(_state[t], _obs[t - self.lags:t + 1], stoch)
+                            _ctl[t, :] = self.controls.sample(_state[t], _obs[t - self.lags:t + 1])
                     else:
-                        _ctl[t, :] = self.controls.sample(_state[t], _obs[t, :], stoch)
+                        _ctl[t, :] = self.controls.sample(_state[t], _obs[t, :])
 
             state.append(_state)
             ctl.append(_ctl)

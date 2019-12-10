@@ -368,7 +368,7 @@ class HMM:
         belief = [np.exp(_alpha - logsumexp(_alpha, axis=1, keepdims=True)) for _alpha in alpha]
         return belief
 
-    def sample(self, act=None, horizon=None, stoch=True):
+    def sample(self, act=None, horizon=None):
         state = []
         obs = []
 
@@ -378,29 +378,47 @@ class HMM:
             _state = np.zeros((horizon[n],), np.int64)
 
             _state[0] = self.init_state.sample()
-            _obs[0, :] = self.observations.sample(_state[0], stoch=stoch)
+            _obs[0, :] = self.observations.sample(_state[0])
             for t in range(1, horizon[n]):
-                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
-                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
+                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :])
 
             state.append(_state)
             obs.append(_obs)
 
         return state, obs
 
-    def step(self, hist_obs=None, hist_act=None, stoch=True, infer='forward'):
-        if infer == 'viterbi':
-            _, state_seq = self.viterbi(hist_obs, hist_act)
-            state = state_seq[0][-1]
-        else:
-            belief = self.filter(hist_obs, hist_act)
-            state = npr.choice(self.nb_states, p=belief[0][-1, ...])
+    def step(self, hist_obs=None, hist_act=None, stoch=True, mix=False):
+        _belief = self.filter(hist_obs, hist_act)
+        belief = _belief[0][-1, ...]
 
         act = hist_act[-1, :]
         obs = hist_obs[-1, :]
 
-        nxt_state = self.transitions.sample(state, obs, act, stoch=stoch)
-        nxt_obs = self.observations.sample(nxt_state, obs, act, stoch=stoch)
+        if stoch:
+            state = npr.choice(self.nb_states, p=belief)
+            nxt_state = self.transitions.sample(state, obs, act)
+            nxt_obs = self.observations.sample(nxt_state, obs, act)
+        else:
+            if mix:
+                # still returns most probable filtered state
+                state = np.argmax(belief)
+                nxt_state = self.transitions.likeliest(state, obs, act)
+
+                # average over transitions and belief space
+                _logtrans = np.squeeze(self.transitions.log_transition(obs, act)[0])
+                _trans = np.exp(_logtrans - logsumexp(_logtrans, axis=1, keepdims=True))
+
+                _zeta = _trans.T @ belief
+                _nxt_belief = _zeta / _zeta.sum()
+
+                nxt_obs = np.zeros((self.dm_obs, ))
+                for k in range(self.nb_states):
+                    nxt_obs += _nxt_belief[k] * self.observations.mean(k, obs, act)
+            else:
+                state = np.argmax(belief)
+                nxt_state = self.transitions.likeliest(state, obs, act)
+                nxt_obs = self.observations.mean(nxt_state, obs, act)
 
         return nxt_state, nxt_obs
 
@@ -428,8 +446,8 @@ class HMM:
             _nxt_obs[0, :] = _hist_obs[-1, ...]
 
             for t in range(horizon[n]):
-                _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
-                _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :], stoch=stoch)
+                _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
 
             nxt_state.append(_nxt_state)
             nxt_obs.append(_nxt_obs)

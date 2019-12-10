@@ -55,13 +55,12 @@ class StationaryTransition:
     def initialize(self, x, u):
         pass
 
-    def sample(self, z, x, u, stoch=True):
-        if stoch:
-            return npr.choice(self.nb_states, p=self.matrix[z, :])
-        else:
-            return self.maximum(z, x, u)
+    # sample transiton
+    def sample(self, z, x=None, u=None):
+        return npr.choice(self.nb_states, p=self.matrix[z, :])
 
-    def maximum(self, z, x, u):
+    # most likely transition
+    def likeliest(self, z, x=None, u=None):
         return np.argmax(self.matrix[z, :])
 
     def permute(self, perm):
@@ -156,14 +155,11 @@ class PolyRecurrentTransition:
     def initialize(self, x, u, **kwargs):
         pass
 
-    def sample(self, z, x, u, stoch=True):
-        if stoch:
-            mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-            return npr.choice(self.nb_states, p=mat[z, :])
-        else:
-            return self.maximum(z, x, u)
+    def sample(self, z, x, u):
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return npr.choice(self.nb_states, p=mat[z, :])
 
-    def maximum(self, z, x, u):
+    def likeliest(self, z, x, u):
         mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
         return np.argmax(mat[z, :])
 
@@ -234,7 +230,7 @@ class PolyRecurrentRegressor(nn.Module):
 
         self.optim = None
 
-    def reinit(self):
+    def reset(self):
         _stdv = torch.sqrt(torch.as_tensor(1. / (self.dm_obs + self.dm_act + self.nb_states)))
         self.coef.data = _stdv * torch.randn(self.nb_states, self.nb_feat)
 
@@ -351,14 +347,11 @@ class NeuralRecurrentTransition:
     def initialize(self, x, u, **kwargs):
         pass
 
-    def sample(self, z, x, u, stoch=True):
-        if stoch:
-            mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-            return npr.choice(self.nb_states, p=mat[z, :])
-        else:
-            return self.maximum(z, x, u)
+    def sample(self, z, x, u):
+        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        return npr.choice(self.nb_states, p=mat[z, :])
 
-    def maximum(self, z, x, u):
+    def likeliest(self, z, x, u):
         mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
         return np.argmax(mat[z, :])
 
@@ -427,7 +420,7 @@ class NeuralRecurrentRegressor(nn.Module):
 
         self.optim = None
 
-    def reinit(self):
+    def reset(self):
         self.layer.reset_parameters()
         self.output.reset_parameters()
 
@@ -514,13 +507,10 @@ class NeuralRecurrentRegressor(nn.Module):
 #         pass
 #
 #     def sample(self, z, x, u, stoch=True):
-#         if stoch:
-#             mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-#             return npr.choice(self.nb_states, p=mat[z, :])
-#         else:
-#             return self.maximum(z, x, u)
+#         mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+#         return npr.choice(self.nb_states, p=mat[z, :])
 #
-#     def maximum(self, z, x, u):
+#     def likeliest(self, z, x, u):
 #         mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
 #         return np.argmax(mat[z, :])
 #
@@ -606,14 +596,11 @@ class NeuralRecurrentRegressor(nn.Module):
 #     def initialize(self, x, u, **kwargs):
 #         pass
 #
-#     def sample(self, z, x, u, stoch=True):
-#         if stoch:
-#             mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
-#             return npr.choice(self.nb_states, p=mat[z, :])
-#         else:
-#             return self.maximum(z, x, u)
+#     def sample(self, z, x, u):
+#         mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+#         return npr.choice(self.nb_states, p=mat[z, :])
 #
-#     def maximum(self, z, x, u):
+#     def likeliest(self, z, x, u):
 #         mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
 #         return np.argmax(mat[z, :])
 #

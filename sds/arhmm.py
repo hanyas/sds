@@ -52,7 +52,7 @@ class ARHMM(HMM):
             mu.append(np.vstack((_imu, _armu)))
         return mu
 
-    def sample(self, act=None, horizon=None, stoch=True):
+    def sample(self, act=None, horizon=None):
         state = []
         obs = []
 
@@ -62,10 +62,10 @@ class ARHMM(HMM):
             _state = np.zeros((horizon[n],), np.int64)
 
             _state[0] = self.init_state.sample()
-            _obs[0, :] = self.init_observation.sample(_state[0], stoch=stoch)
+            _obs[0, :] = self.init_observation.sample(_state[0])
             for t in range(1, horizon[n]):
-                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
-                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :], stoch=stoch)
+                _state[t] = self.transitions.sample(_state[t - 1], _obs[t - 1, :], _act[t - 1, :])
+                _obs[t, :] = self.observations.sample(_state[t], _obs[t - 1, :], _act[t - 1, :])
 
             state.append(_state)
             obs.append(_obs)

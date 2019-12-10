@@ -54,12 +54,9 @@ class GaussianObservation:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
 
-    def sample(self, z, x=None, u=None, stoch=True):
-        if stoch:
-            _x = mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
-            return np.atleast_1d(_x)
-        else:
-            return self.mean(z)
+    def sample(self, z, x=None, u=None):
+        _x = mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
+        return np.atleast_1d(_x)
 
     def initialize(self, x, u, **kwargs):
         from sklearn.cluster import KMeans
@@ -163,12 +160,9 @@ class AutoRegressiveGaussianObservation:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
 
-    def sample(self, z, x, u, stoch=True):
-        if stoch:
-            _x = mvn(self.mean(z, x, u), cov=self.cov[z, ...]).rvs()
-            return np.atleast_1d(_x)
-        else:
-            return self.mean(z, x, u)
+    def sample(self, z, x, u):
+        _x = mvn(self.mean(z, x, u), cov=self.cov[z, ...]).rvs()
+        return np.atleast_1d(_x)
 
     def reset(self):
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))

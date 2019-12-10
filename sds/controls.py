@@ -66,12 +66,9 @@ class LinearGaussianControl:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_act))
 
-    def sample(self, z, x, stoch=True):
-        if stoch:
-            _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
-            return np.atleast_1d(_u)
-        else:
-            return self.mean(z, x)
+    def sample(self, z, x):
+        _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
+        return np.atleast_1d(_u)
 
     def reset(self):
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat)
@@ -292,12 +289,9 @@ class AutoregRessiveLinearGaussianControl:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_act))
 
-    def sample(self, z, x, stoch=True):
-        if stoch:
-            _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
-            return np.atleast_1d(_u)
-        else:
-            return self.mean(z, x)
+    def sample(self, z, x):
+        _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
+        return np.atleast_1d(_u)
 
     def reset(self):
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat + self.dm_feat * self.lags)

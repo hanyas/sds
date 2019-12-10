@@ -41,7 +41,7 @@ class CategoricalInitState:
     def sample(self):
         return npr.choice(self.nb_states, p=self.pi)
 
-    def maximum(self):
+    def likeliest(self):
         return np.argmax(self.pi)
 
     def log_init(self):
@@ -100,12 +100,9 @@ class GaussianInitObservation:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
 
-    def sample(self, z, stoch=True):
-        if stoch:
-            _x = mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
-            return np.atleast_1d(_x)
-        else:
-            return self.mean(z)
+    def sample(self, z):
+        _x = mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
+        return np.atleast_1d(_x)
 
     def initialize(self, x):
         from sklearn.cluster import KMeans
@@ -216,12 +213,9 @@ class GaussianInitControl:
     def cov(self, value):
         self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_act))
 
-    def sample(self, z, x, stoch=True):
-        if stoch:
-            _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
-            return np.atleast_1d(_u)
-        else:
-            return self.mean(z, x)
+    def sample(self, z, x):
+        _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
+        return np.atleast_1d(_u)
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
