@@ -15,7 +15,7 @@ from sklearn.preprocessing import PolynomialFeatures
 
 class CategoricalInitState:
 
-    def __init__(self, nb_states, prior, reg=1e-16):
+    def __init__(self, nb_states, prior, reg=1e-8):
         self.nb_states = nb_states
 
         self.prior = prior
@@ -63,7 +63,7 @@ class CategoricalInitState:
 
 class GaussianInitObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-8):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -73,13 +73,13 @@ class GaussianInitObservation:
 
         self.mu = npr.randn(self.nb_states, self.dm_obs)
 
+        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
+
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
+        for k in range(self.nb_states):
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 2, 1. * np.eye(self.dm_obs))
+            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
+
 
     @property
     def params(self):
@@ -164,7 +164,8 @@ class GaussianInitObservation:
 
 class GaussianInitControl:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, lags=1, degree=1, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act,
+                 prior, lags=1, degree=1, reg=1e-8):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -181,13 +182,13 @@ class GaussianInitControl:
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat)
         self.kff = npr.randn(self.nb_states, self.dm_act)
 
+        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+        for k in range(self.nb_states):
+            _cov = sc.stats.invwishart.rvs(self.dm_act + 2, 1. * np.eye(self.dm_act))
+            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
+
 
     @property
     def params(self):

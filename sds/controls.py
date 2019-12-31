@@ -9,7 +9,7 @@ from scipy.stats import multivariate_normal as mvn
 from scipy.stats import invwishart as invw
 
 from sds.stats import multivariate_normal_logpdf as log_mvn
-from sds.utils import linear_regression
+from sds.utils import linear_regression, stack
 
 from autograd.tracer import getval
 
@@ -34,13 +34,12 @@ class LinearGaussianControl:
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat)
         self.kff = npr.randn(self.nb_states, self.dm_act)
 
+        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+        for k in range(self.nb_states):
+            _cov = sc.stats.invwishart.rvs(self.dm_act + 2, 1. * np.eye(self.dm_act))
+            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
 
     @property
     def params(self):
@@ -73,14 +72,7 @@ class LinearGaussianControl:
     def reset(self):
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat)
         self.kff = npr.randn(self.nb_states, self.dm_act)
-
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+        self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
@@ -232,8 +224,8 @@ class LinearGaussianControl:
 
 class AutoregRessiveLinearGaussianControl:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior,
-                 lags=1, degree=3, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act,
+                 prior, lags=1, degree=1, reg=1e-16):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -250,13 +242,12 @@ class AutoregRessiveLinearGaussianControl:
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat + self.dm_feat * self.lags)
         self.kff = npr.randn(self.nb_states, self.dm_act)
 
+        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+        for k in range(self.nb_states):
+            _cov = sc.stats.invwishart.rvs(self.dm_act + 2, 1. * np.eye(self.dm_act))
+            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
 
     @property
     def params(self):
@@ -270,15 +261,15 @@ class AutoregRessiveLinearGaussianControl:
         feat = self.basis.fit_transform(np.atleast_2d(x)).squeeze()
         return feat
 
-    # stack ar observations and controls
-    def stack(self, x):
-        _hr = len(x) - self.lags
-        _x = np.vstack([np.hstack([x[t + l] for l in range(self.lags + 1)]) for t in range(_hr)])
-        return np.squeeze(_x)
+    # # stack ar observations and controls
+    # def stack(self, x):
+    #     _hr = len(x) - self.lags
+    #     _x = np.vstack([np.hstack([x[t + l] for l in range(self.lags + 1)]) for t in range(_hr)])
+    #     return np.squeeze(_x)
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        _x = self.stack(feat)
+        _x = stack(feat, self.lags)
         return np.einsum('kh,...h->...k', self.K[z, ...], _x) + self.kff[z, ...]
 
     @property
@@ -296,14 +287,7 @@ class AutoregRessiveLinearGaussianControl:
     def reset(self):
         self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat + self.dm_feat * self.lags)
         self.kff = npr.randn(self.nb_states, self.dm_act)
-
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_act))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+        self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
@@ -362,7 +346,7 @@ class AutoregRessiveLinearGaussianControl:
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, gamma):
             _feat = self.featurize(_x)
-            _x_in = self.stack(_feat)
+            _x_in = stack(_feat, self.lags)
             xs.append(np.hstack((_x_in, np.ones((_x_in.shape[0], 1)))))
             ys.append(_u[self.lags:])
             ws.append(_w[self.lags:])

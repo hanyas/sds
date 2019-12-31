@@ -27,13 +27,12 @@ class GaussianObservation:
 
         self.mu = npr.randn(self.nb_states, self.dm_obs)
 
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
+        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
+
+        self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        for k in range(self.nb_states):
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 2, 1. * np.eye(self.dm_obs))
+            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
 
     @property
     def params(self):
@@ -121,24 +120,23 @@ class AutoRegressiveGaussianObservation:
         self.reg = reg
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+
         self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         self.B = np.zeros((self.nb_states, self.dm_obs, self.dm_act))
         self.c = np.zeros((self.nb_states, self.dm_obs))
 
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
-                self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
-                self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
-                self.c[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, 0]
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
+        # for k in range(self.nb_states):
+        #     self._sqrt_cov[k, ...] = npr.randn(self.dm_obs, self.dm_obs)
+        #     self.A[k, ...] = .95 * random_rotation(self.dm_obs)
+        #     self.B[k, ...] = npr.randn(self.dm_obs, self.dm_act)
+        #     self.c[k, :] = npr.randn(self.dm_obs)
 
-            for k in range(self.nb_states):
-                self.A[k, ...] = .95 * random_rotation(self.dm_obs)
-                self.B[k, ...] = npr.randn(self.dm_obs, self.dm_act)
-                self.c[k, :] = npr.randn(self.dm_obs)
+        for k in range(self.nb_states):
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 2, 1. * np.eye(self.dm_obs))
+            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
+            self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
+            self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
+            self.c[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, 0]
 
     @property
     def params(self):
@@ -165,25 +163,16 @@ class AutoRegressiveGaussianObservation:
         return np.atleast_1d(_x)
 
     def reset(self):
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
+
         self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         self.B = np.zeros((self.nb_states, self.dm_obs, self.dm_act))
         self.c = np.zeros((self.nb_states, self.dm_obs))
 
-        if self.prior:
-            for k in range(self.nb_states):
-                _cov = sc.stats.invwishart.rvs(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs))
-                self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
-                self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
-                self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
-                self.c[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, 0]
-        else:
-            self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
-
-            for k in range(self.nb_states):
-                self.A[k, ...] = .95 * random_rotation(self.dm_obs)
-                self.B[k, ...] = npr.randn(self.dm_obs, self.dm_act)
-                self.c[k, :] = npr.randn(self.dm_obs)
+        for k in range(self.nb_states):
+            self.A[k, ...] = .95 * random_rotation(self.dm_obs)
+            self.B[k, ...] = npr.randn(self.dm_obs, self.dm_act)
+            self.c[k, :] = npr.randn(self.dm_obs)
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
