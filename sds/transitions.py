@@ -25,6 +25,7 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import PolynomialFeatures
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
 to_torch = lambda arr: torch.from_numpy(arr).float().to(device)
 to_npy = lambda arr: arr.detach().double().cpu().numpy()
@@ -228,6 +229,14 @@ class PolyRecurrentRegressor(nn.Module):
         self._mean = torch.as_tensor(self.norm['mean'], dtype=torch.float32, device=device)
         self._std = torch.as_tensor(self.norm['std'], dtype=torch.float32, device=device)
 
+        if self.prior:
+            if 'alpha' in self.prior and 'kappa' in self.prior:
+                self._concentration = torch.zeros(self.nb_states, self.nb_states, dtype=torch.float32, device=device)
+                for k in range(self.nb_states):
+                    self._concentration[k, ...] = self.prior['alpha'] * torch.ones(self.nb_states)\
+                            + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
+                self._dirichlet = _dirichlet = dist.dirichlet.Dirichlet(self._concentration.to(device))
+
         self.optim = None
 
     def reset(self):
@@ -241,15 +250,9 @@ class PolyRecurrentRegressor(nn.Module):
     def log_prior(self):
         lp = 0.
         if self.prior:
-            if 'alpha' in self.prior and 'kappa' in self.prior:
+            if hasattr(self, '_dirichlet'):
                 _matrix = torch.exp(self.logmat - torch.logsumexp(self.logmat, dim=-1, keepdim=True))
-                for k in range(self.nb_states):
-                    alpha = self.prior['alpha'] * torch.ones(self.nb_states)\
-                            + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
-                    _dirichlet = dist.dirichlet.Dirichlet(alpha.to(device))
-                    lp += _dirichlet.log_prob(_matrix[k].to(device))
-            if 'lp_penalty' in self.prior:
-                lp = self.prior['lp_penalty'] * lp
+                lp += self._dirichlet.log_prob(_matrix.to(device)).sum()
         return lp
 
     def forward(self, xu):
@@ -418,6 +421,14 @@ class NeuralRecurrentRegressor(nn.Module):
         self._mean = torch.as_tensor(self.norm['mean'], dtype=torch.float32, device=device)
         self._std = torch.as_tensor(self.norm['std'], dtype=torch.float32, device=device)
 
+        if self.prior:
+            if 'alpha' in self.prior and 'kappa' in self.prior:
+                self._concentration = torch.zeros(self.nb_states, self.nb_states, dtype=torch.float32, device=device)
+                for k in range(self.nb_states):
+                    self._concentration[k, ...] = self.prior['alpha'] * torch.ones(self.nb_states)\
+                            + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
+                self._dirichlet = _dirichlet = dist.dirichlet.Dirichlet(self._concentration.to(device))
+
         self.optim = None
 
     def reset(self):
@@ -431,15 +442,9 @@ class NeuralRecurrentRegressor(nn.Module):
     def log_prior(self):
         lp = 0.
         if self.prior:
-            if 'alpha' in self.prior and 'kappa' in self.prior:
+            if hasattr(self, '_dirichlet'):
                 _matrix = torch.exp(self.logmat - torch.logsumexp(self.logmat, dim=-1, keepdim=True))
-                for k in range(self.nb_states):
-                    alpha = self.prior['alpha'] * torch.ones(self.nb_states)\
-                            + self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k, dtype=torch.float32)
-                    _dirichlet = dist.dirichlet.Dirichlet(alpha.to(device))
-                    lp += _dirichlet.log_prob(_matrix[k].to(device))
-            if 'lp_penalty' in self.prior:
-                lp = self.prior['lp_penalty'] * lp
+                lp += self._dirichlet.log_prob(_matrix.to(device)).sum()
         return lp
 
     def forward(self, xu):

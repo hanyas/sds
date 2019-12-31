@@ -260,6 +260,10 @@ class HMM:
 
         assert test_obs is not None and test_act is not None
 
+        nb_train = np.vstack(train_obs).shape[0]
+        nb_test = np.vstack(test_obs).shape[0]
+        nb_all = nb_train + nb_test
+
         train_lls = []
         train_ll = self.log_norm(train_obs, train_act)
         train_lls.append(train_ll)
@@ -270,8 +274,11 @@ class HMM:
         test_lls.append(test_ll)
         last_test_ll = test_ll
 
+        last_all_ll = last_train_ll + last_test_ll
+        last_score = (last_all_ll - last_train_ll) / (nb_all - nb_train)
+
         if verbose:
-            print("it=", 0, "train_ll=", train_ll, "test_ll=", test_ll)
+            print("it=", 0, "train_ll=", train_ll, "test_ll=", test_ll, "score=", last_score)
 
         it = 1
         while it <= nb_iter:
@@ -288,13 +295,16 @@ class HMM:
             test_ll = self.log_norm(test_obs, test_act)
             test_lls.append(test_ll)
 
-            if verbose:
-                print("it=", it, "train_ll=", train_ll, "test_ll=", test_ll)
+            all_ll = train_ll + test_ll
+            score = (all_ll - train_ll) / (nb_all - nb_train)
 
-            if (test_ll - last_test_ll) < prec:
+            if verbose:
+                print("it=", it, "train_ll=", train_ll, "test_ll=", test_ll, "score=", score)
+
+            if (score - last_score) < prec:
                 break
             else:
-                last_test_ll = test_ll
+                last_score = score
 
             it += 1
 
@@ -388,12 +398,10 @@ class HMM:
 
         return state, obs
 
-    def step(self, hist_obs=None, hist_act=None, stoch=True, mix=False):
-        _belief = self.filter(hist_obs, hist_act)
-        belief = _belief[0][-1, ...]
-
-        act = hist_act[-1, :]
-        obs = hist_obs[-1, :]
+    def step(self, obs, act, belief, stoch=True, mix=False):
+        if stoch:
+            # it doesn't make sense to mix while sampling
+            assert not mix
 
         if stoch:
             state = npr.choice(self.nb_states, p=belief)
@@ -401,9 +409,7 @@ class HMM:
             nxt_obs = self.observations.sample(nxt_state, obs, act)
         else:
             if mix:
-                # still returns most probable filtered state
-                state = np.argmax(belief)
-                nxt_state = self.transitions.likeliest(state, obs, act)
+                nxt_state = None
 
                 # average over transitions and belief space
                 _logtrans = np.squeeze(self.transitions.log_transition(obs, act)[0])
@@ -412,7 +418,7 @@ class HMM:
                 _zeta = _trans.T @ belief
                 _nxt_belief = _zeta / _zeta.sum()
 
-                nxt_obs = np.zeros((self.dm_obs, ))
+                nxt_obs = np.zeros((1, self.dm_obs))
                 for k in range(self.nb_states):
                     nxt_obs += _nxt_belief[k] * self.observations.mean(k, obs, act)
             else:
@@ -422,8 +428,7 @@ class HMM:
 
         return nxt_state, nxt_obs
 
-    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
-                horizon=None, stoch=True, infer='forward'):
+    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None, horizon=None, stoch=True, mix=True):
         nxt_state = []
         nxt_obs = []
 
@@ -435,19 +440,39 @@ class HMM:
             _nxt_obs = np.zeros((horizon[n] + 1, self.dm_obs))
             _nxt_state = np.zeros((horizon[n] + 1,), np.int64)
 
-            if infer == 'viterbi':
-                _, _state_seq = self.viterbi(_hist_obs, _hist_act)
-                _state = _state_seq[0][-1]
+            _belief = self.filter(_hist_obs, _hist_act)[0][-1, ...]
+
+            if stoch:
+                _nxt_state[0] = npr.choice(self.nb_states, p=_belief)
+                _nxt_obs[0, :] = _hist_obs[-1, ...]
+                for t in range(horizon[n]):
+                    _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                    _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
             else:
-                _belief = self.filter(_hist_obs, _hist_act)
-                _state = np.argmax(_belief[0][-1, ...])
+                if mix:
+                    # return empty discrete state when mixing
+                    _nxt_state = None
 
-            _nxt_state[0] = _state
-            _nxt_obs[0, :] = _hist_obs[-1, ...]
+                    _nxt_obs[0, :] = _hist_obs[-1, ...]
+                    for t in range(horizon[n]):
 
-            for t in range(horizon[n]):
-                _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
-                _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
+                        # average over transitions and belief space
+                        _logtrans = np.squeeze(self.transitions.log_transition(_nxt_obs[t, :], _nxt_act[t, :])[0])
+                        _trans = np.exp(_logtrans - logsumexp(_logtrans, axis=1, keepdims=True))
+
+                        # update belief
+                        _zeta = _trans.T @ _belief
+                        _belief = _zeta / _zeta.sum()
+
+                        # average observations
+                        for k in range(self.nb_states):
+                            _nxt_obs[t + 1, :] += _belief[k] * self.observations.mean(k, _nxt_obs[t, :], _nxt_act[t, :])
+                else:
+                    _nxt_state[0] = np.argmax(_belief)
+                    _nxt_obs[0, :] = _hist_obs[-1, ...]
+                    for t in range(horizon[n]):
+                        _nxt_state[t + 1] = self.transitions.likeliest(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                        _nxt_obs[t + 1, :] = self.observations.mean(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
 
             nxt_state.append(_nxt_state)
             nxt_obs.append(_nxt_obs)
@@ -455,10 +480,10 @@ class HMM:
         return nxt_state, nxt_obs
 
     @ensure_args_are_viable_lists
-    def kstep_mse(self, obs, act, horizon=1, stoch=True, infer='forward'):
+    def kstep_mse(self, obs, act, horizon=1, stoch=False, mix=False):
         from sklearn.metrics import mean_squared_error, explained_variance_score
 
-        mse, norm_mse = [], []
+        mse, evar = [], []
         for _obs, _act in zip(obs, act):
             _hist_obs, _hist_act, _nxt_act = [], [], []
             _target, _prediction = [], []
@@ -471,8 +496,7 @@ class HMM:
 
             _hr = [horizon for _ in range(_nb_steps)]
             _, _obs_hat = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
-                                       nxt_act=_nxt_act, horizon=_hr,
-                                       stoch=stoch, infer=infer)
+                                       nxt_act=_nxt_act, horizon=_hr, stoch=stoch, mix=mix)
 
             for t in range(_nb_steps):
                 _target.append(_obs[t + horizon, :])
@@ -482,9 +506,10 @@ class HMM:
             _prediction = np.vstack(_prediction)
 
             _mse = mean_squared_error(_target, _prediction)
-            _norm_mse = explained_variance_score(_target, _prediction, multioutput='variance_weighted')
+            _evar = explained_variance_score(_target, _prediction,
+                                             multioutput='variance_weighted')
 
             mse.append(_mse)
-            norm_mse.append(_norm_mse)
+            evar.append(_evar)
 
-        return np.mean(mse), np.mean(norm_mse)
+        return np.mean(mse), np.mean(evar)

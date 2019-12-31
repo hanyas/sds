@@ -11,7 +11,7 @@ from autograd.wrap_util import wraps
 
 from scipy.optimize import linear_sum_assignment, minimize
 
-from functools import partial
+from functools import partial, lru_cache
 
 
 def sample_env(env, nb_rollouts, nb_steps,
@@ -32,7 +32,8 @@ def sample_env(env, nb_rollouts, nb_steps,
 
         for t in range(nb_steps):
             if ctl is None:
-                u = ulim * npr.randn(1, )
+                # u = 2 * ulim * npr.randn(1, )
+                u = np.random.uniform(-ulim, ulim)
             else:
                 u = ctl(x)
                 u = u + noise_std * npr.randn(1, )
@@ -77,6 +78,32 @@ def ensure_args_are_viable_lists(f):
 
         return f(self, obs, act, **kwargs)
     return wrapper
+
+
+def np_cache(function):
+    @lru_cache()
+    def cached_wrapper(hashable_array, *args):
+        array = np.array(hashable_array)
+        return function(array, *args)
+
+    @wraps(function)
+    def wrapper(array, *args):
+        array_tuple = tuple(zip(*array.T.tolist()))
+        return cached_wrapper(array_tuple, *args)
+
+    # copy lru_cache attributes over too
+    wrapper.cache_info = cached_wrapper.cache_info
+    wrapper.cache_clear = cached_wrapper.cache_clear
+
+    return wrapper
+
+
+# stack ar observations and controls
+@np_cache
+def stack(x, shift):
+    _hr = len(x) - shift
+    _x = np.vstack([np.hstack([x[t + l] for l in range(shift + 1)]) for t in range(_hr)])
+    return np.squeeze(_x)
 
 
 def flatten_to_dim(X, d):
@@ -224,7 +251,11 @@ def linear_regression(Xs, ys, weights=None,
         h += np.dot(X.T * weight, y)
 
     # Solve for the MAP estimate
-    W = np.dot(h.T, np.linalg.pinv(J))  # np.linalg.solve(J, h).T
+    # W = np.linalg.solve(J, h).T
+    # W = np.dot(h.T, np.linalg.pinv(J)).T
+    WT, _, _, _ = np.linalg.lstsq(J, h, rcond=None)
+    W = WT.T
+
     if fit_intercept:
         W, b = W[:, :-1], W[:, -1]
     else:
@@ -237,10 +268,10 @@ def linear_regression(Xs, ys, weights=None,
         yhat = np.dot(X, W.T) + b
         resid = y - yhat
         nu += np.sum(weight)
-        tmp1 = np.einsum('t,ti,tj->ij', weight, resid, resid)
-        tmp2 = np.sum(weight[:, None, None] * resid[:, :, None] * resid[:, None, :], axis=0)
-        assert np.allclose(tmp1, tmp2)
-        Psi += tmp1
+        tmp = np.einsum('t,ti,tj->ij', weight, resid, resid)
+        # tmp = np.sum(weight[:, None, None] * resid[:, :, None] * resid[:, None, :], axis=0)
+        # assert np.allclose(tmp1, tmp2)
+        Psi += tmp
 
     # Get MAP estimate of posterior covariance
     Sigma = Psi / (nu + P + 1)
