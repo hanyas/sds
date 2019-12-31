@@ -1,4 +1,6 @@
 import autograd.numpy as np
+import autograd.numpy.random as npr
+
 from scipy.special import logsumexp
 
 from sds import rARHMM
@@ -21,15 +23,16 @@ class erARHMM(rARHMM):
 
         self.learn_dyn = learn_dyn
         self.learn_ctl = learn_ctl
+
         self.ar_ctl = ar_ctl
         self.lags = lags
 
         if self.ar_ctl:
             self.init_control = GaussianInitControl(self.nb_states, self.dm_obs, self.dm_act,
-                                                    prior=init_ctl_prior, lags=lags, **init_ctl_kwargs)
+                                                    prior=init_ctl_prior, lags=self.lags, **init_ctl_kwargs)
 
             self.controls = AutoregRessiveLinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
-                                                                prior=ctl_prior, lags=lags, **ctl_kwargs)
+                                                                prior=ctl_prior, lags=self.lags, **ctl_kwargs)
         else:
             self.controls = LinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
                                                   prior=ctl_prior, **ctl_kwargs)
@@ -101,25 +104,20 @@ class erARHMM(rARHMM):
 
     @ensure_args_are_viable_lists
     def filter_control(self, obs, act=None, stoch=False, mix=False):
+        if stoch:
+            # it doesn't make sense to mix while sampling
+            assert not mix
+
         loglikhds = self.log_likelihoods(obs, act)
         alpha, _ = self.forward(*loglikhds)
         state, ctl = [], []
         for _alpha, _obs, _act in zip(alpha, obs, act):
             _weight = np.exp(_alpha - logsumexp(_alpha, axis=-1, keepdims=True))
-            _state = np.argmax(_weight, axis=-1)
-
+            _state = np.zeros((len(_obs,)), dtype=np.int64)
             _ctl = np.zeros((len(_act), self.dm_act))
             for t in range(len(_obs)):
-                if mix:
-                    for k in range(self.nb_states):
-                        if self.ar_ctl:
-                            if t < self.lags:
-                                _ctl[t, :] += _weight[t, k] * self.init_control.sample(k, _obs[t, :])
-                            else:
-                                _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t - self.lags:t + 1])
-                        else:
-                            _ctl[t, :] += _weight[t, k] * self.controls.sample(k, _obs[t, :])
-                else:
+                if stoch:
+                    _state[t] = npr.choice(self.nb_states, p=_weight[t, :])
                     if self.ar_ctl:
                         if t < self.lags:
                             _ctl[t, :] = self.init_control.sample(_state[t], _obs[t, :])
@@ -127,6 +125,29 @@ class erARHMM(rARHMM):
                             _ctl[t, :] = self.controls.sample(_state[t], _obs[t - self.lags:t + 1])
                     else:
                         _ctl[t, :] = self.controls.sample(_state[t], _obs[t, :])
+                else:
+                    if mix:
+                        # this is just for plotting
+                        _state[t] = np.argmax(_weight[t, :])
+
+                        for k in range(self.nb_states):
+                            if self.ar_ctl:
+                                if t < self.lags:
+                                    _ctl[t, :] += _weight[t, k] * self.init_control.mean(k, _obs[t, :])
+                                else:
+                                    _ctl[t, :] += _weight[t, k] * self.controls.mean(k, _obs[t - self.lags:t + 1])
+                            else:
+                                _ctl[t, :] += _weight[t, k] * self.controls.mean(k, _obs[t, :])
+                    else:
+                        _state[t] = np.argmax(_weight[t, :])
+
+                        if self.ar_ctl:
+                            if t < self.lags:
+                                _ctl[t, :] = self.init_control.mean(_state[t], _obs[t, :])
+                            else:
+                                _ctl[t, :] = self.controls.mean(_state[t], _obs[t - self.lags:t + 1])
+                        else:
+                            _ctl[t, :] = self.controls.mean(_state[t], _obs[t, :])
 
             state.append(_state)
             ctl.append(_ctl)
