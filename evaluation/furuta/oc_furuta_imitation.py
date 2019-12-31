@@ -3,7 +3,6 @@ import autograd.numpy.random as npr
 
 from sds import erARHMM
 
-import random
 from joblib import Parallel, delayed
 import copy
 
@@ -275,31 +274,21 @@ if __name__ == "__main__":
     # npr.seed(1337)
     # torch.manual_seed(1337)
 
-    env = gym.make('Cartpole-RL-v1')
+    env = gym.make('QQube-RL-v0')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-4
-    env.unwrapped._global = False
     # env.seed(1337)
 
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
     import pickle
-    data = pickle.load(open("./data/gps_cartpole_polar.pkl", "rb"))
-    raw, act = data['obs'], data['act']
+    data = pickle.load(open("./data/energy_qube.pkl", "rb"))
+    obs, act = data['obs'], data['act']
 
-    def normalize(x):
-        return ((x + np.pi) % (2. * np.pi)) - np.pi
-
-    obs = []
-    for _obs, _act in zip(raw, act):
-        _raw = np.vstack((_obs[:, 0], normalize(_obs[:, 1]), _obs[:, 2], _obs[:, 3])).T
-        _trig = np.vstack((_raw[:, 0], np.cos(_raw[:, 1]), np.sin(_raw[:, 1]), _raw[:, 2], _raw[:, 3])).T
-        obs.append(_trig)
-
-    fig, axs = plt.subplots(nrows=1, ncols=5, figsize=(25, 6))
-    fig.suptitle('Cartpole GPS Demonstrations')
+    fig, axs = plt.subplots(nrows=1, ncols=5, figsize=(16, 6))
+    fig.suptitle('Furuta Demonstrations')
 
     for _obs, _act in zip(obs, act):
         axs[0].plot(_obs[:, 0])
@@ -319,10 +308,10 @@ if __name__ == "__main__":
     axs[3].set_xlabel('Time Step')
     axs[4].set_xlabel('Time Step')
 
-    axs[0].set_ylabel('$x$')
-    axs[1].set_ylabel('$\cos(\\theta)$')
-    axs[2].set_ylabel('$\dot{x}$')
-    axs[3].set_ylabel('$\dot{\\theta}$')
+    axs[0].set_ylabel('$\\theta$')
+    axs[1].set_ylabel('$\cos(\\alpha)$')
+    axs[2].set_ylabel('$\dot{\\theta}$')
+    axs[3].set_ylabel('$\dot{\\alpha}$')
     axs[4].set_ylabel('$u$')
 
     plt.show()
@@ -330,7 +319,7 @@ if __name__ == "__main__":
     #
     nb_states = 5
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 10, 'psi0': 1e-8 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 10, 'psi0': 1e-4 * 10}
     ctl_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_act + 10, 'psi0': 1e-2 * 10}
 
     init_ctl_kwargs = {'degree': 1}
@@ -343,10 +332,10 @@ if __name__ == "__main__":
     ctl_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 25}
+    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 50}
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
-                             'std': np.array([5., 1., 1., 5., 10., 5.])}}
+                             'std': np.array([2.3, 1., 1., 30, 40., 5.])}}
     trans_mstep_kwargs = {'nb_iter': 10, 'batch_size': 64, 'lr': 5e-4}
 
     models, lls, scores = parallel_em(nb_jobs=6, model=None,
@@ -413,22 +402,22 @@ if __name__ == "__main__":
     _idx = np.random.choice(len(rollouts))
 
     fig, axs = plt.subplots(nrows=6, ncols=1, figsize=(8, 12), constrained_layout=True)
-    fig.suptitle('Cartpole Hybrid Imitation: One Example')
+    fig.suptitle('Furutale Hybrid Imitation: One Example')
 
     axs[0].plot(rollouts[_idx]['x'][:, 0])
-    axs[0].set_ylabel('$x$')
+    axs[0].set_ylabel('$\\theta$')
     axs[0].set_xlim(0, len(obs[_seq]))
 
     axs[1].plot(rollouts[_idx]['x'][:, 1:3])
-    axs[1].set_ylabel('$\cos(\\theta)/\sin(\\theta)$')
+    axs[1].set_ylabel('$\cos(\\alpha)/\sin(\\alpha)$')
     axs[1].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[2].plot(rollouts[_idx]['x'][:, 3], '-g')
-    axs[2].set_ylabel("$\dot{x}$")
+    axs[2].set_ylabel("$\dot{\\theta}$")
     axs[2].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[3].plot(rollouts[_idx]['x'][:, 4], '-g')
-    axs[3].set_ylabel("$\dot{\\theta}$")
+    axs[3].set_ylabel("$\dot{\\alpha}$")
     axs[3].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[4].plot(rollouts[_idx]['u'], '-r')
@@ -467,17 +456,17 @@ if __name__ == "__main__":
     axs[4].set_xlabel('Time Step')
     axs[5].set_xlabel('Time Step')
 
-    axs[0].set_ylabel('$x$')
-    axs[1].set_ylabel('$\cos(\\theta)$')
-    axs[2].set_ylabel('$\dot{x}$')
-    axs[3].set_ylabel('$\dot{\\theta}$')
+    axs[0].set_ylabel('$\\theta$')
+    axs[1].set_ylabel('$\cos(\\alpha)$')
+    axs[2].set_ylabel('$\dot{\\theta}$')
+    axs[3].set_ylabel('$\dot{\\alpha}$')
     axs[4].set_ylabel('$u$')
     axs[5].set_ylabel('$z$')
 
     plt.show()
 
     fig = plt.figure(figsize=(5, 5), frameon=True)
-    fig.suptitle('Cartpole Hybrid Imitation: Phase Portrait')
+    fig.suptitle('Furuta Hybrid Imitation: Phase Portrait')
 
     ax = fig.gca()
     for roll in rollouts[:25]:
@@ -485,13 +474,13 @@ if __name__ == "__main__":
         ax.scatter(angle[::3], roll['x'][::3, 4], color='g', s=1.5)
     ax = beautify(ax)
 
-    ax.set_xlabel('$\\theta$')
-    ax.set_ylabel("$\dot{\\theta}$")
+    ax.set_xlabel('$\\alpha$')
+    ax.set_ylabel("$\dot{\\alpha}$")
 
     plt.show()
 
     # from tikzplotlib import save
-    # save("gps_cartpole_imitation_phase.tex")
+    # save("oc_furuta_imitation_phase.tex")
 
     # success rate
     success = 0.

@@ -218,18 +218,18 @@ def create_job(kwargs):
         erarhmm.learn_ctl = learn_ctl
         erarhmm.controls.reset()
 
-    erarhmm.em(train_obs, train_act,
-               nb_iter=nb_iter, prec=prec, verbose=True,
-               obs_mstep_kwargs=obs_mstep_kwargs,
-               ctl_mstep_kwargs=ctl_mstep_kwargs,
-               trans_mstep_kwargs=trans_mstep_kwargs)
+    # erarhmm.em(train_obs, train_act,
+    #            nb_iter=nb_iter, prec=prec, verbose=True,
+    #            obs_mstep_kwargs=obs_mstep_kwargs,
+    #            ctl_mstep_kwargs=ctl_mstep_kwargs,
+    #            trans_mstep_kwargs=trans_mstep_kwargs)
 
-    # erarhmm.earlystop_em(train_obs, train_act,
-    #                      nb_iter=nb_iter, prec=prec, verbose=True,
-    #                      obs_mstep_kwargs=obs_mstep_kwargs,
-    #                      trans_mstep_kwargs=trans_mstep_kwargs,
-    #                      ctl_mstep_kwargs=ctl_mstep_kwargs,
-    #                      test_obs=test_obs, test_act=test_act)
+    erarhmm.earlystop_em(train_obs, train_act,
+                         nb_iter=nb_iter, prec=prec, verbose=True,
+                         obs_mstep_kwargs=obs_mstep_kwargs,
+                         trans_mstep_kwargs=trans_mstep_kwargs,
+                         ctl_mstep_kwargs=ctl_mstep_kwargs,
+                         test_obs=test_obs, test_act=test_act)
 
     nb_train = np.vstack(train_obs).shape[0]
     nb_all = np.vstack(obs).shape[0]
