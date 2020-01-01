@@ -328,7 +328,7 @@ if __name__ == "__main__":
     plt.show()
 
     #
-    nb_states = 5
+    nb_states = 6
 
     obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 10, 'psi0': 1e-8 * 10}
     ctl_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_act + 10, 'psi0': 1e-2 * 10}
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
 
-    ar_ctl = True
+    ar_ctl = False
     lags = 1
 
     obs_mstep_kwargs = {'use_prior': True}
