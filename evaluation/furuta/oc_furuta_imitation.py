@@ -317,7 +317,7 @@ if __name__ == "__main__":
     plt.show()
 
     #
-    nb_states = 5
+    nb_states = 6
 
     obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 10, 'psi0': 1e-4 * 10}
     ctl_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_act + 10, 'psi0': 1e-2 * 10}
@@ -325,14 +325,14 @@ if __name__ == "__main__":
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
 
-    ar_ctl = True
+    ar_ctl = False
     lags = 1
 
     obs_mstep_kwargs = {'use_prior': True}
     ctl_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 50}
+    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 25}
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
                              'std': np.array([2.3, 1., 1., 30, 40., 5.])}}
@@ -353,7 +353,7 @@ if __name__ == "__main__":
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       ctl_mstep_kwargs=ctl_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=25, prec=1e-2)
+                                      nb_iter=50, prec=1e-2)
     erarhmm = models[np.argmax(scores)]
 
     erarhmm.learn_dyn = True
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     plt.show()
 
     #
-    rollouts = evaluate(env, erarhmm, 10, 750, stoch=True, mix=False)
+    rollouts = evaluate(env, erarhmm, 10, 750, stoch=False, mix=True)
     _idx = np.random.choice(len(rollouts))
 
     fig, axs = plt.subplots(nrows=6, ncols=1, figsize=(8, 12), constrained_layout=True)
@@ -433,7 +433,7 @@ if __name__ == "__main__":
     plt.show()
 
     fig, axs = plt.subplots(nrows=1, ncols=6, figsize=(25, 6), constrained_layout=True)
-    fig.suptitle('Cartpole Hybrid Imitation: Many Seeds')
+    fig.suptitle('Furuta Hybrid Imitation: Many Seeds')
 
     for roll in rollouts:
         axs[0].plot(roll['x'][:, 0])
@@ -486,5 +486,5 @@ if __name__ == "__main__":
     success = 0.
     for roll in rollouts:
         angle = np.arctan2(roll['x'][:, 2], roll['x'][:, 1])
-        if np.all(np.fabs(angle[500:]) < np.deg2rad(15)):
+        if np.all(np.fabs(angle[500:] + np.pi) < np.deg2rad(15)):
             success += 1.
