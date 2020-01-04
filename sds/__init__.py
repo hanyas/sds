@@ -4,7 +4,6 @@ from .rarhmm import rARHMM
 from .erarhmm import erARHMM
 
 import os
-import pickle
 import torch
 
 from gym.envs.registration import register
@@ -51,8 +50,9 @@ try:
         id='HybridMassSpringDamper-ID-v0',
         entry_point='sds.envs:HybridMassSpringDamper',
         max_episode_steps=1000,
-        kwargs={'rarhmm': pickle.load(open(os.path.dirname(__file__)
-                                           + '/envs/hybrid/models/poly_rarhmm_msd.pkl', 'rb'))}
+        kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
+                                          + '/envs/hybrid/models/poly_rarhmm_msd.pkl', 'rb'),
+                                     map_location='cpu')}
     )
 except:
     pass
@@ -75,7 +75,7 @@ try:
         entry_point='sds.envs:HybridPendulumWithCartesianObservation',
         max_episode_steps=1000,
         kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
-                                          + '/envs/control/hybrid/models/local-poly_erarhmm_pendulum_cart.pkl', 'rb'),
+                                          + '/envs/hybrid/models/neural_rarhmm_pendulum_cart.pkl', 'rb'),
                                      map_location='cpu')}
     )
 except:

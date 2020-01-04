@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 rc('lines', **{'linewidth': 1})
 rc('text', usetex=True)
 
+
 def beautify(ax):
     ax.set_frame_on(True)
     ax.minorticks_on()
@@ -25,7 +26,7 @@ def beautify(ax):
     ax.tick_params(which='minor', length=3)
 
     ax.autoscale(tight=True)
-    ax.set_aspect('equal')
+    # ax.set_aspect('equal')
 
     if ax.get_legend():
         ax.legend(loc='best')
@@ -38,14 +39,14 @@ if __name__ == "__main__":
     import gym
     import rl
 
-    env = gym.make('MassSpringDamper-ID-v0')
-    # env = gym.make('HybridMassSpringDamper-ID-v0')
+    # env = gym.make('MassSpringDamper-ID-v0')
+    env = gym.make('HybridMassSpringDamper-ID-v0')
     env._max_episode_steps = 5000
 
     xlim = (-10.0, 10.0)
     ylim = (-10.0, 10.0)
 
-    npts = 100
+    npts = 25
 
     x = np.linspace(*xlim, npts)
     y = np.linspace(*ylim, npts)
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
-    from tikzplotlib import save
-    save("msd_openloop.tex")
+    # from tikzplotlib import save
+    # save("msd_openloop.tex")
 
     plt.show()

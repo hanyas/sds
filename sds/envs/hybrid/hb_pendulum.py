@@ -69,7 +69,7 @@ class HybridPendulum(gym.Env):
 
         # evolve dynamics
         x, u = xhist[-1, :], uhist[-1, :]
-        zn, xn = self.rarhmm.step(x, u, b, stoch=False, mix=True)
+        zn, xn = self.rarhmm.step(x, u, b, stoch=False, mix=False)
 
         return zn, xn
 
