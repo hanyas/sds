@@ -77,9 +77,9 @@ def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False, mix=False):
             roll['z'] = np.hstack((roll['z'], z))
 
             if erarhmm.ar_ctl:
-                u += erarhmm.init_control.sample(z, x)
+                u = erarhmm.init_control.sample(z, x)
             else:
-                u += erarhmm.controls.sample(z, x)
+                u = erarhmm.controls.sample(z, x)
         else:
             if mix:
                 # this is just for plotting
