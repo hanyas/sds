@@ -80,7 +80,6 @@ class GaussianInitObservation:
             _cov = sc.stats.invwishart.rvs(self.dm_obs + 2, 1. * np.eye(self.dm_obs))
             self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
 
-
     @property
     def params(self):
         return self.mu, self._sqrt_cov

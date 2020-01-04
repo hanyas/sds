@@ -36,7 +36,7 @@ class MassSpringDamper(gym.Env):
                                             high=self._obs_max)
 
         self._act_weight = - np.array([1.e-3])
-        self._act_max = np.inf
+        self._act_max = 10.
         self.action_space = spaces.Box(low=-self._act_max,
                                        high=self._act_max, shape=(1,))
 
@@ -57,10 +57,10 @@ class MassSpringDamper(gym.Env):
             self.rarhmm.observations.A[k, ...] = np.eye(self.dm_obs) + self._dt * A
             self.rarhmm.observations.B[k, ...] = self._dt * B
             self.rarhmm.observations.c[k, ...] = self._dt * c
-            _sigma[k, ...] = 25. * 1.e-4 * np.eye(self.dm_state)
+            _sigma[k, ...] = 1.e-4 * np.eye(self.dm_state)
 
-            self.rarhmm.init_observation.mu = np.zeros((self.dm_obs, ))
-            _init_sigma = 1. * np.eye(self.dm_obs)
+            self.rarhmm.init_observation.mu[k, :] = np.zeros((self.dm_obs, ))
+            _init_sigma[k, ...] = 1e-4 * np.eye(self.dm_obs)
 
         self.rarhmm.observations.cov = _sigma
         self.rarhmm.init_observation.cov = _init_sigma
@@ -97,7 +97,13 @@ class MassSpringDamper(gym.Env):
         xhist = np.atleast_2d(xhist)
         uhist = np.atleast_2d(uhist)
 
-        zn, xn = self.rarhmm.step(xhist, uhist, stoch=False)
+        # filter hidden state
+        b = self.rarhmm.filter(xhist, uhist)[0][-1, ...]
+
+        # evolve dynamics
+        x, u = xhist[-1, :], uhist[-1, :]
+        zn, xn = self.rarhmm.step(x, u, b, stoch=False, mix=False)
+
         return zn, xn
 
     def rewrad(self, x, u):
@@ -128,7 +134,7 @@ class MassSpringDamper(gym.Env):
 
         _state = self.rarhmm.init_state.sample()
 
-        self.obs = self.rarhmm.init_observation.sample(_state)
+        self.obs = self.rarhmm.init_observation.sample(z=_state)
         self.hist_obs = np.vstack((self.hist_obs, self.obs))
 
         return self.obs

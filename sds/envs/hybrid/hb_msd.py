@@ -22,7 +22,7 @@ class HybridMassSpringDamper(gym.Env):
                                             high=self._obs_max)
 
         self._act_weight = - np.array([1.e-3])
-        self._act_max = np.inf
+        self._act_max = 10.
         self.action_space = spaces.Box(low=-self._act_max,
                                        high=self._act_max, shape=(1,))
 
@@ -53,7 +53,13 @@ class HybridMassSpringDamper(gym.Env):
         xhist = np.atleast_2d(xhist)
         uhist = np.atleast_2d(uhist)
 
-        zn, xn = self.rarhmm.step(xhist, uhist, stoch=False)
+        # filter hidden state
+        b = self.rarhmm.filter(xhist, uhist)[0][-1, ...]
+
+        # evolve dynamics
+        x, u = xhist[-1, :], uhist[-1, :]
+        zn, xn = self.rarhmm.step(x, u, b, stoch=False, mix=False)
+
         return zn, xn
 
     def rewrad(self, x, u):
