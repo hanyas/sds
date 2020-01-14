@@ -1,8 +1,8 @@
 import autograd.numpy as np
 
-from trajopt.envs.quanser.common import QSocket, VelocityFilter
-from trajopt.envs.quanser.qube.base import QubeBase
-from trajopt.envs.quanser.qube.ctrl import CalibrCtrl
+from sds.envs.quanser.common import QSocket, VelocityFilter
+from sds.envs.quanser.qube.base import QubeBase
+from sds.envs.quanser.qube.ctrl import CalibrCtrl
 
 
 class QubeRR(QubeBase):

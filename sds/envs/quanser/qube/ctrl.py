@@ -117,12 +117,14 @@ class SwingUpCtrl:
 
     def __call__(self, obs):
         th, al, th_d, al_d = obs
+
         sin_th, cos_th = np.sin(th), np.cos(th)
-        sin_al, cos_al = np.sin(al), np.cos(al)
+        sin_al, cos_al = np.sin(al + np.pi), np.cos(al + np.pi)
 
         x = np.r_[np.arctan2(sin_th, cos_th),
                   np.arctan2(sin_al, cos_al),
                   th_d, al_d]
+
         if self.pd_enabled(cos_al):
             x[1] = x[1] % (2 * np.pi) - np.pi
             return self.pd_ctrl(x)
