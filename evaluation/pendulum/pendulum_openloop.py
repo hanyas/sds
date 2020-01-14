@@ -37,12 +37,12 @@ def beautify(ax):
 if __name__ == "__main__":
 
     import gym
-    import rl
+    import sds
 
     # np.random.seed(1337)
 
-    # env = gym.make('Pendulum-ID-v0')
-    env = gym.make('HybridPendulum-ID-v0')
+    env = gym.make('Pendulum-ID-v0')
+    # env = gym.make('HybridPendulum-ID-v0')
     env._max_episode_steps = 5000
     # env.seed(1337)
 
@@ -63,8 +63,8 @@ if __name__ == "__main__":
     env.reset()
     for i in range(npts):
         for j in range(npts):
-            # XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
-            Zn[i, j], XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+            # Zn[i, j], XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
 
     dydt = XYn - XY
 

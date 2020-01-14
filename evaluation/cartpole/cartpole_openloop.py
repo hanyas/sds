@@ -37,7 +37,7 @@ def beautify(ax):
 if __name__ == "__main__":
 
     import gym
-    import rl
+    import sds
 
     # np.random.seed(1337)
 

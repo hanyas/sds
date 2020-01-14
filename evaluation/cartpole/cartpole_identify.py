@@ -95,7 +95,7 @@ if __name__ == "__main__":
     import torch
 
     import gym
-    import rl
+    import sds
 
     env = gym.make('Cartpole-ID-v0')
     env._max_episode_steps = 5000
