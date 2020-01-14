@@ -1,10 +1,10 @@
 import autograd.numpy as np
 
-from rl.envs.control.quanser.common import Base, LabeledBox, Timing
+from sds.envs.quanser.common import Base, LabeledBox, Timing
 
 
 def normalize(x):
-    return ((x + np.pi) % (2. * np.pi)) - np.pi
+    return (x % (2 * np.pi)) - np.pi
 
 
 class QubeBase(Base):
@@ -15,7 +15,7 @@ class QubeBase(Base):
 
         # Limits
         act_max = np.array([5.0])
-        state_max = np.array([2.3, np.inf, 30.0, 40.0])
+        state_max = np.array([2.0, np.inf, 30.0, 40.0])
         sens_max = np.array([2.3, np.inf])
         obs_max = np.array([2.3, np.inf, state_max[2], state_max[3]])
 
@@ -34,7 +34,7 @@ class QubeBase(Base):
             low=-act_max, high=act_max, dtype=np.float32)
 
         # Function to ensure that state and action constraints are satisfied
-        safety_th_lim = 1.9
+        safety_th_lim = 1.5
         self._lim_act = ActionLimiter(self.state_space,
                                       self.action_space,
                                       safety_th_lim)
@@ -62,15 +62,14 @@ class ActionLimiter:
     def __init__(self, state_space, action_space, th_lim_min):
         self._th_lim_min = th_lim_min
         self._th_lim_max = (state_space.high[0] + self._th_lim_min) / 2.0
-        self._th_lim_stiffness = \
-            action_space.high[0] / (self._th_lim_max - self._th_lim_min)
+        self._th_lim_stiffness = 0.25 * action_space.high[0] / (self._th_lim_max - self._th_lim_min)
         self._clip = lambda a: np.clip(a, action_space.low, action_space.high)
         self._relu = lambda x: x * (x > 0.0)
 
     def _joint_lim_violation_force(self, x):
         th, _, thd, _ = x
-        up = self._relu(th-self._th_lim_max) - self._relu(th-self._th_lim_min)
-        dn = -self._relu(-th-self._th_lim_max)+self._relu(-th-self._th_lim_min)
+        up = self._relu(th - self._th_lim_max) - self._relu(th - self._th_lim_min)
+        dn = -self._relu(-th - self._th_lim_max) + self._relu(-th - self._th_lim_min)
         if (th > self._th_lim_min and thd > 0.0 or
                 th < -self._th_lim_min and thd < 0.0):
             force = self._th_lim_stiffness * (up + dn)
@@ -97,12 +96,12 @@ class QubeDynamics:
         # Rotary arm
         self.Mr = 0.095  # mass (kg)
         self.Lr = 0.085  # length (m)
-        self.Dr = 5e-6   # viscous damping (N-m-s/rad), original: 0.0015
+        self.Dr = 5e-5   # viscous damping (N-m-s/rad), original: 0.0015
 
         # Pendulum link
         self.Mp = 0.024  # mass (kg)
         self.Lp = 0.129  # length (m)
-        self.Dp = 1e-6   # viscous damping (N-m-s/rad), original: 0.0005
+        self.Dp = 1e-5   # viscous damping (N-m-s/rad), original: 0.0005
 
         # Init constants
         self._init_const()
@@ -143,10 +142,10 @@ class QubeDynamics:
 
         # Calculate vector [x, y] = tau - C(q, qd)
         trq = self.km * (voltage - self.km * thd) / self.Rm
-        c0 = self._c[1] * np.sin(2 * al) * thd * ald\
-             - self._c[2] * np.sin(al) * ald * ald
-        c1 = - 0.5 * self._c[1] * np.sin(2 * al) * thd * thd\
-             + self._c[4] * np.sin(al)
+        c0 = self._c[1] * np.sin(2 * al) * thd * ald \
+            - self._c[2] * np.sin(al) * ald * ald
+        c1 = -0.5 * self._c[1] * np.sin(2 * al) * thd * thd \
+            + self._c[4] * np.sin(al)
         x = trq - self.Dr * thd - c0
         y = -self.Dp * ald - c1
 

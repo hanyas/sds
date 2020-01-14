@@ -1,6 +1,6 @@
 import autograd.numpy as np
 
-from rl.envs.control.quanser.qube.base import QubeBase, QubeDynamics
+from sds.envs.quanser.qube.base import QubeBase, QubeDynamics
 
 
 class Qube(QubeBase):
@@ -23,8 +23,12 @@ class Qube(QubeBase):
         return self.action_space.high
 
     def _calibrate(self):
-        _low, _high = np.array([-0.1, - np.pi, -30., -40.]),\
+        _low, _high = np.array([-0.1, -np.pi, -30., -40.]),\
                       np.array([0.1, np.pi, 30., 40.])
+
+        _low, _high = np.array([.0, 0., 0., 0.]),\
+                      np.array([.0, 0., 0., 0.])
+
         self._sim_state = self._np_random.uniform(low=_low, high=_high)
         self._state = self._zero_sim_step()
 
@@ -32,21 +36,24 @@ class Qube(QubeBase):
         u_cmd = self._lim_act(self._sim_state, u)
         # u_cmd = np.clip(u, self.action_space.low, self.action_space.high)
 
-        thdd, aldd = self.dyn(self._sim_state, u_cmd)
+        def f(x, u):
+            thdd, aldd = self.dyn(x, u)
+            return np.hstack((x[2], x[3], thdd, aldd))
 
-        # Update internal simulation state
-        self._sim_state[3] += self.timing.dt * aldd
-        self._sim_state[2] += self.timing.dt * thdd
-        self._sim_state[1] += self.timing.dt * self._sim_state[3]
-        self._sim_state[0] += self.timing.dt * self._sim_state[2]
+        c1 = f(self._sim_state, u_cmd)
+        c2 = f(self._sim_state + 0.5 * self.timing.dt * c1, u_cmd)
+        c3 = f(self._sim_state + 0.5 * self.timing.dt * c2, u_cmd)
+        c4 = f(self._sim_state + self.timing.dt * c3, u_cmd)
+
+        self._sim_state = self._sim_state + self.timing.dt / 6. * (c1 + 2. * c2 + 2. * c3 + c4)
 
         # apply state constraints
-        self._sim_state = np.clip(self._sim_state, self.observation_space.low, self.observation_space.high)
+        self._sim_state = np.clip(self._sim_state, self.state_space.low, self.state_space.high)
 
         # add observation noise
         self._sim_state = self._sim_state + np.random.randn(self.dm_state) * self._sigma
 
-        return self._sim_state, u
+        return self._sim_state, u_cmd
 
     def reset(self):
         self._calibrate()
@@ -104,7 +111,7 @@ class Qube(QubeBase):
         arm_pos = (self.dyn.Lr * np.cos(th), self.dyn.Lr * np.sin(th), 0.0)
         pole_ax = (-self.dyn.Lp * np.sin(al) * np.sin(th),
                    self.dyn.Lp * np.sin(al) * np.cos(th),
-                   self.dyn.Lp * np.cos(al))
+                   -self.dyn.Lp * np.cos(al))
         self._vis['arm'].axis = self._vis['vp'].vector(*arm_pos)
         self._vis['pole'].pos = self._vis['vp'].vector(*arm_pos)
         self._vis['pole'].axis = self._vis['vp'].vector(*pole_ax)
