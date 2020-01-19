@@ -1,15 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: example.py
-# @Date: 2019-06-30-15-21
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
 import autograd.numpy as np
 import gym
 
-import trajopt
-from trajopt.envs.quanser.cartpole.ctrl import SwingUpCtrl
+import sds
+from sds.envs.quanser.cartpole.ctrl import SwingUpCtrl
 
 
 # quanser cartpole env
