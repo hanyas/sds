@@ -68,21 +68,27 @@ class Cartpole(gym.Env):
         Mt = Mc + Mp
         l = 0.3365
 
-        th = x[1]
-        dth2 = np.power(x[3], 2)
-        sth = np.sin(th)
-        cth = np.cos(th)
+        def f(x, u):
+            th = x[1]
+            dth2 = np.power(x[3], 2)
+            sth = np.sin(th)
+            cth = np.cos(th)
 
-        _num = g * sth + cth * (- u - Mp * l * dth2 * sth) / Mt
-        _denom = l * ((4. / 3.) - Mp * cth**2 / Mt)
-        th_acc = _num / _denom
+            _num = g * sth + cth * (- u - Mp * l * dth2 * sth) / Mt
+            _denom = l * ((4. / 3.) - Mp * cth**2 / Mt)
+            th_acc = _num / _denom
 
-        x_acc = (u + Mp * l * (dth2 * sth - th_acc * cth)) / Mt
+            x_acc = (u + Mp * l * (dth2 * sth - th_acc * cth)) / Mt
 
-        xn = np.hstack((x[0] + self._dt * x[2],
-                        x[1] + self._dt * x[3],
-                        x[2] + self._dt * x_acc,
-                        x[3] + self._dt * th_acc))
+            return np.hstack((x[2], x[3], x_acc, th_acc))
+
+        c1 = f(x, u)
+        c2 = f(x + 0.5 * self.dt * c1, u)
+        c3 = f(x + 0.5 * self.dt * c2, u)
+        c4 = f(x + self.dt * c3, u)
+
+        xn = x + self.dt / 6. * (c1 + 2. * c2 + 2. * c3 + c4)
+
         return xn
 
     def observe(self, x):
@@ -123,8 +129,8 @@ class Cartpole(gym.Env):
 
     def reset(self):
         if self._global:
-            _low = np.array([-2.0, -np.pi, -5.0, -10.0])
-            _high = np.array([2.0, np.pi, 5.0, 10.0])
+            _low = np.array([-0.1, -np.pi, -5.0, -10.0])
+            _high = np.array([0.1, np.pi, 5.0, 10.0])
         else:
             _low, _high = np.array([0., np.pi - np.pi / 18., 0., -1.0]),\
                           np.array([0., np.pi + np.pi / 18., 0., 1.0])

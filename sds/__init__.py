@@ -9,6 +9,12 @@ import torch
 from gym.envs.registration import register
 
 register(
+    id='MassSpringDamper-ID-v0',
+    entry_point='sds.envs:MassSpringDamper',
+    max_episode_steps=1000,
+)
+
+register(
     id='Pendulum-ID-v0',
     entry_point='sds.envs:Pendulum',
     max_episode_steps=1000,
@@ -17,12 +23,6 @@ register(
 register(
     id='Pendulum-ID-v1',
     entry_point='sds.envs:PendulumWithCartesianObservation',
-    max_episode_steps=1000,
-)
-
-register(
-    id='MassSpringDamper-ID-v0',
-    entry_point='sds.envs:MassSpringDamper',
     max_episode_steps=1000,
 )
 
@@ -40,7 +40,14 @@ register(
 
 register(
     id='QQube-ID-v0',
-    entry_point='sds.envs:QQube',
+    entry_point='sds.envs:Qube',
+    max_episode_steps=1000,
+    kwargs={'fs': 500.0, 'fs_ctrl': 100.0}
+)
+
+register(
+    id='QQube-ID-v1',
+    entry_point='sds.envs:QubeWithCartesianObservation',
     max_episode_steps=1000,
     kwargs={'fs': 500.0, 'fs_ctrl': 100.0}
 )
