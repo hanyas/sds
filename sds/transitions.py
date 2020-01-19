@@ -24,8 +24,8 @@ from torch.utils.data import BatchSampler, SubsetRandomSampler
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import PolynomialFeatures
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
 to_torch = lambda arr: torch.from_numpy(arr).float().to(device)
 to_npy = lambda arr: arr.detach().double().cpu().numpy()
