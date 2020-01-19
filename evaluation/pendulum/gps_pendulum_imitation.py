@@ -326,8 +326,8 @@ if __name__ == "__main__":
     #
     nb_states = 4
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-4 * 10}
-    ctl_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_act + 1) * 10, 'psi0': 1e-2 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-4 * 10}
+    ctl_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_act + 1) + 10, 'psi0': 1e-2 * 10}
 
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
