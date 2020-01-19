@@ -127,7 +127,7 @@ def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False, mix=False):
                     u = erarhmm.controls.sample(z, x)
             else:
                 if mix:
-                    # this is only for politting
+                    # this is only for plotting
                     z = np.argmax(b)
                     roll['z'] = np.hstack((roll['z'], z))
 
@@ -217,18 +217,18 @@ def create_job(kwargs):
         erarhmm.learn_ctl = learn_ctl
         erarhmm.controls.reset()
 
-    # erarhmm.em(train_obs, train_act,
-    #            nb_iter=nb_iter, prec=prec, verbose=True,
-    #            obs_mstep_kwargs=obs_mstep_kwargs,
-    #            ctl_mstep_kwargs=ctl_mstep_kwargs,
-    #            trans_mstep_kwargs=trans_mstep_kwargs)
+    erarhmm.em(train_obs, train_act,
+               nb_iter=nb_iter, prec=prec, verbose=True,
+               obs_mstep_kwargs=obs_mstep_kwargs,
+               ctl_mstep_kwargs=ctl_mstep_kwargs,
+               trans_mstep_kwargs=trans_mstep_kwargs)
 
-    erarhmm.earlystop_em(train_obs, train_act,
-                         nb_iter=nb_iter, prec=prec, verbose=True,
-                         obs_mstep_kwargs=obs_mstep_kwargs,
-                         trans_mstep_kwargs=trans_mstep_kwargs,
-                         ctl_mstep_kwargs=ctl_mstep_kwargs,
-                         test_obs=test_obs, test_act=test_act)
+    # erarhmm.earlystop_em(train_obs, train_act,
+    #                      nb_iter=nb_iter, prec=prec, verbose=True,
+    #                      obs_mstep_kwargs=obs_mstep_kwargs,
+    #                      trans_mstep_kwargs=trans_mstep_kwargs,
+    #                      ctl_mstep_kwargs=ctl_mstep_kwargs,
+    #                      test_obs=test_obs, test_act=test_act)
 
     nb_train = np.vstack(train_obs).shape[0]
     nb_all = np.vstack(obs).shape[0]
@@ -257,13 +257,18 @@ if __name__ == "__main__":
     sns.set_context("talk")
 
     color_names = ["windows blue", "red", "amber",
-                   "faded green", "dusty purple", "orange"]
+                   "faded green", "dusty purple",
+                   "orange", "clay", "pink", "greyish",
+                   "mint", "light cyan", "steel blue",
+                   "forest green", "pastel purple",
+                   "salmon", "dark brown"]
 
     colors = sns.xkcd_palette(color_names)
     cmap = gradient_cmap(colors)
 
     import os
     import torch
+    import random
 
     import gym
     import rl
@@ -312,8 +317,8 @@ if __name__ == "__main__":
     axs[1].set_xlabel('Time Step')
     axs[2].set_xlabel('Time Step')
 
-    axs[0].set_ylabel('$\cos(\\theta)$')
-    axs[1].set_ylabel('$\dot{\\theta}$')
+    axs[0].set_ylabel('$\\cos(\\theta)$')
+    axs[1].set_ylabel('$\\dot{\\theta}$')
     axs[2].set_ylabel('$u$')
 
     plt.show()
@@ -321,8 +326,8 @@ if __name__ == "__main__":
     #
     nb_states = 4
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': dm_obs + 2, 'psi0': 1e-4}
-    ctl_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': dm_act + 2, 'psi0': 1e-2}
+    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-4 * 10}
+    ctl_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_act + 1) * 10, 'psi0': 1e-2 * 10}
 
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
@@ -330,15 +335,15 @@ if __name__ == "__main__":
     ar_ctl = True
     lags = 1
 
-    obs_mstep_kwargs = {'use_prior': False}
-    ctl_mstep_kwargs = {'use_prior': False}
+    obs_mstep_kwargs = {'use_prior': True}
+    ctl_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 50}
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 50}
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0.]),
                              'std': np.array([1., 1., 8., 2.5])}}
-    trans_mstep_kwargs = {'nb_iter': 10, 'batch_size': 64, 'lr': 5e-4}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 128, 'lr': 1e-4}
 
     models, lls, scores = parallel_em(nb_jobs=6, model=None,
                                       nb_states=nb_states,
@@ -355,7 +360,7 @@ if __name__ == "__main__":
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       ctl_mstep_kwargs=ctl_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=25, prec=1e-2)
+                                      nb_iter=50, prec=1e-2)
     erarhmm = models[np.argmax(scores)]
 
     erarhmm.learn_dyn = True
@@ -374,7 +379,7 @@ if __name__ == "__main__":
     axs[0].set_xlim(0, len(obs[_seq]))
 
     axs[1].plot(obs[_seq][:, -1], '-g')
-    axs[1].set_ylabel("$\dot{\\theta}$")
+    axs[1].set_ylabel("$\\dot{\\theta}$")
     axs[1].set_xlim(0, len(obs[_seq]))
 
     axs[2].plot(act[_seq])
@@ -399,11 +404,11 @@ if __name__ == "__main__":
     fig.suptitle('Pendulum Hybrid Imitation: One Example')
 
     axs[0].plot(rollouts[_idx]['x'][:, :-1])
-    axs[0].set_ylabel('$\cos(\\theta)/\sin(\\theta)$')
+    axs[0].set_ylabel('$\\cos(\\theta)/\\sin(\\theta)$')
     axs[0].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[1].plot(rollouts[_idx]['x'][:, -1], '-g')
-    axs[1].set_ylabel("$\dot{\\theta}$")
+    axs[1].set_ylabel("$\\dot{\\theta}$")
     axs[1].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[2].plot(rollouts[_idx]['u'], '-r')
@@ -436,8 +441,8 @@ if __name__ == "__main__":
     axs[2].set_xlabel('Time Step')
     axs[3].set_xlabel('Time Step')
 
-    axs[0].set_ylabel('$\cos(\\theta)$')
-    axs[1].set_ylabel("$\dot{\\theta}$")
+    axs[0].set_ylabel('$\\cos(\\theta)$')
+    axs[1].set_ylabel("$\\dot{\\theta}$")
     axs[2].set_ylabel('$u$')
     axs[3].set_ylabel('$z$')
 
@@ -453,7 +458,7 @@ if __name__ == "__main__":
     ax = beautify(ax)
 
     ax.set_xlabel('$\\theta$')
-    ax.set_ylabel("$\dot{\\theta}$")
+    ax.set_ylabel("$\\dot{\\theta}$")
 
     plt.show()
 
