@@ -97,18 +97,18 @@ if __name__ == "__main__":
     import gym
     import sds
 
-    env = gym.make('Pendulum-ID-v1')
+    env = gym.make('QQube-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-8
 
-    nb_rollouts, nb_steps = 25, 250
+    nb_rollouts, nb_steps = 25, 500
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
     obs, act = sample_env(env, nb_rollouts, nb_steps)
 
-    nb_states = 5
+    nb_states = 7
 
     obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
     obs_mstep_kwargs = {'use_prior': True}
@@ -116,8 +116,8 @@ if __name__ == "__main__":
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 0., 'alpha': 1, 'kappa': 5}
     trans_kwargs = {'hidden_layer_sizes': (25,),
-                    'norm': {'mean': np.array([0., 0., 0., 0.]),
-                             'std': np.array([1., 1., 8., 2.5])}}
+                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
+                             'std': np.array([2.3, 1., 1., 30., 40., 5.])}}
     trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 128, 'lr': 1e-4}
 
     models, lls, scores = parallel_em(nb_jobs=6,
@@ -150,5 +150,5 @@ if __name__ == "__main__":
 
     plt.show()
 
-    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_pendulum_polar.pkl", "wb"))
-    # print(rarhmm.kstep_mse(obs[0:5], act[0:5], horizon=5, mix=False))
+    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_furuta_polar.pkl", "wb"))
+    # print(rarhmm.kstep_mse(obs[0:5], act[0:5], horizon=1, mix=False))
