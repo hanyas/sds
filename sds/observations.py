@@ -7,7 +7,7 @@ from scipy import stats
 from scipy.stats import multivariate_normal as mvn
 from scipy.stats import invwishart as invw
 
-from sds.stats import multivariate_normal_logpdf
+from sds.stats import multivariate_normal_logpdf as lg_mvn
 
 from sds.utils import random_rotation
 from sds.utils import linear_regression
@@ -17,7 +17,7 @@ from autograd.tracer import getval
 
 class GaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -79,7 +79,7 @@ class GaussianObservation:
     def log_likelihood(self, x, u):
         loglik = []
         for _x in x:
-            _loglik = np.column_stack([multivariate_normal_logpdf(_x, self.mean(k), self.cov[k])
+            _loglik = np.column_stack([lg_mvn(_x, self.mean(k), self.cov[k])
                                        for k in range(self.nb_states)])
             loglik.append(_loglik)
         return loglik
@@ -111,7 +111,7 @@ class GaussianObservation:
 
 class AutoRegressiveGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-16):
+    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-32):
         self.nb_states = nb_states
         self.dm_obs = dm_obs
         self.dm_act = dm_act
@@ -222,9 +222,7 @@ class AutoRegressiveGaussianObservation:
     def log_likelihood(self, x, u):
         loglik = []
         for _x, _u in zip(x, u):
-            _loglik = np.column_stack([multivariate_normal_logpdf(_x[1:, :],
-                                                                  self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]),
-                                                                  self.cov[k])
+            _loglik = np.column_stack([lg_mvn(_x[1:, :], self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]), self.cov[k])
                                        for k in range(self.nb_states)])
             loglik.append(_loglik)
         return loglik

@@ -10,12 +10,36 @@ from autograd.misc import flatten
 from autograd.wrap_util import wraps
 
 from scipy.optimize import linear_sum_assignment, minimize
+from scipy.stats import norm
 
 from functools import partial, lru_cache
 
 
+def brownian(x0, n, dt, delta, out=None):
+
+    x0 = np.asarray(x0)
+
+    # For each element of x0, generate a sample of n numbers from a
+    # normal distribution.
+    r = npr.randn(x0.shape[0], n) * delta * np.sqrt(dt)
+
+    # If `out` was not given, create an output array.
+    if out is None:
+        out = np.empty(r.shape)
+
+    # This computes the Brownian motion by forming the cumulative sum of
+    # the random samples.
+    np.cumsum(r, axis=-1, out=out)
+
+    # Add the initial condition.
+    out += np.expand_dims(x0, axis=-1)
+
+    return np.reshape(out, x0.shape[0])
+
+
 def sample_env(env, nb_rollouts, nb_steps,
-               ctl=None, noise_std=0.1,
+               ctl=None, corr=False,
+               noise_std=0.1,
                apply_limit=True):
     obs, act = [], []
 
@@ -25,15 +49,25 @@ def sample_env(env, nb_rollouts, nb_steps,
     ulim = env.action_space.high
 
     for n in range(nb_rollouts):
-        _obs = np.empty((nb_steps, dm_obs))
-        _act = np.empty((nb_steps, dm_act))
+        _obs = np.zeros((nb_steps, dm_obs))
+        _act = np.zeros((nb_steps, dm_act))
 
         x = env.reset()
 
         for t in range(nb_steps):
             if ctl is None:
-                # u = 2 * ulim * npr.randn(1, )
-                u = np.random.uniform(-ulim, ulim)
+                if corr is True:
+                    # brownian motion
+                    if t == 0:
+                        u = np.zeros((dm_act, ))
+                    else:
+                        u = brownian(_act[t - 1, :], 1, 0.01, 2 * ulim)
+                else:
+                    # max action in 2-sigma region
+                    # u = 2 * ulim * npr.randn(1, )
+
+                    # unifrom distribution
+                    u = np.random.uniform(-ulim, ulim)
             else:
                 u = ctl(x)
                 u = u + noise_std * npr.randn(1, )
