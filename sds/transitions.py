@@ -262,9 +262,9 @@ class PolyRecurrentRegressor(nn.Module):
         _logtrans = self.logmat[None, :, :] + output[:, None, :]
         return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
 
-    def elbo(self, zeta, xu):
+    def elbo(self, zeta, xu, batch_size, set_size):
         logtrans = self.forward(xu)
-        return torch.sum(zeta * logtrans) + self.log_prior()
+        return (torch.sum(zeta * logtrans) * set_size / batch_size + self.log_prior()) / set_size
 
     def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1e-3):
         if self.prior and 'l2_penalty' in self.prior:
@@ -272,14 +272,14 @@ class PolyRecurrentRegressor(nn.Module):
         else:
             self.optim = Adam(self.parameters(), lr=lr, weight_decay=0.)
 
-        data_size = xu.shape[0]
-        batch_size = data_size if batch_size is None else batch_size
-        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
+        set_size = xu.shape[0]
+        batch_size = set_size if batch_size is None else batch_size
+        batches = list(BatchSampler(SubsetRandomSampler(range(set_size)), batch_size, False))
 
         for n in range(nb_iter):
             for batch in batches:
                 self.optim.zero_grad()
-                loss = - self.elbo(zeta[batch], xu[batch])
+                loss = - self.elbo(zeta[batch], xu[batch], batch_size, set_size)
                 loss.backward()
                 self.optim.step()
 
@@ -410,8 +410,9 @@ class NeuralRecurrentRegressor(nn.Module):
                      softmax=F.log_softmax, linear=F.linear)
 
         self.nonlin = nlist[nonlin]
-        self.layer = nn.Linear(self.sizes[0], self.sizes[1])
-        self.output = nn.Linear(self.sizes[1], self.sizes[2])
+        self.l1 = nn.Linear(self.sizes[0], self.sizes[1])
+        self.l2 = nn.Linear(self.sizes[1], self.sizes[2])
+        self.output = nn.Linear(self.sizes[2], self.sizes[3])
 
         # _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
         _mat = torch.ones(self.nb_states, self.nb_states)
@@ -432,7 +433,8 @@ class NeuralRecurrentRegressor(nn.Module):
         self.optim = None
 
     def reset(self):
-        self.layer.reset_parameters()
+        self.l1.reset_parameters()
+        self.l2.reset_parameters()
         self.output.reset_parameters()
 
         _mat = torch.ones(self.nb_states, self.nb_states)
@@ -449,13 +451,13 @@ class NeuralRecurrentRegressor(nn.Module):
 
     def forward(self, xu):
         norm_xu = (xu - self._mean) / self._std
-        out = self.output(self.nonlin(self.layer(norm_xu)))
+        out = self.output(self.nonlin(self.l2(self.nonlin(self.l1(norm_xu)))))
         _logtrans = self.logmat[None, :, :] + out[:, None, :]
         return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
 
-    def elbo(self, zeta, xu):
+    def elbo(self, zeta, xu, batch_size, set_size):
         logtrans = self.forward(xu)
-        return torch.sum(zeta * logtrans) + self.log_prior()
+        return (torch.sum(zeta * logtrans) * set_size / batch_size + self.log_prior()) / set_size
 
     def fit(self, zeta, xu, nb_iter=100, batch_size=None, lr=1e-3):
         if self.prior and 'l2_penalty' in self.prior:
@@ -463,14 +465,14 @@ class NeuralRecurrentRegressor(nn.Module):
         else:
             self.optim = Adam(self.parameters(), lr=lr, weight_decay=0.)
 
-        data_size = xu.shape[0]
-        batch_size = data_size if batch_size is None else batch_size
-        batches = list(BatchSampler(SubsetRandomSampler(range(xu.shape[0])), batch_size, False))
+        set_size = xu.shape[0]
+        batch_size = set_size if batch_size is None else batch_size
+        batches = list(BatchSampler(SubsetRandomSampler(range(set_size)), batch_size, False))
 
         for n in range(nb_iter):
             for batch in batches:
                 self.optim.zero_grad()
-                loss = - self.elbo(zeta[batch], xu[batch])
+                loss = - self.elbo(zeta[batch], xu[batch], batch_size, set_size)
                 loss.backward()
                 self.optim.step()
 
