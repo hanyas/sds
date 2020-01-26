@@ -15,6 +15,12 @@ register(
 )
 
 register(
+    id='BouncingBall-ID-v0',
+    entry_point='sds.envs:BouncingBall',
+    max_episode_steps=1000,
+)
+
+register(
     id='Pendulum-ID-v0',
     entry_point='sds.envs:Pendulum',
     max_episode_steps=1000,
