@@ -13,3 +13,5 @@ from .hybrid.hb_pendulum import HybridPendulumWithCartesianObservation
 
 from .quanser.qube.qube import Qube
 from .quanser.qube.qube import QubeWithCartesianObservation
+
+from .hybrid.bouncing import BouncingBall
