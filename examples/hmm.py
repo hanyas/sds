@@ -33,7 +33,7 @@ true_ll = true_hmm.log_norm(x)
 hmm = HMM(nb_states=3, dm_obs=2)
 hmm.initialize(x)
 
-lls = hmm.em(x, nb_iter=1000, prec=0., verbose=True)
+lls = hmm.em(x, nb_iter=1000, prec=0.)
 print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
 plt.figure(figsize=(5, 5))

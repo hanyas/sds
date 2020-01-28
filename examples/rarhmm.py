@@ -29,7 +29,7 @@ true_ll = true_rarhmm.log_norm(x)
 rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='poly')
 rarhmm.initialize(x)
 
-lls = rarhmm.em(x, nb_iter=100, prec=0., verbose=True)
+lls = rarhmm.em(x, nb_iter=100, prec=0.)
 print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
 plt.figure(figsize=(5, 5))

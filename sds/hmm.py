@@ -13,6 +13,8 @@ from sds.observations import GaussianObservation
 from sds.utils import ensure_args_are_viable_lists
 from sds.cython.hmm_cy import forward_cy, backward_cy
 
+from tqdm import trange
+
 from autograd.tracer import getval
 to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] else getval(arr)
 
@@ -218,19 +220,21 @@ class HMM:
         self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
 
     @ensure_args_are_viable_lists
-    def em(self, train_obs, train_act=None, nb_iter=50, prec=1e-4, verbose=False,
-           init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={}, **kwargs):
+    def em(self, train_obs, train_act=None, nb_iter=50, prec=1e-4,
+           init_mstep_kwargs={}, trans_mstep_kwargs={},
+           obs_mstep_kwargs={}, **kwargs):
+
+        process_id = kwargs.get('process_id', 0)
 
         train_lls = []
         train_ll = self.log_norm(train_obs, train_act)
         train_lls.append(train_ll)
         last_train_ll = train_ll
 
-        if verbose:
-            print("it=", 0, "train_ll=", train_ll)
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
-        it = 1
-        while it <= nb_iter:
+        for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
             self.mstep(gamma, zeta, train_obs, train_act,
                        init_mstep_kwargs,
@@ -241,24 +245,23 @@ class HMM:
             train_ll = self.log_norm(train_obs, train_act)
             train_lls.append(train_ll)
 
-            if verbose:
-                print("it=", it, "train_ll=", train_ll)
+            pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
-            # if (train_ll - last_train_ll) < prec:
-            #     break
-            # else:
-            #     last_train_ll = train_ll
-
-            it += 1
+            if abs(train_ll - last_train_ll) < prec:
+                break
+            else:
+                last_train_ll = train_ll
 
         return train_lls
 
     @ensure_args_are_viable_lists
-    def earlystop_em(self, train_obs, train_act=None, nb_iter=50, prec=1e-4, verbose=False,
+    def earlystop_em(self, train_obs, train_act=None, nb_iter=50, prec=1e-4,
                      init_mstep_kwargs={}, trans_mstep_kwargs={}, obs_mstep_kwargs={},
                      test_obs=None, test_act=None, **kwargs):
 
         assert test_obs is not None and test_act is not None
+
+        process_id = kwargs.get('process_id', 0)
 
         nb_train = np.vstack(train_obs).shape[0]
         nb_test = np.vstack(test_obs).shape[0]
@@ -279,11 +282,11 @@ class HMM:
         score = (all_ll - train_ll) / (nb_all - nb_train)
         last_score = score
 
-        if verbose:
-            print("it=", 0, "train_ll=", train_ll, "test_ll=", test_ll, "score=", last_score)
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, train_ll: {:.5f}, test_ll: {:.5f},"
+                             " score: {:.5f}".format(process_id, train_ll, test_ll, score))
 
-        it = 1
-        while it <= nb_iter:
+        for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
             self.mstep(gamma, zeta, train_obs, train_act,
                        init_mstep_kwargs,
@@ -300,21 +303,21 @@ class HMM:
             all_ll = train_ll + test_ll
             score = (all_ll - train_ll) / (nb_all - nb_train)
 
-            if verbose:
-                print("it=", it, "train_ll=", train_ll, "test_ll=", test_ll, "score=", score)
+            pbar.set_description("#{}, train_ll: {:.5f}, test_ll: {:.5f},"
+                                 "score: {:.5f}".format(process_id, train_ll, test_ll, score))
 
-            if (score - last_score) < prec:
+            if abs(score - last_score) < prec:
                 break
             else:
                 last_score = score
 
-            it += 1
-
         return train_lls
 
     @ensure_args_are_viable_lists
-    def stochastic_em(self, obs, act=None, nb_epochs=250, batch_size=5,
-                      verbose=False, method='adam', **kwargs):
+    def stochastic_em(self, obs, act=None, nb_epochs=250,
+                      batch_size=5, method='adam', **kwargs):
+
+        process_id = kwargs.get('process_id', 0)
 
         nb_traj = len(obs)
         nb_total_steps = sum([_obs.shape[0] for _obs in obs])
@@ -349,19 +352,19 @@ class HMM:
             return - obj / nb_total_steps
 
         lls = [self.log_norm(obs, act)]
-        if verbose:
-            print("epoch=", 0, "ll=", lls[-1])
+
+        pbar = trange(nb_epochs * nb_traj, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, lls[-1]))
 
         # Run the optimizer
         step = dict(adam=adam_step, sgd=sgd_step)[method]
         state = None
-        for itr in range(1, nb_epochs * nb_traj):
+        for itr in pbar:
             self.params, val, g, state = step(value_and_grad(_objective), self.params,
                                               itr, state=state, **kwargs)
             if itr % nb_traj == 0:
                 lls.append(self.log_norm(obs, act))
-                if verbose:
-                    print("epoch=", itr // nb_traj, "ll=", lls[-1])
+                pbar.set_description("#{}, ll: {:.5f}".format(process_id, lls[-1]))
 
         return lls
 

@@ -29,7 +29,7 @@ true_ll = true_arhmm.log_norm(x)
 arhmm = ARHMM(nb_states=3, dm_obs=2)
 arhmm.initialize(x)
 
-lls = arhmm.em(x, nb_iter=100, prec=0., verbose=True)
+lls = arhmm.em(x, nb_iter=100, prec=0.)
 print("true_ll=", true_ll, "hmm_ll=", lls[-1])
 
 plt.figure(figsize=(5, 5))

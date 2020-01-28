@@ -31,7 +31,7 @@ class GaussianObservation:
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 2, 1. * np.eye(self.dm_obs))
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, 1. * np.eye(self.dm_obs))
             self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
 
     @property
