@@ -61,7 +61,7 @@ def sample_env(env, nb_rollouts, nb_steps,
                     if t == 0:
                         u = np.zeros((dm_act, ))
                     else:
-                        u = brownian(_act[t - 1, :], 1, 0.01, 2 * ulim)
+                        u = brownian(_act[t - 1, :], 1, 0.01, ulim)
                 else:
                     # max action in 2-sigma region
                     # u = 2 * ulim * npr.randn(1, )
@@ -286,7 +286,7 @@ def linear_regression(Xs, ys, weights=None,
 
     # Solve for the MAP estimate
     # W = np.linalg.solve(J, h).T
-    # W = np.dot(h.T, np.linalg.pinv(J)).T
+    # W = np.dot(h.T, np.linalg.pinv(J))
     WT, _, _, _ = np.linalg.lstsq(J, h, rcond=None)
     W = WT.T
 
