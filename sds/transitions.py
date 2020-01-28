@@ -24,8 +24,8 @@ from torch.utils.data import BatchSampler, SubsetRandomSampler
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import PolynomialFeatures
 
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
 to_torch = lambda arr: torch.from_numpy(arr).float().to(device)
 to_npy = lambda arr: arr.detach().double().cpu().numpy()
@@ -223,7 +223,7 @@ class PolyRecurrentRegressor(nn.Module):
 
         # _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
         _mat = torch.ones(self.nb_states, self.nb_states)
-        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        _mat /= torch.sum(_mat, dim=-1, keepdim=True)
         self.logmat = nn.Parameter(torch.log(_mat), requires_grad=True)
 
         self._mean = torch.as_tensor(self.norm['mean'], dtype=torch.float32, device=device)
@@ -239,12 +239,13 @@ class PolyRecurrentRegressor(nn.Module):
 
         self.optim = None
 
+    @torch.no_grad()
     def reset(self):
         _stdv = torch.sqrt(torch.as_tensor(1. / (self.dm_obs + self.dm_act + self.nb_states)))
         self.coef.data = _stdv * torch.randn(self.nb_states, self.nb_feat)
 
         _mat = torch.ones(self.nb_states, self.nb_states)
-        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        _mat /= torch.sum(_mat, dim=-1, keepdim=True)
         self.logmat.data = torch.log(_mat)
 
     def log_prior(self):
@@ -255,10 +256,13 @@ class PolyRecurrentRegressor(nn.Module):
                 lp += self._dirichlet.log_prob(_matrix.to(device)).sum()
         return lp
 
-    def forward(self, xu):
+    def propagate(self, xu):
         norm_xu = (xu - self._mean) / self._std
         _feat = to_torch(self.basis.fit_transform(to_npy(norm_xu)))
-        output = torch.mm(_feat, torch.transpose(self.coef, 0, 1))
+        return torch.mm(_feat, torch.transpose(self.coef, 0, 1))
+
+    def forward(self, xu):
+        output = self.propagate(xu)
         _logtrans = self.logmat[None, :, :] + output[:, None, :]
         return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
 
@@ -270,7 +274,7 @@ class PolyRecurrentRegressor(nn.Module):
         if self.prior and 'l2_penalty' in self.prior:
             self.optim = Adam(self.parameters(), lr=lr, weight_decay=self.prior['l2_penalty'])
         else:
-            self.optim = Adam(self.parameters(), lr=lr, weight_decay=0.)
+            self.optim = Adam(self.parameters(), lr=lr)
 
         set_size = xu.shape[0]
         batch_size = set_size if batch_size is None else batch_size
@@ -406,17 +410,17 @@ class NeuralRecurrentRegressor(nn.Module):
         self.prior = prior
         self.norm = norm
 
-        nlist = dict(relu=F.relu, tanh=F.tanh,
-                     softmax=F.log_softmax, linear=F.linear)
-
+        nlist = dict(relu=torch.relu, tanh=torch.tanh)
         self.nonlin = nlist[nonlin]
-        self.l1 = nn.Linear(self.sizes[0], self.sizes[1])
-        self.l2 = nn.Linear(self.sizes[1], self.sizes[2])
-        self.output = nn.Linear(self.sizes[2], self.sizes[3])
+
+        self.layers = nn.ModuleList([])
+        for n in range(len(self.sizes) - 2):
+            self.layers.append(nn.Linear(self.sizes[n], self.sizes[n+1]))
+        self.output = nn.Linear(self.sizes[-2], self.sizes[-1])
 
         # _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
         _mat = torch.ones(self.nb_states, self.nb_states)
-        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        _mat /= torch.sum(_mat, dim=-1, keepdim=True)
         self.logmat = nn.Parameter(torch.log(_mat), requires_grad=True)
 
         self._mean = torch.as_tensor(self.norm['mean'], dtype=torch.float32, device=device)
@@ -432,13 +436,14 @@ class NeuralRecurrentRegressor(nn.Module):
 
         self.optim = None
 
+    @torch.no_grad()
     def reset(self):
-        self.l1.reset_parameters()
-        self.l2.reset_parameters()
+        for _l in self.layers:
+            _l.reset_parameters()
         self.output.reset_parameters()
 
         _mat = torch.ones(self.nb_states, self.nb_states)
-        _mat /= torch.sum(_mat, dim=1, keepdim=True)
+        _mat /= torch.sum(_mat, dim=-1, keepdim=True)
         self.logmat.data = torch.log(_mat)
 
     def log_prior(self):
@@ -449,9 +454,15 @@ class NeuralRecurrentRegressor(nn.Module):
                 lp += self._dirichlet.log_prob(_matrix.to(device)).sum()
         return lp
 
-    def forward(self, xu):
+    def propagate(self, xu):
         norm_xu = (xu - self._mean) / self._std
-        out = self.output(self.nonlin(self.l2(self.nonlin(self.l1(norm_xu)))))
+        out = norm_xu
+        for _l in self.layers:
+            out = self.nonlin(_l(out))
+        return self.output(out)
+
+    def forward(self, xu):
+        out = self.propagate(xu)
         _logtrans = self.logmat[None, :, :] + out[:, None, :]
         return _logtrans - torch.logsumexp(_logtrans, dim=-1, keepdim=True)
 
@@ -463,7 +474,7 @@ class NeuralRecurrentRegressor(nn.Module):
         if self.prior and 'l2_penalty' in self.prior:
             self.optim = Adam(self.parameters(), lr=lr, weight_decay=self.prior['l2_penalty'])
         else:
-            self.optim = Adam(self.parameters(), lr=lr, weight_decay=0.)
+            self.optim = Adam(self.parameters(), lr=lr)
 
         set_size = xu.shape[0]
         batch_size = set_size if batch_size is None else batch_size
@@ -476,9 +487,9 @@ class NeuralRecurrentRegressor(nn.Module):
                 loss.backward()
                 self.optim.step()
 
-            # if n % 10 == 0:
-            #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
-            #     print("Loss: {:.4f}".format(loss))
+                # if n % 10 == 0:
+                #     print('Epoch: {}/{}.............'.format(n, nb_iter), end=' ')
+                #     print("Loss: {:.4f}".format(loss))
 
 
 # class PolyRecurrentTransition(StickyTransition):

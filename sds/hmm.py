@@ -73,8 +73,8 @@ class HMM:
 
     def log_norm(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
-        alpha, norm = self.forward(*loglikhds)
-        return sum([np.sum(_norm) for _norm in norm])
+        _, norm = self.forward(*loglikhds)
+        return np.sum(np.hstack(norm))
 
     def log_probability(self, obs, act=None):
         return self.log_norm(obs, act) + self.log_priors()
@@ -244,10 +244,10 @@ class HMM:
             if verbose:
                 print("it=", it, "train_ll=", train_ll)
 
-            if (train_ll - last_train_ll) < prec:
-                break
-            else:
-                last_train_ll = train_ll
+            # if (train_ll - last_train_ll) < prec:
+            #     break
+            # else:
+            #     last_train_ll = train_ll
 
             it += 1
 
@@ -274,8 +274,10 @@ class HMM:
         test_lls.append(test_ll)
         last_test_ll = test_ll
 
-        last_all_ll = last_train_ll + last_test_ll
-        last_score = (last_all_ll - last_train_ll) / (nb_all - nb_train)
+        all_ll = last_train_ll + last_test_ll
+
+        score = (all_ll - train_ll) / (nb_all - nb_train)
+        last_score = score
 
         if verbose:
             print("it=", 0, "train_ll=", train_ll, "test_ll=", test_ll, "score=", last_score)
@@ -428,7 +430,7 @@ class HMM:
 
         return nxt_state, nxt_obs
 
-    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None, horizon=None, stoch=True, mix=True):
+    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None, horizon=None, stoch=False, mix=True):
         nxt_state = []
         nxt_obs = []
 
