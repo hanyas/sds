@@ -49,16 +49,16 @@ if __name__ == "__main__":
 
     obs, act = sample_env(env, nb_rollouts, nb_steps)
 
-    fig, ax = plt.subplots(nrows=1, ncols=dm_obs + dm_act, figsize=(12, 4))
-    for _obs, _act in zip(obs, act):
-        for k, col in enumerate(ax[:-1]):
-            col.plot(_obs[:, k])
-        ax[-1].plot(_act)
-    plt.show()
+    # fig, ax = plt.subplots(nrows=1, ncols=dm_obs + dm_act, figsize=(12, 4))
+    # for _obs, _act in zip(obs, act):
+    #     for k, col in enumerate(ax[:-1]):
+    #         col.plot(_obs[:, k])
+    #     ax[-1].plot(_act)
+    # plt.show()
 
     nb_states = 2
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-64 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-64 * 10}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0.]),
                              'std': np.array([1., 1., 1.])}}
-    trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': None, 'lr': 1e-3}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
 
     rarhmm = rARHMM(nb_states, dm_obs, dm_act,
                     trans_type=trans_type,
