@@ -44,7 +44,7 @@ def create_job(kwargs):
                     obs_prior=obs_prior,
                     trans_prior=trans_prior,
                     trans_kwargs=trans_kwargs)
-    # rarhmm.initialize(train_obs, train_act)
+    rarhmm.initialize(train_obs, train_act)
 
     rarhmm.em(train_obs, train_act,
               nb_iter=nb_iter, prec=prec, verbose=True,
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    env = gym.make('Cartpole-ID-v1')
+    env = gym.make('Pendulum-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-8
@@ -116,23 +116,23 @@ if __name__ == "__main__":
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
-    nb_train_rollouts, nb_train_steps = 50, 500
-    nb_test_rollouts, nb_test_steps = 10, 500
+    nb_train_rollouts, nb_train_steps = 25, 250
+    nb_test_rollouts, nb_test_steps = 5, 250
 
     train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    nb_states = 13
+    nb_states = 5
 
     obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 50}
-    trans_kwargs = {'hidden_layer_sizes': (32,),
-                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
-                             'std': np.array([5., 1., 1., 5., 10., 5.])}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 512, 'lr': 1e-3}
+    trans_prior = {'l2_penalty': 0., 'alpha': 1, 'kappa': 5}
+    trans_kwargs = {'hidden_layer_sizes': (16,),
+                    'norm': {'mean': np.array([0., 0., 0., 0.]),
+                             'std': np.array([1., 1., 8., 2.5])}}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
 
     models, lls, scores = parallel_em(nb_jobs=6,
                                       nb_states=nb_states,
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     #
     # plt.show()
 
-    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_cartpole_polar.pkl", "wb"))
+    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_pendulum_polar.pkl", "wb"))
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
