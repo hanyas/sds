@@ -416,7 +416,7 @@ class NeuralRecurrentRegressor(nn.Module):
         self.layers = nn.ModuleList([])
         for n in range(len(self.sizes) - 2):
             self.layers.append(nn.Linear(self.sizes[n], self.sizes[n+1]))
-        self.output = nn.Linear(self.sizes[-2], self.sizes[-1])
+        self.output = nn.Linear(self.sizes[-2], self.sizes[-1], bias=False)
 
         # _mat = 0.95 * torch.eye(self.nb_states) + 0.05 * torch.rand(self.nb_states, self.nb_states)
         _mat = torch.ones(self.nb_states, self.nb_states)
@@ -454,9 +454,11 @@ class NeuralRecurrentRegressor(nn.Module):
                 lp += self._dirichlet.log_prob(_matrix.to(device)).sum()
         return lp
 
+    def normalize(self, xu):
+        return (xu - self._mean) / self._std
+
     def propagate(self, xu):
-        norm_xu = (xu - self._mean) / self._std
-        out = norm_xu
+        out = self.normalize(xu)
         for _l in self.layers:
             out = self.nonlin(_l(out))
         return self.output(out)
