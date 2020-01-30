@@ -324,10 +324,10 @@ if __name__ == "__main__":
     plt.show()
 
     #
-    nb_states = 4
+    nb_states = 5
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-4 * 10}
-    ctl_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_act + 1) + 10, 'psi0': 1e-2 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-4 * 10}
+    ctl_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_act + 1) + 10, 'psi0': 1e-2 * 10}
 
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
@@ -339,13 +339,13 @@ if __name__ == "__main__":
     ctl_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 50}
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 100}
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0.]),
                              'std': np.array([1., 1., 8., 2.5])}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 128, 'lr': 1e-4}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
 
-    models, lls, scores = parallel_em(nb_jobs=6, model=None,
+    models, lls, scores = parallel_em(nb_jobs=1, model=None,
                                       nb_states=nb_states,
                                       obs=obs, act=act,
                                       learn_dyn=True, learn_ctl=True,
@@ -469,5 +469,5 @@ if __name__ == "__main__":
     success = 0.
     for roll in rollouts:
         angle = np.arctan2(roll['x'][:, 1], roll['x'][:, 0])
-        if np.all(np.fabs(angle[500:]) < np.deg2rad(15)):
+        if np.all(np.fabs(angle[700:]) < np.deg2rad(15)):
             success += 1.

@@ -26,6 +26,8 @@ def create_job(kwargs):
     obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs')
     trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs')
 
+    process_id = kwargs.pop('process_id')
+
     train_obs, train_act, test_obs, test_act = [], [], [], []
     train_idx = npr.choice(a=len(obs), size=int(0.8 * len(obs)), replace=False)
     for i in range(len(obs)):
@@ -47,15 +49,10 @@ def create_job(kwargs):
     rarhmm.initialize(train_obs, train_act)
 
     rarhmm.em(train_obs, train_act,
-              nb_iter=nb_iter, prec=prec, verbose=True,
+              nb_iter=nb_iter, prec=prec,
               obs_mstep_kwargs=obs_mstep_kwargs,
-              trans_mstep_kwargs=trans_mstep_kwargs)
-
-    # rarhmm.earlystop_em(train_obs, train_act,
-    #                     nb_iter=nb_iter, prec=prec, verbose=True,
-    #                     obs_mstep_kwargs=obs_mstep_kwargs,
-    #                     trans_mstep_kwargs=trans_mstep_kwargs,
-    #                     test_obs=test_obs, test_act=test_act)
+              trans_mstep_kwargs=trans_mstep_kwargs,
+              process_id=process_id)
 
     nb_train = np.vstack(train_obs).shape[0]
     nb_all = np.vstack(obs).shape[0]
@@ -69,8 +66,13 @@ def create_job(kwargs):
 
 
 def parallel_em(nb_jobs=50, **kwargs):
-    kwargs_list = [kwargs for _ in range(nb_jobs)]
-    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    kwargs_list = []
+    for n in range(nb_jobs):
+        kwargs['process_id'] = n
+        kwargs_list.append(kwargs.copy())
+
+    results = Parallel(n_jobs=min(nb_jobs, nb_cores),
+                       verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
     rarhmms, lls, scores = list(map(list, zip(*results)))
     return rarhmms, lls, scores
 
@@ -129,12 +131,12 @@ if __name__ == "__main__":
 
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 0., 'alpha': 1, 'kappa': 5}
-    trans_kwargs = {'hidden_layer_sizes': (16,),
+    trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0.]),
                              'std': np.array([1., 1., 8., 2.5])}}
     trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
 
-    models, lls, scores = parallel_em(nb_jobs=6,
+    models, lls, scores = parallel_em(nb_jobs=1,
                                       nb_states=nb_states,
                                       obs=train_obs, act=train_act,
                                       trans_type=trans_type,
@@ -143,7 +145,7 @@ if __name__ == "__main__":
                                       trans_kwargs=trans_kwargs,
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=200, prec=1e-4)
+                                      nb_iter=500, prec=1e-2)
     rarhmm = models[np.argmax(scores)]
 
     print("rarhmm, stochastic, " + rarhmm.trans_type)
@@ -174,4 +176,4 @@ if __name__ == "__main__":
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
-        print(rarhmm.kstep_mse(test_obs, test_act, horizon=h, mix=False))
+        print("MSE: {0[0]}, EVAR:{0[1]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h, mix=False)))

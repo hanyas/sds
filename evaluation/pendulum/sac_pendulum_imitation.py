@@ -219,7 +219,7 @@ def create_job(kwargs):
         erarhmm.controls.reset()
 
     erarhmm.em(train_obs, train_act,
-               nb_iter=nb_iter, prec=prec, verbose=True,
+               nb_iter=nb_iter, prec=prec,
                obs_mstep_kwargs=obs_mstep_kwargs,
                ctl_mstep_kwargs=ctl_mstep_kwargs,
                trans_mstep_kwargs=trans_mstep_kwargs)
@@ -299,6 +299,8 @@ if __name__ == "__main__":
     fig.suptitle('Pendulum SAC Demonstrations')
 
     for _obs, _act in zip(obs, act):
+        # angle = np.arctan2(_obs[:, 1], _obs[:, 0])
+        # axs[0].plot(angle)
         axs[0].plot(_obs[:, 0])
         axs[0] = beautify(axs[0])
         axs[1].plot(_obs[:, -1])
@@ -317,10 +319,10 @@ if __name__ == "__main__":
     plt.show()
 
     #
-    nb_states = 6
+    nb_states = 7
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
-    ctl_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_act + 1) + 10, 'psi0': 1e-2 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
+    ctl_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_act + 1) + 10, 'psi0': 1e-2 * 10}
 
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
@@ -336,9 +338,9 @@ if __name__ == "__main__":
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0.]),
                              'std': np.array([1., 1., 8., 2.5])}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 128, 'lr': 1e-4}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
 
-    models, lls, scores = parallel_em(nb_jobs=6, model=None,
+    models, lls, scores = parallel_em(nb_jobs=1, model=None,
                                       nb_states=nb_states,
                                       obs=obs, act=act,
                                       learn_dyn=True, learn_ctl=True,

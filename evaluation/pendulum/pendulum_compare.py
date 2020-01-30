@@ -56,11 +56,19 @@ def fit_rarhmm(obs, act, nb_states):
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 0., 'alpha': 1, 'kappa': 5}
-    trans_kwargs = {'hidden_layer_sizes': (25,),
-                    'norm': {'mean': np.array([0., 0., 0., 0.]),
-                             'std': np.array([1., 1., 8., 2.5])}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 128, 'lr': 1e-4}
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 100}
+    trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 128, 'lr': 5e-4}
+
+    if args.obs == 'cart':
+        trans_kwargs = {'hidden_layer_sizes': (25,),
+                        'norm': {'mean': np.array([0., 0., 0., 0.]),
+                                 'std': np.array([1., 1., 8., 2.5])}}
+    elif args.ob == 'polar':
+        trans_kwargs = {'hidden_layer_sizes': (25,),
+                        'norm': {'mean': np.array([0., 0., 0.]),
+                                 'std': np.array([np.pi, 8., 2.5])}}
+    else:
+        raise NotImplementedError
 
     rarhmm = rARHMM(nb_states, dm_obs, dm_act,
                     trans_type=trans_type,
@@ -70,7 +78,7 @@ def fit_rarhmm(obs, act, nb_states):
     # rarhmm.initialize(obs, act)
 
     rarhmm.em(obs=obs, act=act,
-              nb_iter=500, prec=1e-4, verbose=True,
+              nb_iter=100, prec=1e-4, verbose=True,
               obs_mstep_kwargs=obs_mstep_kwargs,
               trans_mstep_kwargs=trans_mstep_kwargs)
 
@@ -163,7 +171,7 @@ def parallel_gp_test(models, obs, act, horizon):
 
 def fit_fnn(obs, act, nb_epochs=5000):
     input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(obs, act)])
-    target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in obs])
+    target = np.vstack([_x[1:, :] for _x in obs])
 
     fnn = DynamicNNRegressor([input.shape[-1], 16, 16, target.shape[-1]])
     fnn.fit(to_float(target), to_float(input), nb_epochs, batch_size=16)
@@ -326,13 +334,20 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Compare SOTA Models on Pendulum')
     parser.add_argument('--model', help='Choose model', default='rarhmm')
+    parser.add_argument('--obs', help='Choose observations', default='cart')
     args = parser.parse_args()
 
     random.seed(1337)
     npr.seed(1337)
     torch.manual_seed(1337)
 
-    env = gym.make('Pendulum-ID-v1')
+    if args.obs == 'cart':
+        env = gym.make('Pendulum-ID-v1')
+    elif args.obs == 'polar':
+        env = gym.make('Pendulum-ID-v0')
+    else:
+        raise NotImplementedError
+
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-8
@@ -355,6 +370,7 @@ if __name__ == "__main__":
             print("Horizon: ", h)
             mse, evar = parallel_rarhmm_test(rarhmms, test_obs, test_act, int(h))
 
+            print(np.c_[mse, evar])
             k_mse.append(np.min(mse))
             k_evar.append(np.max(evar))
             k.append(h)
@@ -414,12 +430,12 @@ if __name__ == "__main__":
     ax = plt.gca()
     ax = beautify(ax)
 
-    save("cart_pendulum_" + str(args.model) + "_mse.tex")
+    save(str(args.obs) + "_pendulum_" + str(args.model) + "_mse.tex")
     plt.close()
 
     plt.plot(np.array(k), np.array(k_evar))
     ax = plt.gca()
     ax = beautify(ax)
 
-    save("cart_pendulum_" + str(args.model) + "_evar.tex")
+    save(str(args.obs) + "_pendulum_" + str(args.model) + "_evar.tex")
     plt.close()
