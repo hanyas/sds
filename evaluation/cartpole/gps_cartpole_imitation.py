@@ -211,25 +211,18 @@ def create_job(kwargs):
                           trans_kwargs=trans_kwargs,
                           learn_dyn=learn_dyn,
                           learn_ctl=learn_ctl)
-        # erarhmm.initialize(train_obs, train_act)
+        erarhmm.initialize(train_obs, train_act)
     else:
         erarhmm = copy.deepcopy(model)
         erarhmm.learn_dyn = learn_dyn
         erarhmm.learn_ctl = learn_ctl
         erarhmm.controls.reset()
 
-    # erarhmm.em(train_obs, train_act,
-    #            nb_iter=nb_iter, prec=prec, verbose=True,
-    #            obs_mstep_kwargs=obs_mstep_kwargs,
-    #            ctl_mstep_kwargs=ctl_mstep_kwargs,
-    #            trans_mstep_kwargs=trans_mstep_kwargs)
-
-    erarhmm.earlystop_em(train_obs, train_act,
-                         nb_iter=nb_iter, prec=prec, verbose=True,
-                         obs_mstep_kwargs=obs_mstep_kwargs,
-                         trans_mstep_kwargs=trans_mstep_kwargs,
-                         ctl_mstep_kwargs=ctl_mstep_kwargs,
-                         test_obs=test_obs, test_act=test_act)
+    erarhmm.em(train_obs, train_act,
+               nb_iter=nb_iter, prec=prec, verbose=True,
+               obs_mstep_kwargs=obs_mstep_kwargs,
+               ctl_mstep_kwargs=ctl_mstep_kwargs,
+               trans_mstep_kwargs=trans_mstep_kwargs)
 
     nb_train = np.vstack(train_obs).shape[0]
     nb_all = np.vstack(obs).shape[0]
@@ -264,6 +257,7 @@ if __name__ == "__main__":
     cmap = gradient_cmap(colors)
 
     import os
+    import random
     import torch
 
     import gym
@@ -271,16 +265,16 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=5, suppress=True)
 
-    # random.seed(1337)
-    # npr.seed(1337)
-    # torch.manual_seed(1337)
+    random.seed(1337)
+    npr.seed(1337)
+    torch.manual_seed(1337)
 
     env = gym.make('Cartpole-RL-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-4
     env.unwrapped._global = False
-    # env.seed(1337)
+    env.seed(1337)
 
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
@@ -320,9 +314,9 @@ if __name__ == "__main__":
     axs[4].set_xlabel('Time Step')
 
     axs[0].set_ylabel('$x$')
-    axs[1].set_ylabel('$\cos(\\theta)$')
-    axs[2].set_ylabel('$\dot{x}$')
-    axs[3].set_ylabel('$\dot{\\theta}$')
+    axs[1].set_ylabel('$\\cos(\\theta)$')
+    axs[2].set_ylabel('$\\dot{x}$')
+    axs[3].set_ylabel('$\\dot{\\theta}$')
     axs[4].set_ylabel('$u$')
 
     plt.show()
@@ -330,8 +324,8 @@ if __name__ == "__main__":
     #
     nb_states = 6
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_obs + 10, 'psi0': 1e-8 * 10}
-    ctl_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': dm_act + 10, 'psi0': 1e-2 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': dm_obs + 10, 'psi0': 1e-8 * 10}
+    ctl_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': dm_act + 10, 'psi0': 1e-2 * 10}
 
     init_ctl_kwargs = {'degree': 1}
     ctl_kwargs = {'degree': 3}
@@ -344,12 +338,12 @@ if __name__ == "__main__":
 
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 25}
-    trans_kwargs = {'hidden_layer_sizes': (25,),
+    trans_kwargs = {'hidden_layer_sizes': (32,),
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
                              'std': np.array([5., 1., 1., 5., 10., 5.])}}
-    trans_mstep_kwargs = {'nb_iter': 10, 'batch_size': 64, 'lr': 5e-4}
+    trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 256, 'lr': 5e-4}
 
-    models, lls, scores = parallel_em(nb_jobs=6, model=None,
+    models, lls, scores = parallel_em(nb_jobs=1, model=None,
                                       nb_states=nb_states,
                                       obs=obs, act=act,
                                       learn_dyn=True, learn_ctl=True,
@@ -364,7 +358,7 @@ if __name__ == "__main__":
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       ctl_mstep_kwargs=ctl_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=25, prec=1e-2)
+                                      nb_iter=50, prec=1e-2)
     erarhmm = models[np.argmax(scores)]
 
     erarhmm.learn_dyn = True
@@ -387,11 +381,11 @@ if __name__ == "__main__":
     axs[1].set_xlim(0, len(obs[_seq]))
 
     axs[2].plot(obs[_seq][:, 3], '-g')
-    axs[2].set_ylabel("$\dot{x}$")
+    axs[2].set_ylabel("$\\dot{x}$")
     axs[2].set_xlim(0, len(obs[_seq]))
 
     axs[3].plot(obs[_seq][:, 4], '-g')
-    axs[3].set_ylabel("$\dot{\\theta}$")
+    axs[3].set_ylabel("$\\dot{\\theta}$")
     axs[3].set_xlim(0, len(obs[_seq]))
 
     axs[4].plot(act[_seq])
@@ -420,15 +414,15 @@ if __name__ == "__main__":
     axs[0].set_xlim(0, len(obs[_seq]))
 
     axs[1].plot(rollouts[_idx]['x'][:, 1:3])
-    axs[1].set_ylabel('$\cos(\\theta)/\sin(\\theta)$')
+    axs[1].set_ylabel('$\\cos(\\theta)/\\sin(\\theta)$')
     axs[1].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[2].plot(rollouts[_idx]['x'][:, 3], '-g')
-    axs[2].set_ylabel("$\dot{x}$")
+    axs[2].set_ylabel("$\\dot{x}$")
     axs[2].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[3].plot(rollouts[_idx]['x'][:, 4], '-g')
-    axs[3].set_ylabel("$\dot{\\theta}$")
+    axs[3].set_ylabel("$\\dot{\\theta}$")
     axs[3].set_xlim(0, len(rollouts[_idx]['x']))
 
     axs[4].plot(rollouts[_idx]['u'], '-r')
@@ -468,9 +462,9 @@ if __name__ == "__main__":
     axs[5].set_xlabel('Time Step')
 
     axs[0].set_ylabel('$x$')
-    axs[1].set_ylabel('$\cos(\\theta)$')
-    axs[2].set_ylabel('$\dot{x}$')
-    axs[3].set_ylabel('$\dot{\\theta}$')
+    axs[1].set_ylabel('$\\cos(\\theta)$')
+    axs[2].set_ylabel('$\\dot{x}$')
+    axs[3].set_ylabel('$\\dot{\\theta}$')
     axs[4].set_ylabel('$u$')
     axs[5].set_ylabel('$z$')
 
@@ -486,7 +480,7 @@ if __name__ == "__main__":
     ax = beautify(ax)
 
     ax.set_xlabel('$\\theta$')
-    ax.set_ylabel("$\dot{\\theta}$")
+    ax.set_ylabel("$\\dot{\\theta}$")
 
     plt.show()
 
