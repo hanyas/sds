@@ -52,25 +52,33 @@ def fit_rarhmm(obs, act, nb_states):
     dm_obs = obs[0].shape[-1]
     dm_act = act[0].shape[-1]
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 0., 'alpha': 1, 'kappa': 5}
-    trans_kwargs = {'hidden_layer_sizes': (25,),
-                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
-                             'std': np.array([2.3, 1., 1., 30., 40., 5.])}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 128, 'lr': 1e-4}
+    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 100}
+    trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 1024, 'lr': 1e-3}
+
+    if args.obs == 'cart':
+        trans_kwargs = {'hidden_layer_sizes': (81,),
+                        'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
+                                 'std': np.array([2.3, 1., 1., 30., 40., 5.])}}
+    elif args.ob == 'polar':
+        trans_kwargs = {'hidden_layer_sizes': (81,),
+                        'norm': {'mean': np.array([0., 0., 0., 0., 0.]),
+                                 'std': np.array([2.3, np.pi, 30., 40., 5.])}}
+    else:
+        raise NotImplementedError
 
     rarhmm = rARHMM(nb_states, dm_obs, dm_act,
                     trans_type=trans_type,
                     obs_prior=obs_prior,
                     trans_prior=trans_prior,
                     trans_kwargs=trans_kwargs)
-    # rarhmm.initialize(obs, act)
+    rarhmm.initialize(obs, act)
 
     rarhmm.em(obs=obs, act=act,
-              nb_iter=500, prec=1e-4, verbose=True,
+              nb_iter=500, prec=1e-2, verbose=True,
               obs_mstep_kwargs=obs_mstep_kwargs,
               trans_mstep_kwargs=trans_mstep_kwargs)
 
@@ -163,10 +171,16 @@ def parallel_gp_test(models, obs, act, horizon):
 
 def fit_fnn(obs, act, nb_epochs=5000):
     input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(obs, act)])
-    target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in obs])
+    target = np.vstack([_x[1:, :] for _x in obs])
 
-    fnn = DynamicNNRegressor([input.shape[-1], 16, 16, target.shape[-1]])
-    fnn.fit(to_float(target), to_float(input), nb_epochs, batch_size=64)
+    if args.obs == 'polar':
+        fnn = DynamicNNRegressor([input.shape[-1], 64, 64, target.shape[-1]])
+    elif args.obs == 'cart':
+        fnn = DynamicNNRegressor([input.shape[-1], 64, 64, target.shape[-1]])
+    else:
+        raise NotImplementedError
+
+    fnn.fit(to_float(target), to_float(input), nb_epochs, batch_size=2048, lr=1e-3)
 
     return fnn
 
@@ -218,8 +232,14 @@ def fit_rnn(obs, act, nb_epochs=5000):
     input_size = input.shape[-1]
     target_size = target.shape[-1]
 
-    rnn = DynamicRNNRegressor(input_size, target_size, hidden_size=16, nb_layers=2)
-    rnn.fit(to_float(target), to_float(input), nb_epochs)
+    if args.obs == 'polar':
+        rnn = DynamicRNNRegressor(input_size, target_size, hidden_size=64, nb_layers=2)
+    elif args.obs == 'cart':
+        rnn = DynamicRNNRegressor(input_size, target_size, hidden_size=64, nb_layers=2)
+    else:
+        raise NotImplementedError
+
+    rnn.fit(to_float(target), to_float(input), nb_epochs, lr=1e-4)
 
     return rnn
 
@@ -271,7 +291,13 @@ def fit_lstm(obs, act, nb_epochs=100):
     input_size = input.shape[-1]
     target_size = target.shape[-1]
 
-    lstm = DynamicLSTMRegressor(input_size, target_size, [16, 16])
+    if args.obs == 'polar':
+        lstm = DynamicLSTMRegressor(input_size, target_size, [64, 64])
+    elif args.obs == 'cart':
+        lstm = DynamicLSTMRegressor(input_size, target_size, [64, 64])
+    else:
+        raise NotImplementedError
+
     lstm.fit(to_double(target), to_double(input), nb_epochs, lr=0.1)
 
     return lstm
@@ -326,20 +352,31 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Compare SOTA Models on Quanser Qube')
     parser.add_argument('--model', help='Choose model', default='rarhmm')
+    parser.add_argument('--obs', help='Choose observations', default='cart')
     args = parser.parse_args()
 
     random.seed(1337)
     npr.seed(1337)
     torch.manual_seed(1337)
+    torch.set_num_threads(1)
 
-    env = gym.make('QQube-ID-v1')
+    if args.obs == 'cart':
+        env = gym.make('QQube-ID-v1')
+    elif args.obs == 'polar':
+        env = gym.make('QQube-ID-v0')
+    else:
+        raise NotImplementedError
+
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-8
     env.seed(1337)
 
-    nb_train_rollouts, nb_train_steps = 50, 150
-    nb_test_rollouts, nb_test_steps = 10, 150
+    dm_obs = env.observation_space.shape[0]
+    dm_act = env.action_space.shape[0]
+
+    nb_train_rollouts, nb_train_steps = 50, 500
+    nb_test_rollouts, nb_test_steps = 10, 500
 
     hr = [1, 5, 10, 15, 20, 25]
 
@@ -350,7 +387,8 @@ if __name__ == "__main__":
     if args.model == 'rarhmm':
         # fit rarhmm
         rarhmms = parallel_rarhmm_fit(obs=train_obs, act=train_act,
-                                      nb_states=7, nb_jobs=25)
+                                      nb_states=37 if args.obs == 'cart' else 37,
+                                      nb_jobs=5)
         for h in hr:
             print("Horizon: ", h)
             mse, evar = parallel_rarhmm_test(rarhmms, test_obs, test_act, int(h))
@@ -374,7 +412,7 @@ if __name__ == "__main__":
     elif args.model == 'fnn':
         # fit fnn
         fnns = parallel_fnn_fit(obs=train_obs, act=train_act,
-                                nb_epochs=7500, nb_jobs=25)
+                                nb_epochs=10000, nb_jobs=5)
         for h in hr:
             print("Horizon: ", h)
             mse, evar = parallel_fnn_test(fnns, test_obs, test_act, int(h))
@@ -386,7 +424,7 @@ if __name__ == "__main__":
     elif args.model == 'rnn':
         # fit rnn
         rnns = parallel_rnn_fit(obs=train_obs, act=train_act,
-                                nb_epochs=7500, nb_jobs=25)
+                                nb_epochs=10000, nb_jobs=5)
         for h in hr:
             print("Horizon: ", h)
             mse, evar = parallel_rnn_test(rnns, test_obs, test_act, int(h))
@@ -398,7 +436,7 @@ if __name__ == "__main__":
     elif args.model == 'lstm':
         # fit lstm
         lstms = parallel_lstm_fit(obs=train_obs, act=train_act,
-                                  nb_epochs=150, nb_jobs=25)
+                                  nb_epochs=200, nb_jobs=5)
         for h in hr:
             print("Horizon: ", h)
             mse, evar = parallel_lstm_test(lstms, test_obs, test_act, int(h))
@@ -414,12 +452,12 @@ if __name__ == "__main__":
     ax = plt.gca()
     ax = beautify(ax)
 
-    save("polar_furuta_" + str(args.model) + "_mse.tex")
+    save(str(args.obs) + "_furuta_" + str(args.model) + "_mse.tex")
     plt.close()
 
     plt.plot(np.array(k), np.array(k_evar))
     ax = plt.gca()
     ax = beautify(ax)
 
-    save("polar_furuta_" + str(args.model) + "_evar.tex")
+    save(str(args.obs) + "_furuta_" + str(args.model) + "_evar.tex")
     plt.close()

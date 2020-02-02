@@ -211,7 +211,7 @@ def create_job(kwargs):
                           trans_kwargs=trans_kwargs,
                           learn_dyn=learn_dyn,
                           learn_ctl=learn_ctl)
-        # erarhmm.initialize(train_obs, train_act)
+        erarhmm.initialize(train_obs, train_act)
     else:
         erarhmm = copy.deepcopy(model)
         erarhmm.learn_dyn = learn_dyn
@@ -223,13 +223,6 @@ def create_job(kwargs):
                obs_mstep_kwargs=obs_mstep_kwargs,
                ctl_mstep_kwargs=ctl_mstep_kwargs,
                trans_mstep_kwargs=trans_mstep_kwargs)
-
-    # erarhmm.earlystop_em(train_obs, train_act,
-    #                      nb_iter=nb_iter, prec=prec, verbose=True,
-    #                      obs_mstep_kwargs=obs_mstep_kwargs,
-    #                      trans_mstep_kwargs=trans_mstep_kwargs,
-    #                      ctl_mstep_kwargs=ctl_mstep_kwargs,
-    #                      test_obs=test_obs, test_act=test_act)
 
     nb_train = np.vstack(train_obs).shape[0]
     nb_all = np.vstack(obs).shape[0]
@@ -268,6 +261,7 @@ if __name__ == "__main__":
     cmap = gradient_cmap(colors)
 
     import os
+    import random
     import torch
 
     import gym
@@ -275,16 +269,16 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=5, suppress=True)
 
-    # random.seed(1337)
-    # npr.seed(1337)
-    # torch.manual_seed(1337)
+    random.seed(1337)
+    npr.seed(1337)
+    torch.manual_seed(1337)
 
     env = gym.make('Pendulum-RL-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-8
     env.unwrapped._global = True
-    # env.seed(1337)
+    env.seed(1337)
 
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]

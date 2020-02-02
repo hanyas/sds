@@ -358,6 +358,7 @@ if __name__ == "__main__":
     random.seed(1337)
     npr.seed(1337)
     torch.manual_seed(1337)
+    torch.set_num_threads(1)
 
     if args.obs == 'cart':
         env = gym.make('Cartpole-ID-v1')
