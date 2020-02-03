@@ -109,7 +109,7 @@ if __name__ == "__main__":
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    env = gym.make('QQube-ID-v0')
+    env = gym.make('QQube-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-8
@@ -126,15 +126,15 @@ if __name__ == "__main__":
 
     nb_states = 37
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-8 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 100}
-    trans_kwargs = {'hidden_layer_sizes': (64,),
+    trans_kwargs = {'hidden_layer_sizes': (81,),
                     'norm': {'mean': np.array([0., 0., 0., 0., 0.]),
                              'std': np.array([2.3, np.pi, 30., 40., 5.])}}
-    trans_mstep_kwargs = {'nb_iter': 75, 'batch_size': 1024, 'lr': 5e-4}
+    trans_mstep_kwargs = {'nb_iter': 75, 'batch_size': 1024, 'lr': 1e-3}
 
     models, lls, scores = parallel_em(nb_jobs=1,
                                       nb_states=nb_states,
@@ -145,7 +145,7 @@ if __name__ == "__main__":
                                       trans_kwargs=trans_kwargs,
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=250, prec=1e-2)
+                                      nb_iter=500, prec=1e-2)
     rarhmm = models[np.argmax(scores)]
 
     print("rarhmm, stochastic, " + rarhmm.trans_type)

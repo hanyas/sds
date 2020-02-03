@@ -57,7 +57,7 @@ def fit_rarhmm(obs, act, nb_states):
 
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 100}
-    trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 1024, 'lr': 1e-3}
+    trans_mstep_kwargs = {'nb_iter': 75, 'batch_size': 1024, 'lr': 1e-3}
 
     if args.obs == 'cart':
         trans_kwargs = {'hidden_layer_sizes': (81,),

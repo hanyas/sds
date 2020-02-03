@@ -50,8 +50,8 @@ class QubeBase(Base):
         return np.float32(rwd), False
 
     def _calibrate(self):
-        _low, _high = np.array([-0.1, -np.pi, -30., -40.]),\
-                      np.array([0.1, np.pi, 30., 40.])
+        _low, _high = np.array([-0.1, -np.pi, -1., -5.]),\
+                      np.array([0.1, np.pi, 1., 5.])
 
         self._sim_state = self._np_random.uniform(low=_low, high=_high)
         self._state = self._zero_sim_step()
