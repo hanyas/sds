@@ -132,8 +132,8 @@ if __name__ == "__main__":
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 100}
     trans_kwargs = {'hidden_layer_sizes': (81,),
-                    'norm': {'mean': np.array([0., 0., 0., 0., 0.]),
-                             'std': np.array([2.3, np.pi, 30., 40., 5.])}}
+                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
+                             'std': np.array([2.3, 1., 1., 30., 40., 5.])}}
     trans_mstep_kwargs = {'nb_iter': 75, 'batch_size': 1024, 'lr': 1e-3}
 
     models, lls, scores = parallel_em(nb_jobs=1,

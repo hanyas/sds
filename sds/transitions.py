@@ -401,7 +401,7 @@ class NeuralRecurrentTransition:
 
 
 class NeuralRecurrentRegressor(nn.Module):
-    def __init__(self, sizes, prior, norm, nonlin='relu'):
+    def __init__(self, sizes, prior, norm, nonlin='splus'):
         super(NeuralRecurrentRegressor, self).__init__()
 
         self.sizes = sizes
@@ -410,7 +410,7 @@ class NeuralRecurrentRegressor(nn.Module):
         self.prior = prior
         self.norm = norm
 
-        nlist = dict(relu=torch.relu, tanh=torch.tanh)
+        nlist = dict(relu=torch.relu, tanh=torch.tanh, splus=F.softplus)
         self.nonlin = nlist[nonlin]
 
         self.layers = nn.ModuleList([])
