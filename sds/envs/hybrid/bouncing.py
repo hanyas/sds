@@ -16,19 +16,14 @@ class BouncingBall(gym.Env):
 
         self._sigma = 1e-8
 
-        self._global = True
-
         # x = [x, xd]
-        self._state_max = np.array([np.inf, np.inf])
+        self._xmax = np.array([np.inf, np.inf])
+        self.observation_space = spaces.Box(low=-self._xmax,
+                                            high=self._xmax)
 
-        # o = [th, thd]
-        self._obs_max = np.array([np.inf, np.inf])
-        self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
-
-        self._act_max = 0.
-        self.action_space = spaces.Box(low=-self._act_max,
-                                       high=self._act_max, shape=(1,))
+        self._umax = 0.
+        self.action_space = spaces.Box(low=-self._umax,
+                                       high=self._umax, shape=(1,))
 
         self.state = None
         self.np_random = None
@@ -37,11 +32,11 @@ class BouncingBall(gym.Env):
 
     @property
     def xlim(self):
-        return self._state_max
+        return self._xmax
 
     @property
     def ulim(self):
-        return self._act_max
+        return self._umax
 
     @property
     def dt(self):
@@ -86,7 +81,7 @@ class BouncingBall(gym.Env):
 
     def step(self, u):
         # apply action constraints
-        _u = np.clip(u, -self._act_max, self._act_max)
+        _u = np.clip(u, -self.ulim, self.ulim)
 
         # state-action dependent noise
         _sigma = self.noise(self.state, _u)
@@ -95,7 +90,7 @@ class BouncingBall(gym.Env):
         _xn = self.dynamics(self.state, _u)
 
         # apply state constraints
-        _xn = np.clip(_xn, -self._state_max, self._state_max)
+        _xn = np.clip(_xn, -self.xlim, self.xlim)
 
         # compute reward
         rwrd = self.rewrad(self.state, _u)
@@ -108,7 +103,7 @@ class BouncingBall(gym.Env):
     # following functions for plotting
     def fake_step(self, x, u):
         # apply action constraints
-        _u = np.clip(u, -self._act_max, self._act_max)
+        _u = np.clip(u, -self.ulim, self.ulim)
 
         # state-action dependent noise
         _sigma = self.noise(x, _u)
@@ -117,7 +112,7 @@ class BouncingBall(gym.Env):
         _xn = self.dynamics(x, _u)
 
         # apply state constraints
-        _xn = np.clip(_xn, -self._state_max, self._state_max)
+        _xn = np.clip(_xn, -self.xlim, self.xlim)
 
         return self.observe(_xn)
 
