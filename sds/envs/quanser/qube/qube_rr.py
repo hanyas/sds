@@ -1,4 +1,4 @@
-import autograd.numpy as np
+import numpy as np
 
 from sds.envs.quanser.common import QSocket, VelocityFilter
 from sds.envs.quanser.qube.base import QubeBase
@@ -16,7 +16,7 @@ class QubeRR(QubeBase):
         # Reset calibration
         self._vel_filt = VelocityFilter(self.sensor_space.shape[0])
         self._sens_offset = np.zeros(self.sensor_space.shape[0],
-                                     dtype=np.float32)
+                                     dtype=np.float64)
 
         # Record alpha offset if alpha == k * 2pi (happens upon reconnect)
         x = self._zero_sim_step()

@@ -2,7 +2,7 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 
-import autograd.numpy as np
+import numpy as np
 
 from sds import rARHMM
 

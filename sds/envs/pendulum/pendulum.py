@@ -2,7 +2,7 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 
-import autograd.numpy as np
+import numpy as np
 
 
 def normalize(x):
@@ -32,12 +32,14 @@ class Pendulum(gym.Env):
         # o = [th, thd]
         self._obs_max = np.array([np.inf, 8.0])
         self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
+                                            high=self._obs_max,
+                                            dtype=np.float64)
 
         self._act_weight = - np.array([1e-3])
         self._act_max = 2.5
         self.action_space = spaces.Box(low=-self._act_max,
-                                       high=self._act_max, shape=(1,))
+                                       high=self._act_max, shape=(1,),
+                                       dtype=np.float64)
 
         self.state = None
         self.np_random = None
@@ -149,7 +151,8 @@ class PendulumWithCartesianObservation(Pendulum):
         # o = [cos, sin, thd]
         self._obs_max = np.array([1., 1., 8.0])
         self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
+                                            high=self._obs_max,
+                                            dtype=np.float64)
 
     def observe(self, x):
         return np.array([np.cos(x[0]),
