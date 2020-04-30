@@ -1,5 +1,5 @@
-import autograd.numpy as np
-import autograd.numpy.random as npr
+import numpy as np
+import numpy.random as npr
 
 from sds import HMM
 from sds.utils import permutation
@@ -9,11 +9,16 @@ from hips.plotting.colormaps import gradient_cmap
 
 import seaborn as sns
 
+import torch
+
+npr.randn(1337)
+torch.manual_seed(1337)
 
 sns.set_style("white")
 sns.set_context("talk")
 
-color_names = ["windows blue", "red", "amber", "faded green", "dusty purple", "orange"]
+color_names = ["windows blue", "red", "amber",
+               "faded green", "dusty purple", "orange"]
 
 colors = sns.xkcd_palette(color_names)
 cmap = gradient_cmap(colors)
@@ -30,7 +35,7 @@ T = [95, 85, 75]
 true_z, x = true_hmm.sample(horizon=T)
 true_ll = true_hmm.log_norm(x)
 
-hmm = HMM(nb_states=3, dm_obs=2)
+hmm = HMM(nb_states=3, dm_obs=2, preprocess=True)
 hmm.initialize(x)
 
 lls = hmm.em(x, nb_iter=1000, prec=0.)
