@@ -1,10 +1,7 @@
-import autograd.numpy as np
-import autograd.numpy.random as npr
+import numpy as np
+import numpy.random as npr
 
-from autograd import value_and_grad
-from sds.utils import adam_step, sgd_step
-
-from autograd.scipy.special import logsumexp
+from scipy.special import logsumexp
 
 from sds.initial import CategoricalInitState
 from sds.transitions import StationaryTransition
@@ -15,8 +12,8 @@ from sds.cython.hmm_cy import forward_cy, backward_cy
 
 from tqdm import trange
 
-from autograd.tracer import getval
-to_c = lambda arr: np.copy(getval(arr), 'C') if not arr.flags['C_CONTIGUOUS'] else getval(arr)
+to_c = lambda arr: np.copy(arr, 'C')\
+    if not arr.flags['C_CONTIGUOUS'] else arr
 
 
 class HMM:
@@ -171,6 +168,7 @@ class HMM:
             zeta.append(_zeta)
         return zeta
 
+    @ensure_args_are_viable_lists
     def viterbi(self, obs, act=None):
         loginit, logtrans, logobs = self.log_likelihoods(obs, act)[0:3]
 
@@ -314,73 +312,21 @@ class HMM:
         return train_lls
 
     @ensure_args_are_viable_lists
-    def stochastic_em(self, obs, act=None, nb_epochs=250,
-                      batch_size=5, method='adam', **kwargs):
-
-        process_id = kwargs.get('process_id', 0)
-
-        nb_traj = len(obs)
-        nb_total_steps = sum([_obs.shape[0] for _obs in obs])
-        nb_batches = int(np.ceil(nb_traj / batch_size))
-
-        def _get_minibatch(itr):
-            idx = itr % nb_batches
-            sl = slice(idx * batch_size, (idx + 1) * batch_size)
-            return obs[sl], act[sl]
-
-        # Define the objective (negative ELBO)
-        def _objective(params, itr):
-            # Grab a minibatch of data
-            obs, act = _get_minibatch(itr)
-            nb_steps = sum([_obs.shape[0] for _obs in obs])
-
-            # E step: compute expected latent states with current parameters
-            gamma, zeta = self.estep(obs, act)
-
-            # M step: set the parameter and compute the (normalized) objective function
-            self.params = params
-            loginit, logtrans, logobs = self.log_likelihoods(obs, act)
-
-            # Compute the expected log probability
-            # (Scale by number of length of this minibatch.)
-            obj = self.log_priors()
-            for _gamma, _zeta, _logtrans, _logobs in zip(gamma, zeta, logtrans, logobs):
-                obj += np.sum(_gamma[0] * loginit) * nb_traj / batch_size
-                obj += np.sum(_zeta * _logtrans) * (nb_total_steps - nb_traj) / (nb_steps - batch_size)
-                obj += np.sum(_gamma * _logobs) * nb_total_steps / nb_steps
-
-            return - obj / nb_total_steps
-
-        lls = [self.log_norm(obs, act)]
-
-        pbar = trange(nb_epochs * nb_traj, position=process_id)
-        pbar.set_description("#{}, ll: {:.5f}".format(process_id, lls[-1]))
-
-        # Run the optimizer
-        step = dict(adam=adam_step, sgd=sgd_step)[method]
-        state = None
-        for itr in pbar:
-            self.params, val, g, state = step(value_and_grad(_objective), self.params,
-                                              itr, state=state, **kwargs)
-            if itr % nb_traj == 0:
-                lls.append(self.log_norm(obs, act))
-                pbar.set_description("#{}, ll: {:.5f}".format(process_id, lls[-1]))
-
-        return lls
-
-    @ensure_args_are_viable_lists
     def mean_observation(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
         alpha, norm = self.forward(*loglikhds)
         beta = self.backward(*loglikhds, scale=norm)
         gamma = self.posterior(alpha, beta)
-        return self.observations.smooth(gamma, obs, act)
+
+        mean_obs = self.observations.smooth(gamma, obs, act)
+        return mean_obs
 
     @ensure_args_are_viable_lists
     def filter(self, obs, act=None):
         logliklhds = self.log_likelihoods(obs, act)
         alpha, _ = self.forward(*logliklhds)
-        belief = [np.exp(_alpha - logsumexp(_alpha, axis=1, keepdims=True)) for _alpha in alpha]
+        belief = [np.exp(_alpha - logsumexp(_alpha, axis=1, keepdims=True))
+                  for _alpha in alpha]
         return belief
 
     def sample(self, act=None, horizon=None):
@@ -403,37 +349,21 @@ class HMM:
 
         return state, obs
 
-    def step(self, obs, act, belief, stoch=True, mix=False):
-        if stoch:
-            # it doesn't make sense to mix while sampling
-            assert not mix
-
+    def step(self, obs, act, belief, stoch=True):
         if stoch:
             state = npr.choice(self.nb_states, p=belief)
             nxt_state = self.transitions.sample(state, obs, act)
             nxt_obs = self.observations.sample(nxt_state, obs, act)
         else:
-            if mix:
-                nxt_state = None
-
-                # average over transitions and belief space
-                _logtrans = np.squeeze(self.transitions.log_transition(obs, act)[0])
-                _trans = np.exp(_logtrans - logsumexp(_logtrans, axis=1, keepdims=True))
-
-                _zeta = _trans.T @ belief
-                _nxt_belief = _zeta / _zeta.sum()
-
-                nxt_obs = np.zeros((1, self.dm_obs))
-                for k in range(self.nb_states):
-                    nxt_obs += _nxt_belief[k] * self.observations.mean(k, obs, act)
-            else:
-                state = np.argmax(belief)
-                nxt_state = self.transitions.likeliest(state, obs, act)
-                nxt_obs = self.observations.mean(nxt_state, obs, act)
+            state = np.argmax(belief)
+            nxt_state = self.transitions.likeliest(state, obs, act)
+            nxt_obs = self.observations.mean(nxt_state, obs, act)
 
         return nxt_state, nxt_obs
 
-    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None, horizon=None, stoch=False, mix=True):
+    def forcast(self, hist_obs=None, hist_act=None,
+                nxt_act=None, horizon=None, stoch=False):
+
         nxt_state = []
         nxt_obs = []
 
@@ -454,30 +384,11 @@ class HMM:
                     _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
                     _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
             else:
-                if mix:
-                    # return empty discrete state when mixing
-                    _nxt_state = None
-
-                    _nxt_obs[0, :] = _hist_obs[-1, ...]
-                    for t in range(horizon[n]):
-
-                        # average over transitions and belief space
-                        _logtrans = np.squeeze(self.transitions.log_transition(_nxt_obs[t, :], _nxt_act[t, :])[0])
-                        _trans = np.exp(_logtrans - logsumexp(_logtrans, axis=1, keepdims=True))
-
-                        # update belief
-                        _zeta = _trans.T @ _belief
-                        _belief = _zeta / _zeta.sum()
-
-                        # average observations
-                        for k in range(self.nb_states):
-                            _nxt_obs[t + 1, :] += _belief[k] * self.observations.mean(k, _nxt_obs[t, :], _nxt_act[t, :])
-                else:
-                    _nxt_state[0] = np.argmax(_belief)
-                    _nxt_obs[0, :] = _hist_obs[-1, ...]
-                    for t in range(horizon[n]):
-                        _nxt_state[t + 1] = self.transitions.likeliest(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
-                        _nxt_obs[t + 1, :] = self.observations.mean(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
+                _nxt_state[0] = np.argmax(_belief)
+                _nxt_obs[0, :] = _hist_obs[-1, ...]
+                for t in range(horizon[n]):
+                    _nxt_state[t + 1] = self.transitions.likeliest(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                    _nxt_obs[t + 1, :] = self.observations.mean(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
 
             nxt_state.append(_nxt_state)
             nxt_obs.append(_nxt_obs)
@@ -485,10 +396,12 @@ class HMM:
         return nxt_state, nxt_obs
 
     @ensure_args_are_viable_lists
-    def kstep_mse(self, obs, act, horizon=1, stoch=False, mix=False):
-        from sklearn.metrics import mean_squared_error, explained_variance_score
+    def kstep_mse(self, obs, act, horizon=1, stoch=False):
 
-        mse, evar = [], []
+        from sklearn.metrics import mean_squared_error,\
+            explained_variance_score, r2_score
+
+        mse, smse, evar = [], [], []
         for _obs, _act in zip(obs, act):
             _hist_obs, _hist_act, _nxt_act = [], [], []
             _target, _prediction = [], []
@@ -500,21 +413,22 @@ class HMM:
                 _nxt_act.append(_act[t: t + horizon, :])
 
             _hr = [horizon for _ in range(_nb_steps)]
-            _, _obs_hat = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
-                                       nxt_act=_nxt_act, horizon=_hr, stoch=stoch, mix=mix)
+            _, _forcast = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
+                                       nxt_act=_nxt_act, horizon=_hr, stoch=stoch)
 
             for t in range(_nb_steps):
                 _target.append(_obs[t + horizon, :])
-                _prediction.append(_obs_hat[t][-1, :])
+                _prediction.append(_forcast[t][-1, :])
 
             _target = np.vstack(_target)
             _prediction = np.vstack(_prediction)
 
             _mse = mean_squared_error(_target, _prediction)
-            _evar = explained_variance_score(_target, _prediction,
-                                             multioutput='variance_weighted')
+            _smse = 1. - r2_score(_target, _prediction, multioutput='variance_weighted')
+            _evar = explained_variance_score(_target, _prediction, multioutput='variance_weighted')
 
             mse.append(_mse)
+            smse.append(_smse)
             evar.append(_evar)
 
-        return np.mean(mse), np.mean(evar)
+        return np.mean(mse), np.mean(smse), np.mean(evar)

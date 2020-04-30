@@ -1,5 +1,5 @@
-import autograd.numpy as np
-import autograd.numpy.random as npr
+import numpy as np
+import numpy.random as npr
 
 from scipy.special import logsumexp
 
@@ -13,13 +13,17 @@ from sds.utils import ensure_args_are_viable_lists
 class erARHMM(rARHMM):
 
     def __init__(self, nb_states, dm_obs, dm_act, trans_type='neural', ar_ctl=False, lags=1,
-                 init_state_prior={}, init_obs_prior={}, init_ctl_prior={}, trans_prior={}, obs_prior={}, ctl_prior={},
-                 init_state_kwargs={}, init_obs_kwargs={}, init_ctl_kwargs={}, trans_kwargs={}, obs_kwargs={}, ctl_kwargs={},
+                 init_state_prior={}, init_obs_prior={}, init_ctl_prior={},
+                 trans_prior={}, obs_prior={}, ctl_prior={},
+                 init_state_kwargs={}, init_obs_kwargs={}, init_ctl_kwargs={},
+                 trans_kwargs={}, obs_kwargs={}, ctl_kwargs={},
                  learn_dyn=True, learn_ctl=False):
 
         super(erARHMM, self).__init__(nb_states, dm_obs, dm_act, trans_type,
-                                      init_state_prior=init_state_prior, init_obs_prior=init_obs_prior, obs_prior=obs_prior, trans_prior=trans_prior,
-                                      init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs, obs_kwargs=obs_kwargs, trans_kwargs=trans_kwargs)
+                                      init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
+                                      obs_prior=obs_prior, trans_prior=trans_prior,
+                                      init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
+                                      obs_kwargs=obs_kwargs, trans_kwargs=trans_kwargs)
 
         self.learn_dyn = learn_dyn
         self.learn_ctl = learn_ctl
@@ -103,13 +107,10 @@ class erARHMM(rARHMM):
         return self.controls.smooth(gamma, obs, act)
 
     @ensure_args_are_viable_lists
-    def filter_control(self, obs, act=None, stoch=False, mix=False):
-        if stoch:
-            # it doesn't make sense to mix while sampling
-            assert not mix
-
+    def filter_control(self, obs, act=None, stoch=False):
         loglikhds = self.log_likelihoods(obs, act)
         alpha, _ = self.forward(*loglikhds)
+
         state, ctl = [], []
         for _alpha, _obs, _act in zip(alpha, obs, act):
             _weight = np.exp(_alpha - logsumexp(_alpha, axis=-1, keepdims=True))
@@ -126,28 +127,14 @@ class erARHMM(rARHMM):
                     else:
                         _ctl[t, :] = self.controls.sample(_state[t], _obs[t, :])
                 else:
-                    if mix:
-                        # this is just for plotting
-                        _state[t] = np.argmax(_weight[t, :])
-
-                        for k in range(self.nb_states):
-                            if self.ar_ctl:
-                                if t < self.lags:
-                                    _ctl[t, :] += _weight[t, k] * self.init_control.mean(k, _obs[t, :])
-                                else:
-                                    _ctl[t, :] += _weight[t, k] * self.controls.mean(k, _obs[t - self.lags:t + 1])
-                            else:
-                                _ctl[t, :] += _weight[t, k] * self.controls.mean(k, _obs[t, :])
-                    else:
-                        _state[t] = np.argmax(_weight[t, :])
-
-                        if self.ar_ctl:
-                            if t < self.lags:
-                                _ctl[t, :] = self.init_control.mean(_state[t], _obs[t, :])
-                            else:
-                                _ctl[t, :] = self.controls.mean(_state[t], _obs[t - self.lags:t + 1])
+                    _state[t] = np.argmax(_weight[t, :])
+                    if self.ar_ctl:
+                        if t < self.lags:
+                            _ctl[t, :] = self.init_control.mean(_state[t], _obs[t, :])
                         else:
-                            _ctl[t, :] = self.controls.mean(_state[t], _obs[t, :])
+                            _ctl[t, :] = self.controls.mean(_state[t], _obs[t - self.lags:t + 1])
+                    else:
+                        _ctl[t, :] = self.controls.mean(_state[t], _obs[t, :])
 
             state.append(_state)
             ctl.append(_ctl)

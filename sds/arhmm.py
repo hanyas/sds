@@ -1,4 +1,4 @@
-import autograd.numpy as np
+import numpy as np
 
 from sds import HMM
 
@@ -47,10 +47,11 @@ class ARHMM(HMM):
         imu = self.init_observation.smooth(gamma, obs)
         armu = self.observations.smooth(gamma, obs, act)
 
-        mu = []
+        mean_obs = []
         for _imu, _armu in zip(imu, armu):
-            mu.append(np.vstack((_imu, _armu)))
-        return mu
+            mean_obs.append(np.vstack((_imu, _armu)))
+
+        return mean_obs
 
     def sample(self, act=None, horizon=None):
         state = []
