@@ -1,13 +1,13 @@
-from autograd import numpy as np
-import autograd.numpy.random as npr
+import numpy as np
+import numpy.random as npr
 
-from autograd.scipy.special import logsumexp
+from scipy.special import logsumexp
 
 import scipy as sc
 from scipy import linalg, stats, special
 from scipy.stats import multivariate_normal as mvn
 
-from sds.stats import multivariate_normal_logpdf
+from sds.stats import multivariate_normal_logpdf as lg_mvn
 from sds.utils import linear_regression
 
 from sklearn.preprocessing import PolynomialFeatures
@@ -77,7 +77,7 @@ class GaussianInitObservation:
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, 1. * np.eye(self.dm_obs))
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs))
             self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
 
     @property
@@ -125,7 +125,7 @@ class GaussianInitObservation:
     def log_likelihood(self, x):
         loglik = []
         for _x in x:
-            _loglik = np.column_stack([multivariate_normal_logpdf(_x[0], self.mean(k), self.cov[k])
+            _loglik = np.column_stack([lg_mvn(_x[0], self.mean(k), self.cov[k])
                                        for k in range(self.nb_states)])
             loglik.append(_loglik)
         return loglik
@@ -187,7 +187,6 @@ class GaussianInitControl:
         for k in range(self.nb_states):
             _cov = sc.stats.invwishart.rvs(self.dm_act + 1, 1. * np.eye(self.dm_act))
             self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
-
 
     @property
     def params(self):
@@ -259,9 +258,7 @@ class GaussianInitControl:
     def log_likelihood(self, x, u):
         loglik = []
         for _x, _u in zip(x, u):
-            _loglik = np.column_stack([multivariate_normal_logpdf(_u[:self.lags],
-                                                                  self.mean(k, x=_x[:self.lags]),
-                                                                  self.cov[k])
+            _loglik = np.column_stack([lg_mvn(_u[:self.lags], self.mean(k, x=_x[:self.lags]), self.cov[k])
                                        for k in range(self.nb_states)])
             loglik.append(_loglik)
         return loglik

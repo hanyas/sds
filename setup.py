@@ -20,6 +20,6 @@ setup(name='sds',
       description='Switching dynamical systems for control',
       author='Hany Abdulsamad',
       author_email='hany@robot-learning.de',
-      install_requires=['numpy', 'scipy', 'matplotlib', 'autograd'],
+      install_requires=['numpy', 'scipy', 'matplotlib', 'sklearn'],
       packages=['sds'], ext_modules=cythonize(ext_modules),
       include_dirs=[np.get_include()],)

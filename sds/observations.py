@@ -1,5 +1,5 @@
-import autograd.numpy as np
-import autograd.numpy.random as npr
+import numpy as np
+import numpy.random as npr
 
 import scipy as sc
 from scipy import stats
@@ -11,8 +11,6 @@ from sds.stats import multivariate_normal_logpdf as lg_mvn
 
 from sds.utils import random_rotation
 from sds.utils import linear_regression
-
-from autograd.tracer import getval
 
 
 class GaussianObservation:
@@ -31,7 +29,7 @@ class GaussianObservation:
 
         self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, 1. * np.eye(self.dm_obs))
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs))
             self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
 
     @property
@@ -132,7 +130,7 @@ class AutoRegressiveGaussianObservation:
         #     self.c[k, :] = npr.randn(self.dm_obs)
 
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, 1. * np.eye(self.dm_obs))
+            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs))
             self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
             self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
             self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
@@ -223,8 +221,8 @@ class AutoRegressiveGaussianObservation:
             for k in range(self.nb_states):
                 coef_ = np.column_stack((self.A[k, ...], self.B[k, ...], self.c[k, ...])).flatten()
                 lp += mvn(mean=self.prior['mu0'] * np.ones((coef_.shape[0], )),
-                          cov=self.prior['sigma0'] * np.eye(coef_.shape[0])).logpdf(getval(coef_))\
-                      + invw(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs)).logpdf(getval(self.cov[k, ...]))
+                          cov=self.prior['sigma0'] * np.eye(coef_.shape[0])).logpdf(coef_)\
+                      + invw(self.prior['nu0'], self.prior['psi0'] * np.eye(self.dm_obs)).logpdf(self.cov[k, ...])
         return lp
 
     def log_likelihood(self, x, u):
@@ -271,59 +269,6 @@ class AutoRegressiveGaussianObservation:
         #         _cov[k] = _cov[i]
 
         self.cov = _cov
-
-    # def mstep(self, gamma, x, u, weights=None, reg=1e-16):
-    #     aux = []
-    #     if weights:
-    #         for _w, _gamma in zip(weights, gamma):
-    #            aux.append(_w[:, None] * _gamma)
-    #         gamma = aux
-    #
-    #     xs, ys, ws = [], [], []
-    #     for _x, _u, _w in zip(x, u, gamma):
-    #         xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
-    #         ys.append(_x[1:, :])
-    #         ws.append(_w[1:, :])
-    #
-    #     _J_diag = np.concatenate((reg * np.ones(self.dm_obs),
-    #                               reg * np.ones(self.dm_act),
-    #                               reg * np.ones(1)))
-    #     _J = np.tile(np.diag(_J_diag)[None, :, :], (self.nb_states, 1, 1))
-    #     _h = np.zeros((self.nb_states, self.dm_obs + self.dm_act + 1, self.dm_obs))
-    #
-    #     for _x, _y, _w in zip(xs, ys, ws):
-    #         for k in range(self.nb_states):
-    #             wx = _x * _w[:, k:k + 1]
-    #             _J[k] += np.dot(wx.T, _x)
-    #             _h[k] += np.dot(wx.T, _y)
-    #
-    #     mu = np.linalg.solve(_J, _h)
-    #     self.A = np.swapaxes(mu[:, :self.dm_obs, :], 1, 2)
-    #     self.B = np.swapaxes(mu[:, self.dm_obs:self.dm_obs + self.dm_act, :], 1, 2)
-    #     self.c = mu[:, -1, :]
-    #
-    #     sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-    #     weight = reg * np.ones(self.nb_states)
-    #     for _x, _y, _w in zip(xs, ys, ws):
-    #         yhat = np.matmul(_x[None, :, :], mu)
-    #         resid = _y[None, :, :] - yhat
-    #         sqerr += np.einsum('tk,kti,ktj->kij', _w, resid, resid)
-    #         weight += np.sum(_w, axis=0)
-    #
-    #     _cov = sqerr / weight[:, None, None]
-    #
-    #     # usage = sum([_gamma.sum(0) for _gamma in gamma])
-    #     # unused = np.where(usage < 1)[0]
-    #     # used = np.where(usage > 1)[0]
-    #     # if len(unused) > 0:
-    #     #     for k in unused:
-    #     #         i = npr.choice(used)
-    #     #         self.A[k] = self.A[i] + 0.01 * npr.randn(*self.A[i].shape)
-    #     #         self.B[k] = self.B[i] + 0.01 * npr.randn(*self.B[i].shape)
-    #     #         self.c[k] = self.c[i] + 0.01 * npr.randn(*self.c[i].shape)
-    #     #         _cov[k] = _cov[i]
-    #
-    #     self.cov = _cov
 
     def smooth(self, gamma, x, u):
         mean = []

@@ -1,18 +1,14 @@
-import autograd.numpy as np
-import autograd.numpy.random as npr
+import numpy as np
+import numpy.random as npr
 
-from autograd import grad, value_and_grad
+from scipy.linalg import block_diag
 
-from autograd.scipy.special import logsumexp
-from autograd.scipy.linalg import block_diag
+from scipy.optimize import linear_sum_assignment
 
-from autograd.misc import flatten
-from autograd.wrap_util import wraps
+from functools import lru_cache
+from functools import wraps
 
-from scipy.optimize import linear_sum_assignment, minimize
-from scipy.stats import norm
-
-from functools import partial, lru_cache
+import torch
 
 
 def brownian(x0, n, dt, delta, out=None):
@@ -38,8 +34,7 @@ def brownian(x0, n, dt, delta, out=None):
 
 
 def sample_env(env, nb_rollouts, nb_steps,
-               ctl=None, corr=False,
-               noise_std=0.1,
+               ctl=None, noise_std=0.1,
                apply_limit=True):
     obs, act = [], []
 
@@ -56,18 +51,8 @@ def sample_env(env, nb_rollouts, nb_steps,
 
         for t in range(nb_steps):
             if ctl is None:
-                if corr is True:
-                    # brownian motion
-                    if t == 0:
-                        u = np.zeros((dm_act, ))
-                    else:
-                        u = brownian(_act[t - 1, :], 1, 0.01, ulim)
-                else:
-                    # max action in 2-sigma region
-                    # u = 2 * ulim * npr.randn(1, )
-
-                    # unifrom distribution
-                    u = np.random.uniform(-ulim, ulim)
+                # unifrom distribution
+                u = np.random.uniform(-ulim, ulim)
             else:
                 u = ctl(x)
                 u = u + noise_std * npr.randn(1, )
@@ -136,7 +121,8 @@ def np_cache(function):
 @np_cache
 def stack(x, shift):
     _hr = len(x) - shift
-    _x = np.vstack([np.hstack([x[t + l] for l in range(shift + 1)]) for t in range(_hr)])
+    _x = np.vstack([np.hstack([x[t + l] for l in range(shift + 1)])
+                    for t in range(_hr)])
     return np.squeeze(_x)
 
 
@@ -190,60 +176,6 @@ def random_rotation(n, theta=None):
     out[:2, :2] = rot
     q = np.linalg.qr(npr.randn(n, n))[0]
     return q.dot(out).dot(q.T)
-
-
-def relu(x):
-    return np.maximum(0, x)
-
-
-def logistic_regression(X, y, bias=None, K=None,
-                        W0=None, mu0=0, sigma0=1,
-                        verbose=False, maxiter=1000):
-
-    N, D = X.shape
-    assert y.shape[0] == N
-
-    # Make sure y is one hot
-    if y.ndim == 1 or y.shape[1] == 1:
-        assert y.dtype == int and y.min() >= 0
-        K = y.max() + 1 if K is None else K
-        y_oh = np.zeros((N, K), dtype=int)
-        y_oh[np.arange(N), y] = 1
-
-    else:
-        K = y.shape[1]
-        assert y.min() == 0 and y.max() == 1 and np.allclose(y.sum(1), 1)
-        y_oh = y
-
-    # Check that bias is correct shape
-    if bias is not None:
-        assert bias.shape == (K,) or bias.shape == (N, K)
-    else:
-        bias = np.zeros((K,))
-
-    def loss(W_flat):
-        W = np.reshape(W_flat, (K, D))
-        scores = np.dot(X, W.T) + bias
-        lp = np.sum(y_oh * scores) - np.sum(logsumexp(scores, axis=1))
-        prior = np.sum(-0.5 * (W - mu0)**2 / sigma0)
-        return -(lp + prior) / N
-
-    W0 = W0 if W0 is not None else np.zeros((K, D))
-    assert W0.shape == (K, D)
-
-    itr = [0]
-
-    def callback(W_flat):
-        itr[0] += 1
-        print("Iteration {} loss: {:.3f}".format(itr[0], loss(W_flat)))
-
-    result = minimize(loss, np.ravel(W0), jac=grad(loss),
-                      method="BFGS",
-                      callback=callback if verbose else None,
-                      options=dict(maxiter=maxiter, disp=verbose))
-
-    W = np.reshape(result.x, (K, D))
-    return W
 
 
 def linear_regression(Xs, ys, weights=None,
@@ -315,96 +247,52 @@ def linear_regression(Xs, ys, weights=None,
         return W, Sigma
 
 
-def unflatten_optimizer_step(step):
-    """
-    Wrap an optimizer step function that operates on flat 1D arrays
-    with a version that handles trees of nested containers,
-    i.e. (lists/tuples/dicts), with arrays/scalars at the leaves.
-    """
-    @wraps(step)
-    def _step(value_and_grad, x, itr, state=None, *args, **kwargs):
-        _x, unflatten = flatten(x)
-
-        def _value_and_grad(x, i):
-            v, g = value_and_grad(unflatten(x), i)
-            return v, flatten(g)[0]
-
-        _next_x, _next_val, _next_g, _next_state = \
-            step(_value_and_grad, _x, itr, state=state, *args, **kwargs)
-        return unflatten(_next_x), _next_val, _next_g, _next_state
-    return _step
-
-
-@unflatten_optimizer_step
-def sgd_step(value_and_grad, x, itr, state=None, step_size=0.001, mass=0.9):
-    # Stochastic gradient descent with momentum.
-    velocity = state if state is not None else np.zeros(len(x))
-    val, g = value_and_grad(x, itr)
-    velocity = mass * velocity - (1.0 - mass) * g
-    x = x + step_size * velocity
-    return x, val, g, velocity
-
-
-@unflatten_optimizer_step
-def adam_step(value_and_grad, x, itr, state=None, step_size=0.001,
-              b1=0.9, b2=0.999, eps=10**-8):
-
-    m, v = (np.zeros(len(x)), np.zeros(len(x))) if state is None else state
-    val, g = value_and_grad(x, itr)
-    m = (1 - b1) * g + b1 * m         # First  moment estimate.
-    v = (1 - b2) * (g**2) + b2 * v    # Second moment estimate.
-    mhat = m / (1 - b1**(itr + 1))    # Bias correction.
-    vhat = v / (1 - b2**(itr + 1))
-    x = x - (step_size * mhat) / (np.sqrt(vhat) + eps)
-    return x, val, g, (m, v)
-
-
-def _generic_sgd(method, loss, x0,  nb_iter=200, state=None, full_output=False):
-
-    step = dict(adam=adam_step, sgd=sgd_step)[method]
-
-    # Initialize outputs
-    x, losses, grads = x0, [], []
-    for itr in range(nb_iter):
-        x, val, g, state = step(value_and_grad(loss), x, itr, state)
-        losses.append(val)
-        grads.append(g)
-
-    if full_output:
-        return x, state
+def to_float(arr, device=torch.device('cpu')):
+    if isinstance(arr, np.ndarray):
+        return torch.from_numpy(arr).float().to(device)
+    elif isinstance(arr, torch.FloatTensor):
+        return arr.to(device)
     else:
-        return x
+        raise arr
 
 
-def _generic_minimize(method, loss, x0, verbose=False, nb_iter=1000, full_output=False):
-
-    _x0, unflatten = flatten(x0)
-    _objective = lambda x_flat, itr: loss(unflatten(x_flat), itr)
-
-    if verbose:
-        print("Fitting with {}.".format(method))
-
-    # Specify callback for fitting
-    itr = [0]
-
-    def callback(x_flat):
-        itr[0] += 1
-        print("Iteration {} loss: {:.3f}".format(itr[0], loss(unflatten(x_flat), -1)))
-
-    # Call the optimizer.
-    # HACK: Pass in -1 as the iteration.
-    result = minimize(_objective, _x0, args=(-1,), jac=grad(_objective),
-                      method=method,
-                      callback=callback if verbose else None,
-                      options=dict(maxiter=nb_iter, disp=verbose))
-
-    if full_output:
-        return unflatten(result.x), result
+def np_float(arr):
+    if isinstance(arr, torch.Tensor):
+        return arr.detach().double().cpu().numpy()
+    elif isinstance(arr, np.ndarray):
+        return arr
     else:
-        return unflatten(result.x)
+        raise TypeError
 
 
-# Define optimizers
-adam = partial(_generic_sgd, "adam")
-bfgs = partial(_generic_minimize, "BFGS")
-lbfgs = partial(_generic_minimize, "L-BFGS-B")
+def ensure_args_torch_floats(f):
+    @wraps(f)
+    def wrapper(self, *args, **kwargs):
+        _args = []
+        for arg in args:
+            if isinstance(arg, list):
+                print(self.device)
+                _args.append([to_float(_arr, self.device) for _arr in arg])
+            elif isinstance(arg, np.ndarray):
+                _args.append(to_float(arg, self.device))
+            else:
+                _args.append(arg)
+
+        return f(self, *_args, **kwargs)
+    return wrapper
+
+
+def ensure_res_numpy_floats(f):
+    @wraps(f)
+    def wrapper(self, *args, **kwargs):
+        outputs = f(self, *args, **kwargs)
+
+        _outputs = []
+        for out in outputs:
+            if isinstance(out, torch.Tensor):
+                _outputs.append(np_float(out))
+            elif isinstance(out, list):
+                _outputs.append([np_float(x) for x in out])
+
+        return _outputs
+    return wrapper
