@@ -1,0 +1,70 @@
+% This file was created by tikzplotlib v0.9.1.
+\begin{tikzpicture}
+
+\definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
+
+\begin{axis}[
+tick pos=both,
+x grid style={white!69.0196078431373!black},
+xmajorgrids,
+xmin=1, xmax=25,
+xtick style={color=black},
+y grid style={white!69.0196078431373!black},
+ymajorgrids,
+ymin=0.0528100092538529, ymax=7.45864583074686,
+ytick style={color=black}
+]
+\path [draw=color0]
+(axis cs:1,0.0528100092538529)
+--(axis cs:1,0.151361215808672);
+
+\path [draw=color0]
+(axis cs:5,0.265833448677299)
+--(axis cs:5,0.906930533900438);
+
+\path [draw=color0]
+(axis cs:10,0.613967998206998)
+--(axis cs:10,1.96866145216123);
+
+\path [draw=color0]
+(axis cs:15,1.37121190395245)
+--(axis cs:15,3.28814919592627);
+
+\path [draw=color0]
+(axis cs:20,2.46166147211097)
+--(axis cs:20,5.30968352207237);
+
+\path [draw=color0]
+(axis cs:25,3.63578691791139)
+--(axis cs:25,7.45864583074686);
+
+\addplot [color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.0528100092538529
+5 0.265833448677299
+10 0.613967998206998
+15 1.37121190395245
+20 2.46166147211097
+25 3.63578691791139
+};
+\addplot [color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.151361215808672
+5 0.906930533900438
+10 1.96866145216123
+15 3.28814919592627
+20 5.30968352207237
+25 7.45864583074686
+};
+\addplot [color0, mark=*, mark size=2.5, mark options={solid}]
+table {%
+1 0.102085612531263
+5 0.586381991288869
+10 1.29131472518411
+15 2.32968054993936
+20 3.88567249709167
+25 5.54721637432912
+};
+\end{axis}
+
+\end{tikzpicture}
