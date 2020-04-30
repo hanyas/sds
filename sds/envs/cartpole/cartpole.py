@@ -2,7 +2,7 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 
-import autograd.numpy as np
+import numpy as np
 
 
 def normalize(x):
@@ -14,6 +14,7 @@ class Cartpole(gym.Env):
     def __init__(self):
         self.dm_state = 4
         self.dm_act = 1
+        self.dm_obs = 4
 
         self._dt = 0.01
 
@@ -31,12 +32,14 @@ class Cartpole(gym.Env):
         # x = [x, th, dx, dth]
         self._obs_max = np.array([5., np.inf, 5., 10.])
         self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
+                                            high=self._obs_max,
+                                            dtype=np.float64)
 
         self._act_weight = - np.array([1e-2])
         self._act_max = 5.0
         self.action_space = spaces.Box(low=-self._act_max,
-                                       high=self._act_max, shape=(1,))
+                                       high=self._act_max, shape=(1,),
+                                       dtype=np.float64)
 
         self.state = None
         self.np_random = None
@@ -164,7 +167,8 @@ class CartpoleWithCartesianObservation(Cartpole):
         # o = [x, cos, sin, xd, thd]
         self._obs_max = np.array([5., 1., 1., 5., 10.])
         self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
+                                            high=self._obs_max,
+                                            dtype=np.float64)
 
     def observe(self, x):
         return np.array([x[0],

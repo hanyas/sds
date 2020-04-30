@@ -1,6 +1,6 @@
 import socket
 import struct
-import autograd.numpy as np
+import numpy as np
 from scipy import signal
 import gym
 from gym import spaces
@@ -33,7 +33,7 @@ class QSocket:
         """
         self._soc.send(struct.pack(self._u_fmt, *u))
         data = self._soc.recv(self._buf_size)
-        return np.array(struct.unpack(self._x_fmt, data), dtype=np.float32)
+        return np.array(struct.unpack(self._x_fmt, data), dtype=np.float64)
 
     def open(self):
         if self._soc is None:
@@ -81,11 +81,11 @@ class VelocityFilter:
         :param x_init: initial observation of the signal to filter
         """
         derivative_filter = signal.cont2discrete((num, den), dt)
-        self.b = derivative_filter[0].ravel().astype(np.float32)
-        self.a = derivative_filter[1].astype(np.float32)
+        self.b = derivative_filter[0].ravel().astype(np.float64)
+        self.a = derivative_filter[1].astype(np.float64)
         if x_init is None:
             self.z = np.zeros((max(len(self.a), len(self.b)) - 1, x_len),
-                              dtype=np.float32)
+                              dtype=np.float64)
         else:
             self.set_initial_state(x_init)
 

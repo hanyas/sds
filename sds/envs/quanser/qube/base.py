@@ -1,4 +1,4 @@
-import autograd.numpy as np
+import numpy as np
 
 from sds.envs.quanser.common import Base, LabeledBox, Timing
 
@@ -22,13 +22,13 @@ class QubeBase(Base):
         # Spaces
         self.sensor_space = LabeledBox(
             labels=('theta', 'alpha'),
-            low=-sens_max, high=sens_max, dtype=np.float32)
+            low=-sens_max, high=sens_max, dtype=np.float64)
         self.state_space = LabeledBox(
             labels=('theta', 'alpha', 'theta_dot', 'alpha_dot'),
-            low=-state_max, high=state_max, dtype=np.float32)
+            low=-state_max, high=state_max, dtype=np.float64)
         self.action_space = LabeledBox(
             labels=('volts',),
-            low=-act_max, high=act_max, dtype=np.float32)
+            low=-act_max, high=act_max, dtype=np.float64)
 
         # Function to ensure that state and action constraints are satisfied
         safety_th_lim = 1.5
@@ -47,7 +47,7 @@ class QubeBase(Base):
         th, al, thd, ald = x
         cost = al**2 + 5e-3*ald**2 + 1e-1*th**2 + 2e-2*thd**2 + 3e-3*u[0]**2
         rwd = - cost * self.timing.dt_ctrl
-        return np.float32(rwd), False
+        return np.float64(rwd), False
 
     def _calibrate(self):
         _low, _high = np.array([-0.1, -np.pi, -1., -5.]),\

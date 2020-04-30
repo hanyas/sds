@@ -2,7 +2,7 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 
-import autograd.numpy as np
+import numpy as np
 
 
 class BouncingBall(gym.Env):
@@ -19,11 +19,13 @@ class BouncingBall(gym.Env):
         # x = [x, xd]
         self._xmax = np.array([np.inf, np.inf])
         self.observation_space = spaces.Box(low=-self._xmax,
-                                            high=self._xmax)
+                                            high=self._xmax,
+                                            dtype=np.float64)
 
         self._umax = 0.
         self.action_space = spaces.Box(low=-self._umax,
-                                       high=self._umax, shape=(1,))
+                                       high=self._umax, shape=(1,),
+                                       dtype=np.float64)
 
         self.state = None
         self.np_random = None
