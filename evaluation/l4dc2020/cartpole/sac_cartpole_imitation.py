@@ -4,7 +4,6 @@ import numpy.random as npr
 from sds import erARHMM
 from sds.utils import sample_env
 
-import random
 from joblib import Parallel, delayed
 import copy
 
@@ -45,11 +44,7 @@ def beautify(ax):
     return ax
 
 
-def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False, mix=False):
-    if stoch:
-        # it doesn't make sense to mix while sampling
-        assert not mix
-
+def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False):
     rollouts = []
 
     dm_obs = env.observation_space.shape[0]
@@ -81,25 +76,14 @@ def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False, mix=False):
             else:
                 u = erarhmm.controls.sample(z, x)
         else:
-            if mix:
-                # this is just for plotting
-                z = np.argmax(b)
-                roll['z'] = np.hstack((roll['z'], z))
+            z = np.argmax(b)
+            roll['z'] = np.hstack((roll['z'], z))
 
-                for k in range(nb_states):
-                    if erarhmm.ar_ctl:
-                        u += b[k] * erarhmm.init_control.mean(k, x)
-                    else:
-                        u += b[k] * erarhmm.controls.mean(k, x)
-            else:
-                z = np.argmax(b)
-                roll['z'] = np.hstack((roll['z'], z))
-
-                for k in range(nb_states):
-                    if erarhmm.ar_ctl:
-                        u = erarhmm.init_control.mean(z, x)
-                    else:
-                        u = erarhmm.controls.mean(z, x)
+            for k in range(nb_states):
+                if erarhmm.ar_ctl:
+                    u = erarhmm.init_control.mean(z, x)
+                else:
+                    u = erarhmm.controls.mean(z, x)
 
         u = np.clip(u, -ulim, ulim)
         roll['u'] = np.vstack((roll['u'], u))
@@ -115,7 +99,6 @@ def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False, mix=False):
             b = erarhmm.filter(roll['x'], _aux_u)[0][-1]
             roll['b'] = np.vstack((roll['b'], b))
 
-            u = np.zeros((dm_act, ))
             if stoch:
                 z = npr.choice(nb_states, p=b)
                 roll['z'] = np.hstack((roll['z'], z))
@@ -128,30 +111,16 @@ def evaluate(env, erarhmm, nb_rollouts, nb_steps, stoch=False, mix=False):
                 else:
                     u = erarhmm.controls.sample(z, x)
             else:
-                if mix:
-                    # this is only for plotting
-                    z = np.argmax(b)
-                    roll['z'] = np.hstack((roll['z'], z))
+                z = np.argmax(b)
+                roll['z'] = np.hstack((roll['z'], z))
 
-                    for k in range(nb_states):
-                        if erarhmm.ar_ctl:
-                            if t < erarhmm.lags:
-                                u += b[k] * erarhmm.init_control.mean(k, x)
-                            else:
-                                u += b[k] * erarhmm.controls.mean(k, roll['x'][-(1 + erarhmm.lags):])
-                        else:
-                            u += b[k] * erarhmm.controls.mean(k, x)
-                else:
-                    z = np.argmax(b)
-                    roll['z'] = np.hstack((roll['z'], z))
-
-                    if erarhmm.ar_ctl:
-                        if t < erarhmm.lags:
-                            u = erarhmm.init_control.mean(z, x)
-                        else:
-                            u = erarhmm.controls.mean(z, roll['x'][-(1 + erarhmm.lags):])
+                if erarhmm.ar_ctl:
+                    if t < erarhmm.lags:
+                        u = erarhmm.init_control.mean(z, x)
                     else:
-                        u = erarhmm.controls.mean(z, x)
+                        u = erarhmm.controls.mean(z, roll['x'][-(1 + erarhmm.lags):])
+                else:
+                    u = erarhmm.controls.mean(z, x)
 
             u = np.clip(u, -ulim, ulim)
             roll['u'] = np.vstack((roll['u'], u))
@@ -220,7 +189,7 @@ def create_job(kwargs):
         erarhmm.controls.reset()
 
     erarhmm.em(train_obs, train_act,
-               nb_iter=nb_iter, prec=prec, verbose=True,
+               nb_iter=nb_iter, prec=prec,
                obs_mstep_kwargs=obs_mstep_kwargs,
                ctl_mstep_kwargs=ctl_mstep_kwargs,
                trans_mstep_kwargs=trans_mstep_kwargs)
@@ -238,7 +207,8 @@ def create_job(kwargs):
 
 def parallel_em(nb_jobs=50, **kwargs):
     kwargs_list = [kwargs for _ in range(nb_jobs)]
-    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
+        (map(delayed(create_job), kwargs_list))
     erarhmms, lls, scores = list(map(list, zip(*results)))
     return erarhmms, lls, scores
 
@@ -322,11 +292,13 @@ if __name__ == "__main__":
     #
     nb_states = 9
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
-    ctl_prior = {'mu0': 0., 'sigma0': 1e32, 'nu0': (dm_act + 1) + 10, 'psi0': 1e-1 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e32,
+                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-8 * 23}
+    ctl_prior = {'mu0': 0., 'sigma0': 1e32,
+                 'nu0': (dm_act + 1) + 23, 'psi0': 1e-1 * 23}
 
     init_ctl_kwargs = {'degree': 1}
-    ctl_kwargs = {'degree': 3}
+    ctl_kwargs = {'degree': 1}
 
     ar_ctl = True
     lags = 1
@@ -335,13 +307,13 @@ if __name__ == "__main__":
     ctl_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 100}
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 10}
     trans_kwargs = {'hidden_layer_sizes': (32,),
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
                              'std': np.array([5., 1., 1., 5., 10., 5.])}}
-    trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 512, 'lr': 1e-4}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 512, 'lr': 5e-4}
 
-    models, lls, scores = parallel_em(nb_jobs=1, model=None,
+    models, lls, scores = parallel_em(nb_jobs=6, model=None,
                                       nb_states=nb_states,
                                       obs=obs, act=act,
                                       learn_dyn=True, learn_ctl=True,
@@ -356,14 +328,14 @@ if __name__ == "__main__":
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       ctl_mstep_kwargs=ctl_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=100, prec=1e-2)
+                                      nb_iter=50, prec=1e-2)
     erarhmm = models[np.argmax(scores)]
 
     erarhmm.learn_dyn = True
     erarhmm.learn_ctl = False
 
     #
-    state, ctl = erarhmm.filter_control(obs, act, stoch=False, mix=False)
+    state, ctl = erarhmm.filter_control(obs, act, stoch=False)
     _seq = npr.choice(len(obs))
 
     fig, axs = plt.subplots(nrows=6, ncols=1, figsize=(8, 12), constrained_layout=True)
@@ -401,7 +373,7 @@ if __name__ == "__main__":
     plt.show()
 
     #
-    rollouts = evaluate(env, erarhmm, 50, 750, stoch=True, mix=False)
+    rollouts = evaluate(env, erarhmm, 50, 750, stoch=True)
     _idx = np.random.choice(len(rollouts))
 
     fig, axs = plt.subplots(nrows=6, ncols=1, figsize=(8, 12), constrained_layout=True)
