@@ -71,8 +71,8 @@ def parallel_em(nb_jobs=50, **kwargs):
         kwargs['process_id'] = n
         kwargs_list.append(kwargs.copy())
 
-    results = Parallel(n_jobs=min(nb_jobs, nb_cores),
-                       verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
+        (map(delayed(create_job), kwargs_list))
     rarhmms, lls, scores = list(map(list, zip(*results)))
     return rarhmms, lls, scores
 
@@ -126,15 +126,16 @@ if __name__ == "__main__":
 
     nb_states = 5
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e64,
+                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-8 * 23}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 0., 'alpha': 1, 'kappa': 5}
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 5}
     trans_kwargs = {'hidden_layer_sizes': (25,),
                     'norm': {'mean': np.array([0., 0., 0., 0.]),
                              'std': np.array([1., 1., 8., 2.5])}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 1024, 'lr': 5e-4}
 
     models, lls, scores = parallel_em(nb_jobs=1,
                                       nb_states=nb_states,
@@ -145,7 +146,7 @@ if __name__ == "__main__":
                                       trans_kwargs=trans_kwargs,
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=500, prec=1e-2)
+                                      nb_iter=50, prec=1e-2)
     rarhmm = models[np.argmax(scores)]
 
     print("rarhmm, stochastic, " + rarhmm.trans_type)
@@ -176,4 +177,4 @@ if __name__ == "__main__":
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
-        print("MSE: {0[0]}, EVAR:{0[1]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h, mix=False)))
+        print("MSE: {0[0]}, EVAR:{0[1]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h)))

@@ -43,11 +43,11 @@
 
 #python pendulum_compare.py --env polar --model gp --gpu
 
-python pendulum_compare.py --env polar --model fnn --nn_size 16
-python pendulum_compare.py --env polar --model fnn --nn_size 32
-python pendulum_compare.py --env polar --model fnn --nn_size 64
-python pendulum_compare.py --env polar --model fnn --nn_size 128
-python pendulum_compare.py --env polar --model fnn --nn_size 256
+#python pendulum_compare.py --env polar --model fnn --nn_size 16
+#python pendulum_compare.py --env polar --model fnn --nn_size 32
+#python pendulum_compare.py --env polar --model fnn --nn_size 64
+#python pendulum_compare.py --env polar --model fnn --nn_size 128
+#python pendulum_compare.py --env polar --model fnn --nn_size 256
 #python pendulum_compare.py --env polar --model fnn --nn_size 512 --gpu
 
 #python pendulum_compare.py --env polar --model rnn --nn_size 16

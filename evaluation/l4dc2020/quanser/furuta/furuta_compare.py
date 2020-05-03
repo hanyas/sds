@@ -317,7 +317,8 @@ def parallel_lstm_fit(obs, act, size, preprocess, nb_epochs, nb_jobs, gpu):
         lstm = DynamicLSTMRegressor(input_size, target_size,
                                     hidden_size=size, nb_layers=2,
                                     device='gpu' if gpu else 'cpu')
-        lstm.fit(target, input, nb_epochs, lr=1e-3, preprocess=preprocess)
+        lstm.fit(target, input, nb_epochs, lr=1e-3,
+                 optim='adam', preprocess=preprocess)
 
         return lstm
 
