@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #python bouncing_compare.py --model arhmm --nb_states 2
-#
+
 #python bouncing_compare.py --model rarhmm --nb_states 2
 
 #python bouncing_compare.py --model gp
