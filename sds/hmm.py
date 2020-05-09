@@ -349,20 +349,38 @@ class HMM:
 
         return state, obs
 
-    def step(self, obs, act, belief, stoch=True):
+    def step(self, obs, act, belief, stoch=True, average=False):
+        if stoch:
+            # it doesn't make sense to average while sampling
+            assert not average
+
         if stoch:
             state = npr.choice(self.nb_states, p=belief)
             nxt_state = self.transitions.sample(state, obs, act)
             nxt_obs = self.observations.sample(nxt_state, obs, act)
         else:
-            state = np.argmax(belief)
-            nxt_state = self.transitions.likeliest(state, obs, act)
-            nxt_obs = self.observations.mean(nxt_state, obs, act)
+            if average:
+                nxt_state = None
+
+                # average over transitions and belief space
+                _logtrans = np.squeeze(self.transitions.log_transition(obs, act)[0])
+                _trans = np.exp(_logtrans - logsumexp(_logtrans, axis=1, keepdims=True))
+
+                _zeta = _trans.T @ belief
+                _nxt_belief = _zeta / _zeta.sum()
+
+                nxt_obs = np.zeros((1, self.dm_obs))
+                for k in range(self.nb_states):
+                    nxt_obs += _nxt_belief[k] * self.observations.mean(k, obs, act)
+            else:
+                state = np.argmax(belief)
+                nxt_state = self.transitions.likeliest(state, obs, act)
+                nxt_obs = self.observations.mean(nxt_state, obs, act)
 
         return nxt_state, nxt_obs
 
-    def forcast(self, hist_obs=None, hist_act=None,
-                nxt_act=None, horizon=None, stoch=False):
+    def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
+                horizon=None, stoch=False, average=False):
 
         nxt_state = []
         nxt_obs = []
@@ -384,11 +402,30 @@ class HMM:
                     _nxt_state[t + 1] = self.transitions.sample(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
                     _nxt_obs[t + 1, :] = self.observations.sample(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
             else:
-                _nxt_state[0] = np.argmax(_belief)
-                _nxt_obs[0, :] = _hist_obs[-1, ...]
-                for t in range(horizon[n]):
-                    _nxt_state[t + 1] = self.transitions.likeliest(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
-                    _nxt_obs[t + 1, :] = self.observations.mean(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
+                if average:
+                    # return empty discrete state when mixing
+                    _nxt_state = None
+
+                    _nxt_obs[0, :] = _hist_obs[-1, ...]
+                    for t in range(horizon[n]):
+
+                        # average over transitions and belief space
+                        _logtrans = np.squeeze(self.transitions.log_transition(_nxt_obs[t, :], _nxt_act[t, :])[0])
+                        _trans = np.exp(_logtrans - logsumexp(_logtrans, axis=1, keepdims=True))
+
+                        # update belief
+                        _zeta = _trans.T @ _belief
+                        _belief = _zeta / _zeta.sum()
+
+                        # average observations
+                        for k in range(self.nb_states):
+                            _nxt_obs[t + 1, :] += _belief[k] * self.observations.mean(k, _nxt_obs[t, :], _nxt_act[t, :])
+                else:
+                    _nxt_state[0] = np.argmax(_belief)
+                    _nxt_obs[0, :] = _hist_obs[-1, ...]
+                    for t in range(horizon[n]):
+                        _nxt_state[t + 1] = self.transitions.likeliest(_nxt_state[t], _nxt_obs[t, :], _nxt_act[t, :])
+                        _nxt_obs[t + 1, :] = self.observations.mean(_nxt_state[t + 1], _nxt_obs[t, :], _nxt_act[t, :])
 
             nxt_state.append(_nxt_state)
             nxt_obs.append(_nxt_obs)
@@ -396,7 +433,7 @@ class HMM:
         return nxt_state, nxt_obs
 
     @ensure_args_are_viable_lists
-    def kstep_mse(self, obs, act, horizon=1, stoch=False):
+    def kstep_mse(self, obs, act, horizon=1, stoch=False, average=False):
 
         from sklearn.metrics import mean_squared_error,\
             explained_variance_score, r2_score
@@ -414,7 +451,8 @@ class HMM:
 
             _hr = [horizon for _ in range(_nb_steps)]
             _, _forcast = self.forcast(hist_obs=_hist_obs, hist_act=_hist_act,
-                                       nxt_act=_nxt_act, horizon=_hr, stoch=stoch)
+                                       nxt_act=_nxt_act, horizon=_hr, stoch=stoch,
+                                       average=average)
 
             for t in range(_nb_steps):
                 _target.append(_obs[t + horizon, :])

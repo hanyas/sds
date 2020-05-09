@@ -40,7 +40,7 @@ if __name__ == "__main__":
     env = gym.make('BouncingBall-ID-v0')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.05
-    env.unwrapped._sigma = 1e-64
+    env.unwrapped._sigma = 1e-16
     env.seed(1337)
 
     nb_rollouts, nb_steps = 25, 150
@@ -58,12 +58,12 @@ if __name__ == "__main__":
 
     nb_states = 2
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-64 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 23, 'psi0': 1e-16 * 23}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 50}
-    trans_kwargs = {'hidden_layer_sizes': (25,),
+    trans_kwargs = {'hidden_layer_sizes': (16,),
                     'norm': {'mean': np.array([0., 0., 0.]),
                              'std': np.array([1., 1., 1.])}}
     trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256, 'lr': 1e-3}
@@ -73,9 +73,9 @@ if __name__ == "__main__":
                     obs_prior=obs_prior,
                     trans_prior=trans_prior,
                     trans_kwargs=trans_kwargs)
-    # rarhmm.initialize(obs, act)
+    rarhmm.initialize(obs, act)
 
-    lls = rarhmm.em(obs, act, nb_iter=250, prec=1e-4, verbose=True,
+    lls = rarhmm.em(obs, act, nb_iter=100, prec=1e-4, verbose=True,
                     obs_mstep_kwargs=obs_mstep_kwargs,
                     trans_mstep_kwargs=trans_mstep_kwargs)
 
@@ -102,4 +102,4 @@ if __name__ == "__main__":
 
     hr = [20, 40, 60, 80, 100]
     for h in hr:
-        print(rarhmm.kstep_mse(obs[0:5], act[0:5], horizon=h, mix=False))
+        print(rarhmm.kstep_mse(obs[0:5], act[0:5], horizon=h))
