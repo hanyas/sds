@@ -432,7 +432,7 @@ if __name__ == "__main__":
     if args.model == 'rarhmm':
         # fit rarhmm
         obs_prior = {'mu0': 0., 'sigma0': 1e64,
-                     'nu0': (env.dm_obs + 1) + 23, 'psi0': 1e-8 * 23}
+                     'nu0': (env.dm_obs + 1) + 23, 'psi0': 1e-16 * 23}
         obs_mstep_kwargs = {'use_prior': True}
 
         trans_type = 'neural'

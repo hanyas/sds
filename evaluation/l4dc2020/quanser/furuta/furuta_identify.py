@@ -112,29 +112,30 @@ if __name__ == "__main__":
     env = gym.make('QQube-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-8
+    env.unwrapped._sigma = 1e-4
     env.seed(1337)
 
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
-    nb_train_rollouts, nb_train_steps = 50, 500
-    nb_test_rollouts, nb_test_steps = 10, 500
+    nb_train_rollouts, nb_train_steps = 50, 250
+    nb_test_rollouts, nb_test_steps = 10, 100
 
     train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    nb_states = 37
+    nb_states = 25
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e16, 'nu0': (dm_obs + 1) + 10, 'psi0': 1e-8 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e32,
+                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-4 * 23}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 100}
-    trans_kwargs = {'hidden_layer_sizes': (81,),
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 1}
+    trans_kwargs = {'hidden_layer_sizes': (64,),
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
                              'std': np.array([2.3, 1., 1., 30., 40., 5.])}}
-    trans_mstep_kwargs = {'nb_iter': 75, 'batch_size': 1024, 'lr': 1e-3}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 512, 'lr': 5e-4}
 
     models, lls, scores = parallel_em(nb_jobs=1,
                                       nb_states=nb_states,
@@ -145,7 +146,7 @@ if __name__ == "__main__":
                                       trans_kwargs=trans_kwargs,
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=500, prec=1e-2)
+                                      nb_iter=50, prec=1e-2)
     rarhmm = models[np.argmax(scores)]
 
     print("rarhmm, stochastic, " + rarhmm.trans_type)
@@ -176,5 +177,4 @@ if __name__ == "__main__":
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
-        print("MSE: {0[0]}, EVAR:{0[1]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h, mix=False)))
-
+        print("MSE: {0[0]}, SMSE:{0[1]}, EVAR:{0[2]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h)))

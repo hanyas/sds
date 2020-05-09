@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     nb_states = 2
 
-    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 10, 'psi0': 1e-16 * 10}
+    obs_prior = {'mu0': 0., 'sigma0': 1e64, 'nu0': (dm_obs + 1) * 23, 'psi0': 1e-16 * 23}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
@@ -107,4 +107,4 @@ if __name__ == "__main__":
 
     hr = [1, 20, 40, 60, 80, 100]
     for h in hr:
-        print("MSE: {0[0]}, EVAR:{0[1]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h, mix=False)))
+        print("MSE: {0[0]}, SMSE:{0[1]}, EVAR:{0[2]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h, mix=False)))
