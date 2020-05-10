@@ -456,5 +456,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-
-/examples/walker/data/
