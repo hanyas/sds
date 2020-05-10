@@ -107,17 +107,14 @@ if __name__ == "__main__":
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    import scipy as sc
-    from scipy import io
-
     # load all available data
-    files = ['data/1.1.mat', 'data/1.2.mat', 'data/1.3.mat']
+    files = ['data/walker_1.npz', 'data/walker_2.npz', 'data/walker_3.npz']
+    # files = ['data/runner_1.npz', 'data/runner_2.npz', 'data/runner_3.npz']
 
     state, input = [], []
     for _file in files:
-        position = sc.io.loadmat(_file)['motion']['trajectory'][0, 0]['q'][0, 0][6:, 17500:-17500]
-        velocity = sc.io.loadmat(_file)['motion']['trajectory'][0, 0]['dqdt'][0, 0][6:, 17500:-17500]
-        muscle = sc.io.loadmat(_file)['muscle'][0, 0]['activities'][0, 0][1][:, ::4][:, 17500:-17500]
+        position, velocity = np.load(_file)['q'].T, np.load(_file)['dq'].T
+        muscle = np.load(_file)['tau'].T
 
         state.append(np.vstack((position, velocity)))
         input.append(muscle)
