@@ -101,49 +101,61 @@ if __name__ == "__main__":
     import torch
 
     import sds
+    import pickle
 
     random.seed(1337)
     npr.seed(1337)
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    # load all available data
-    files = ['data/walker_1.npz', 'data/walker_2.npz', 'data/walker_3.npz']
-    # files = ['data/runner_1.npz', 'data/runner_2.npz', 'data/runner_3.npz']
+    # import scipy as sc
+    # from scipy import io
 
-    state, input = [], []
-    for _file in files:
-        position, velocity = np.load(_file)['q'].T, np.load(_file)['dq'].T
-        muscle = np.load(_file)['tau'].T
+    file = pickle.load(open('data/sl_wam_sine_v01_g025.pickle', 'rb'))
 
-        state.append(np.vstack((position, velocity)))
-        input.append(muscle)
+    from scipy import signal
+    fs = 500
+    fc = 25  # Cut-off frequency of the filter
+    w = fc / (fs / 2)  # Normalize the frequency
+    b, a = signal.butter(2, w, 'lowpass', output='ba')
 
-    obs, act = [], []
-    for _obs, _act in zip(state, input):
-        for i in range(30):
-            obs.append(_obs[:, i * 500: (i + 1) * 500].T)
-            act.append(_act[:, i * 500: (i + 1) * 500].T)
+    nb_traj = 3
 
-    _data = np.hstack((np.vstack(obs), np.vstack(act)))
+    _obs, _act = [], []
+    for n in range(nb_traj):
+        _obs.append(signal.filtfilt(b, a, np.hstack((file[n][1], file[n][2])).T).T)
+        _act.append(signal.filtfilt(b, a, file[n][4].T).T)
 
-    train_obs, train_act = obs[:-6], act[:-6]
-    test_obs, test_act = obs[-6:], act[-6:]
+    _data = np.hstack((np.vstack(_obs), np.vstack(_act)))
 
-    nb_states = 9
-    dm_obs, dm_act = 60, 14
+    from sklearn.decomposition import PCA
+    scale = PCA(n_components=21, whiten=True)
+    _data = scale.fit_transform(_data)
+
+    train_obs, train_act = [], []
+    for j in range(17):
+        train_obs.append(_data[j * 2500: (j + 1) * 2500, :14])
+        train_act.append(_data[j * 2500: (j + 1) * 2500, 14:])
+
+    test_obs, test_act = [], []
+    for j in range(17, 18):
+        test_obs.append(_data[j * 2500: (j + 1) * 2500, :14])
+        test_act.append(_data[j * 2500: (j + 1) * 2500, 14:])
+
+    nb_states = 13
+    dm_obs, dm_act = 14, 7
 
     obs_prior = {'mu0': 0., 'sigma0': 1e64,
-                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-8 * 23}
+                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-6 * 23}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 5}
+    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 5}
     trans_kwargs = {'hidden_layer_sizes': (128, ),
-                    'nonlinearity': 'splus', 'device': 'gpu',
-                    'norm': {'mean': np.mean(_data, axis=0),
-                             'std': np.std(_data, axis=0)}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 4096, 'lr': 5e-4}
+                    'nonlinearity': 'relu', 'device': 'gpu',
+                    'norm': {'mean': np.zeros((dm_obs + dm_act)),
+                             'std': np.ones((dm_obs + dm_act))}}
+    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 2048, 'lr': 5e-4}
 
     models, lls, scores = parallel_em(nb_jobs=1,
                                       nb_states=nb_states,
@@ -177,24 +189,9 @@ if __name__ == "__main__":
     #
     # plt.show()
 
-    # idx, buffer, hr = 1, 25, 100
-    # z, s = rarhmm.forcast(hist_obs=[train_obs[idx][:buffer, :]],
-    #                       hist_act=[train_act[idx][:buffer, :]],
-    #                       nxt_act=[train_act[idx][buffer:, :]],
-    #                       horizon=[hr], average=True)
-    #
-    # plt.figure()
-    # plt.plot(s[0])
+    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_barrett.pkl", "wb"))
 
-    # plt.figure()
-    # plt.plot(z[0])
-
-    # plt.figure()
-    # plt.plot(train_obs[idx][buffer:buffer + hr])
-
-    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_walker.pkl", "wb"))
-
-    hr = np.arange(10)
+    hr = [1, 25, 50, 75, 100, 125]  # np.arange(10)
     for h in hr:
         print("MSE: {0[0]}, SMSE:{0[1]}, EVAR:{0[2]}".
               format(rarhmm.kstep_mse(test_obs, test_act, horizon=h)))
