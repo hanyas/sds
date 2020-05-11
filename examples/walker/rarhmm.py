@@ -113,8 +113,8 @@ if __name__ == "__main__":
 
     state, input = [], []
     for _file in files:
-        position, velocity = np.load(_file)['q'].T, np.load(_file)['dq'].T
-        muscle = np.load(_file)['tau'].T
+        position, velocity = np.load(_file)['q'], np.load(_file)['dq']
+        muscle = np.load(_file)['tau']
 
         state.append(np.vstack((position, velocity)))
         input.append(muscle)
@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
     # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_walker.pkl", "wb"))
 
-    hr = np.arange(10)
+    hr = np.arange(1, 10)
     for h in hr:
         print("MSE: {0[0]}, SMSE:{0[1]}, EVAR:{0[2]}".
               format(rarhmm.kstep_mse(test_obs, test_act, horizon=h)))

@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
     # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_barrett.pkl", "wb"))
 
-    hr = [1, 25, 50, 75, 100, 125]  # np.arange(10)
+    hr = [1, 25, 50, 75, 100, 125]
     for h in hr:
         print("MSE: {0[0]}, SMSE:{0[1]}, EVAR:{0[2]}".
               format(rarhmm.kstep_mse(test_obs, test_act, horizon=h)))
