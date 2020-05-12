@@ -2,11 +2,12 @@ import numpy as np
 import numpy.random as npr
 
 from sds import rARHMM
+from sds.utils import sample_env
 
-import joblib
 from joblib import Parallel, delayed
 
-nb_cores = joblib.cpu_count()
+import multiprocessing
+nb_cores = multiprocessing.cpu_count()
 
 
 def create_job(kwargs):
@@ -45,7 +46,7 @@ def create_job(kwargs):
                     obs_prior=obs_prior,
                     trans_prior=trans_prior,
                     trans_kwargs=trans_kwargs)
-    rarhmm.initialize(train_obs, train_act)
+    # rarhmm.initialize(train_obs, train_act)
 
     rarhmm.em(train_obs, train_act,
               nb_iter=nb_iter, prec=prec,
@@ -70,8 +71,8 @@ def parallel_em(nb_jobs=50, **kwargs):
         kwargs['process_id'] = n
         kwargs_list.append(kwargs.copy())
 
-    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
-        (map(delayed(create_job), kwargs_list))
+    results = Parallel(n_jobs=min(nb_jobs, nb_cores),
+                       verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
     rarhmms, lls, scores = list(map(list, zip(*results)))
     return rarhmms, lls, scores
 
@@ -100,64 +101,43 @@ if __name__ == "__main__":
     import random
     import torch
 
+    import gym
     import sds
-    import pickle
 
     random.seed(1337)
     npr.seed(1337)
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    # import scipy as sc
-    # from scipy import io
+    env = gym.make('Cartpole-ID-v1')
+    env._max_episode_steps = 5000
+    env.unwrapped._dt = 0.01
+    env.unwrapped._sigma = 1e-4
+    env.seed(1337)
 
-    file = pickle.load(open('data/sl_wam_sine_v01_g025.pickle', 'rb'))
+    dm_obs = env.observation_space.shape[0]
+    dm_act = env.action_space.shape[0]
 
-    from scipy import signal
-    fs = 500
-    fc = 25  # Cut-off frequency of the filter
-    w = fc / (fs / 2)  # Normalize the frequency
-    b, a = signal.butter(2, w, 'lowpass', output='ba')
+    nb_train_rollouts, nb_train_steps = 15, 250
+    nb_test_rollouts, nb_test_steps = 5, 100
 
-    nb_traj = 3
+    train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
+    test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    _obs, _act = [], []
-    for n in range(nb_traj):
-        _obs.append(signal.filtfilt(b, a, np.hstack((file[n][1], file[n][2])).T).T)
-        _act.append(signal.filtfilt(b, a, file[n][4].T).T)
-
-    _data = np.hstack((np.vstack(_obs), np.vstack(_act)))
-
-    from sklearn.decomposition import PCA
-    scale = PCA(n_components=21, whiten=True)
-    _data = scale.fit_transform(_data)
-
-    train_obs, train_act = [], []
-    for j in range(17):
-        train_obs.append(_data[j * 2500: (j + 1) * 2500, :14])
-        train_act.append(_data[j * 2500: (j + 1) * 2500, 14:])
-
-    test_obs, test_act = [], []
-    for j in range(17, 18):
-        test_obs.append(_data[j * 2500: (j + 1) * 2500, :14])
-        test_act.append(_data[j * 2500: (j + 1) * 2500, 14:])
-
-    nb_states = 13
-    dm_obs, dm_act = 14, 7
+    nb_states = 7
 
     obs_prior = {'mu0': 0., 'sigma0': 1e64,
-                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-6 * 23}
+                 'nu0': (dm_obs + 1) + 23, 'psi0': 1e-4 * 23}
     obs_mstep_kwargs = {'use_prior': True}
 
     trans_type = 'neural'
-    trans_prior = {'l2_penalty': 1e-16, 'alpha': 1, 'kappa': 5}
-    trans_kwargs = {'hidden_layer_sizes': (128, ),
-                    'nonlinearity': 'relu', 'device': 'gpu',
-                    'norm': {'mean': np.zeros((dm_obs + dm_act)),
-                             'std': np.ones((dm_obs + dm_act))}}
-    trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 2048, 'lr': 5e-4}
+    trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 1}
+    trans_kwargs = {'hidden_layer_sizes': (32,),
+                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
+                             'std': np.array([5., 1., 1., 5., 10., 5.])}}
+    trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 256, 'lr': 5e-4}
 
-    models, lls, scores = parallel_em(nb_jobs=1,
+    models, lls, scores = parallel_em(nb_jobs=12,
                                       nb_states=nb_states,
                                       obs=train_obs, act=train_act,
                                       trans_type=trans_type,
@@ -166,11 +146,16 @@ if __name__ == "__main__":
                                       trans_kwargs=trans_kwargs,
                                       obs_mstep_kwargs=obs_mstep_kwargs,
                                       trans_mstep_kwargs=trans_mstep_kwargs,
-                                      nb_iter=100, prec=1e-2)
+                                      nb_iter=200, prec=1e-2)
     rarhmm = models[np.argmax(scores)]
 
-    # print("rarhmm, stochastic, " + rarhmm.trans_type)
-    # print(np.c_[lls, scores])
+    print("rarhmm, stochastic, " + rarhmm.trans_type)
+    print(np.c_[lls, scores])
+
+    # rarhmm.em(train_obs, train_act, nb_iter=100,
+    #           obs_mstep_kwargs=obs_mstep_kwargs,
+    #           trans_mstep_kwargs=trans_mstep_kwargs,
+    #           prec=1e-4, verbose=True)
 
     # plt.figure(figsize=(8, 8))
     # _, state = rarhmm.viterbi(train_obs, train_act)
@@ -181,17 +166,16 @@ if __name__ == "__main__":
     # plt.xlim(0, len(train_obs[_seq]))
     #
     # plt.subplot(212)
-    # plt.imshow(state[_seq][None, :], aspect="auto",
-    #            cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    # plt.imshow(state[_seq][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
     # plt.xlim(0, len(train_obs[_seq]))
     # plt.ylabel("$z_{\\mathrm{inferred}}$")
     # plt.yticks([])
     #
     # plt.show()
 
-    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_barrett.pkl", "wb"))
+    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_pendulum_polar.pkl", "wb"))
 
-    hr = [1, 25, 50, 75, 100, 125]
+    hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
         _mse, _smse, _evar = rarhmm.kstep_mse(test_obs, test_act, horizon=h)
         print(f"MSE: {_mse}, SMSE:{_smse}, EVAR:{_evar}")
