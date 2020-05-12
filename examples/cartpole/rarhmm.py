@@ -71,8 +71,8 @@ def parallel_em(nb_jobs=50, **kwargs):
         kwargs['process_id'] = n
         kwargs_list.append(kwargs.copy())
 
-    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
-        (map(delayed(create_job), kwargs_list))
+    results = Parallel(n_jobs=min(nb_jobs, nb_cores),
+                       verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
     rarhmms, lls, scores = list(map(list, zip(*results)))
     return rarhmms, lls, scores
 
@@ -137,7 +137,7 @@ if __name__ == "__main__":
                              'std': np.array([5., 1., 1., 5., 10., 5.])}}
     trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 256, 'lr': 5e-4}
 
-    models, lls, scores = parallel_em(nb_jobs=6,
+    models, lls, scores = parallel_em(nb_jobs=12,
                                       nb_states=nb_states,
                                       obs=train_obs, act=train_act,
                                       trans_type=trans_type,
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     #
     # plt.show()
 
-    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_cartpole_polar.pkl", "wb"))
+    # torch.save(rarhmm, open(rarhmm.trans_type + "_rarhmm_pendulum_polar.pkl", "wb"))
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:

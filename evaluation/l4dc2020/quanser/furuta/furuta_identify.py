@@ -177,4 +177,5 @@ if __name__ == "__main__":
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
-        print("MSE: {0[0]}, SMSE:{0[1]}, EVAR:{0[2]}".format(rarhmm.kstep_mse(test_obs, test_act, horizon=h)))
+        _mse, _smse, _evar = rarhmm.kstep_mse(test_obs, test_act, horizon=h)
+        print(f"MSE: {_mse}, SMSE:{_smse}, EVAR:{_evar}")

@@ -41,6 +41,7 @@ class Ensemble():
             obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs', {})
             trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs', {})
 
+            # model.initialize(obs, act)
             ll = model.em(obs, act,
                           nb_iter=nb_iter, prec=prec,
                           obs_mstep_kwargs=obs_mstep_kwargs,
@@ -86,7 +87,19 @@ class Ensemble():
                                              trans_mstep_kwargs=trans_mstep_kwargs,
                                              obs_mstep_kwargs=obs_mstep_kwargs)
 
-        return lls
+        nb_train = []
+        nb_total = np.vstack(obs).shape[0]
+
+        train_ll, total_all = [], []
+        for _train_obs, _train_act, _model in zip(train_obs, train_act, self.models):
+            nb_train.append(np.vstack(_train_obs).shape[0])
+            train_ll.append(_model.log_norm(_train_obs, _train_act))
+            total_all.append(_model.log_norm(obs, act))
+
+        scores = (np.hstack(total_all) - np.hstack(train_ll))\
+                 / (nb_total - np.hstack(nb_train))
+
+        return total_all, scores
 
     def forcast(self, hist_obs=None, hist_act=None, nxt_act=None,
                 horizon=None, stoch=False, average=False):

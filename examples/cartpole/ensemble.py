@@ -35,7 +35,7 @@ if __name__ == "__main__":
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    env = gym.make('Pendulum-ID-v1')
+    env = gym.make('Cartpole-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-4
@@ -58,24 +58,25 @@ if __name__ == "__main__":
 
     trans_type = 'neural'
     trans_prior = {'l2_penalty': 1e-32, 'alpha': 1, 'kappa': 1}
-    trans_kwargs = {'hidden_layer_sizes': (24,),
-                    'norm': {'mean': np.array([0., 0., 0., 0.]),
-                             'std': np.array([1., 1., 8., 2.5])}}
+    trans_kwargs = {'hidden_layer_sizes': (32,),
+                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
+                             'std': np.array([5., 1., 1., 5., 10., 5.])}}
     trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 256, 'lr': 5e-4}
 
-    ensemble = Ensemble(nb_states=nb_states, type='rarhmm',
+    ensemble = Ensemble(nb_states=nb_states,
+                        type='rarhmm', size=5,
                         dm_obs=dm_obs, dm_act=dm_act,
                         trans_type=trans_type,
                         obs_prior=obs_prior,
                         trans_prior=trans_prior,
                         trans_kwargs=trans_kwargs)
 
-    lls = ensemble.em(train_obs, train_act,
-                      nb_iter=200, prec=1e-2,
-                      obs_mstep_kwargs=obs_mstep_kwargs,
-                      trans_mstep_kwargs=trans_mstep_kwargs)
+    lls, scores = ensemble.em(train_obs, train_act,
+                              nb_iter=200, prec=1e-2,
+                              obs_mstep_kwargs=obs_mstep_kwargs,
+                              trans_mstep_kwargs=trans_mstep_kwargs)
 
-    print([_ll[-1] for _ll in lls])
+    print(np.c_[lls, scores])
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
