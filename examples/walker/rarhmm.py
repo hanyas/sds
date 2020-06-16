@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import rARHMM
+from sds_numpy import rARHMM
 
 import joblib
 from joblib import Parallel, delayed
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     import random
     import torch
 
-    import sds
+    import sds_numpy
 
     random.seed(1337)
     npr.seed(1337)

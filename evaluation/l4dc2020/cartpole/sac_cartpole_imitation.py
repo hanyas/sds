@@ -1,8 +1,8 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import erARHMM
-from sds.utils import sample_env
+from sds_numpy import erARHMM
+from sds_numpy.utils import sample_env
 
 from joblib import Parallel, delayed
 import copy

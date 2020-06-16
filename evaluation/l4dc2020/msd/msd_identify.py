@@ -1,8 +1,8 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import rARHMM
-from sds.utils import sample_env
+from sds_numpy import rARHMM
+from sds_numpy.utils import sample_env
 
 from joblib import Parallel, delayed
 
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     import torch
 
     import gym
-    import sds
+    import sds_numpy
 
     env = gym.make('MassSpringDamper-ID-v0')
     env._max_episode_steps = 5000

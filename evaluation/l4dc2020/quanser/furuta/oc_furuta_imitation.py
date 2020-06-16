@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import erARHMM
+from sds_numpy import erARHMM
 
 from joblib import Parallel, delayed
 import copy

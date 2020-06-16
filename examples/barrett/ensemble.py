@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import Ensemble
+from sds_numpy import Ensemble
 
 
 if __name__ == "__main__":
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     import random
     import torch
 
-    import sds
+    import sds_numpy
     import pickle
 
     random.seed(1337)

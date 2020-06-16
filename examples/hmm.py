@@ -1,8 +1,8 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import HMM
-from sds.utils import permutation
+from sds_numpy import HMM
+from sds_numpy.utils import permutation
 
 import matplotlib.pyplot as plt
 from hips.plotting.colormaps import gradient_cmap

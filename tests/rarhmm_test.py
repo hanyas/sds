@@ -1,5 +1,5 @@
 import numpy as np
-from sds.rarhmm import rARHMM
+from sds_numpy.rarhmm import rARHMM
 from ssm.hmm import HMM as orgHMM
 
 import warnings

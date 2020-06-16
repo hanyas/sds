@@ -1,5 +1,5 @@
 import numpy as np
-from sds.hmm import HMM
+from sds_numpy.hmm import HMM
 from ssm.hmm import HMM as orgHMM
 
 import warnings
@@ -28,6 +28,6 @@ my_hmm.initialize(x)
 my_ll = my_hmm.em(x, nb_iter=1000, prec=0., verbose=True)
 
 org_hmm = orgHMM(5, 2, observations="gaussian")
-org_ll = org_hmm.fit(x, method="em", num_em_iters=1000, initialize=True)
+org_ll = org_hmm.fit(x, method="em", initialize=True)
 
 print("true_ll=", true_ll, "my_ll=", my_ll[-1], "org_ll=", org_ll[-1])
