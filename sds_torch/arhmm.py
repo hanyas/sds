@@ -1,11 +1,12 @@
 import numpy as np
+import torch
 
-from sds_numpy import HMM
+from sds_torch import HMM
 
-from sds_numpy.initial import GaussianInitObservation
-from sds_numpy.observations import AutoRegressiveGaussianObservation
+from sds_torch.initial import GaussianInitObservation
+from sds_torch.observations import AutoRegressiveGaussianObservation
 
-from sds_numpy.utils import ensure_args_are_viable_lists
+from sds_torch.utils import ensure_args_are_viable_lists
 
 
 class ARHMM(HMM):
@@ -33,7 +34,7 @@ class ARHMM(HMM):
 
         logobs = []
         for _ilog, _arlog in zip(ilog, arlog):
-            logobs.append(np.vstack((_ilog, _arlog)))
+            logobs.append(torch.cat((_ilog, _arlog), dim=0))
 
         return loginit, logtrans, logobs
 

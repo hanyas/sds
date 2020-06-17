@@ -30,7 +30,7 @@ my_hmm = HMM(nb_states=5, dm_obs=2)
 my_hmm.initialize(x)
 my_ll = my_hmm.em(x, nb_iter=1000, prec=0., verbose=True)
 
-org_hmm = orgHMM(5, 2, observations="gaussian")
-org_ll = org_hmm.fit(x, method="em", initialize=True)
-
-print("true_ll=", true_ll, "my_ll=", my_ll[-1], "org_ll=", org_ll[-1])
+# org_hmm = orgHMM(5, 2, observations="gaussian")
+# org_ll = org_hmm.fit(x, method="em", initialize=True)
+#
+# print("true_ll=", true_ll, "my_ll=", my_ll[-1], "org_ll=", org_ll[-1])

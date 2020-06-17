@@ -74,14 +74,14 @@ class GaussianInitObservation:
         self.prior = prior
         self.reg = reg
 
-        self.mu = npr.randn(self.nb_states, self.dm_obs)
+        self.mu = torch.rand(self.nb_states, self.dm_obs)
 
         # self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
 
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        self._sqrt_cov = torch.zeros((self.nb_states, self.dm_obs, self.dm_obs), dtype=torch.float64)
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs))
-            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
+            _cov = torch.from_numpy(sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs)))
+            self._sqrt_cov[k, ...] = torch.cholesky(_cov * np.eye(self.dm_obs))
 
     @property
     def params(self):
@@ -96,11 +96,11 @@ class GaussianInitObservation:
 
     @property
     def cov(self):
-        return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
+        return torch.matmul(self._sqrt_cov, self._sqrt_cov.permute(0, 2, 1))
 
     @cov.setter
     def cov(self, value):
-        self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
+        self._sqrt_cov = torch.cholesky(value + self.reg * torch.eye(self.dm_obs, dtype=torch.float64))
 
     def sample(self, z):
         _x = mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
@@ -111,9 +111,9 @@ class GaussianInitObservation:
         _obs = np.concatenate(x)
         km = KMeans(self.nb_states).fit(_obs)
 
-        self.mu = km.cluster_centers_
-        self.cov = np.array([np.cov(_obs[km.labels_ == k].T)
-                             for k in range(self.nb_states)])
+        self.mu = torch.from_numpy(km.cluster_centers_)
+        self.cov = torch.from_numpy(np.array([np.cov(_obs[km.labels_ == k].T)
+                             for k in range(self.nb_states)]))
 
     def permute(self, perm):
         self.mu = self.mu[perm, ...]
@@ -128,8 +128,8 @@ class GaussianInitObservation:
     def log_likelihood(self, x):
         loglik = []
         for _x in x:
-            _loglik = np.column_stack([lg_mvn(_x[0], self.mean(k), self.cov[k])
-                                       for k in range(self.nb_states)])
+            _loglik = torch.stack([torch.distributions.MultivariateNormal(self.mean(k), self.cov[k]).log_prob(_x[0])
+                         for k in range(self.nb_states)])[None]
             loglik.append(_loglik)
         return loglik
 
@@ -140,16 +140,16 @@ class GaussianInitObservation:
                aux.append(_w[:, None] * _gamma)
             gamma = aux
 
-        _J = self.reg * np.ones((self.nb_states, self.dm_obs))
-        _h = np.zeros((self.nb_states, self.dm_obs))
+        _J = self.reg * torch.ones((self.nb_states, self.dm_obs), dtype=torch.float64)
+        _h = torch.zeros((self.nb_states, self.dm_obs), dtype=torch.float64)
         for _x, _w in zip(x, gamma):
             _J += _w[0, :, None]
             _h += _w[0, :, None] * _x[0, None, :]
 
         self.mu = _h / _J
 
-        sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        weight = self.reg * np.ones((self.nb_states, ))
+        sqerr = torch.zeros((self.nb_states, self.dm_obs, self.dm_obs), dtype=torch.float64)
+        weight = self.reg * torch.ones((self.nb_states, ), dtype=torch.float64)
         for _x, _w in zip(x, gamma):
             resid = _x[0, None, :] - self.mu
             sqerr += _w[0, :, None, None] * resid[:, None, :] * resid[:, :, None]

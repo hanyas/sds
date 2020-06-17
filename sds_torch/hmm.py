@@ -75,7 +75,6 @@ class HMM:
     def log_norm(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
         _, norm = self.forward(*loglikhds)
-        lel = np.hstack(norm)
         return torch.sum(torch.cat(norm))
 
     def log_probability(self, obs, act=None):

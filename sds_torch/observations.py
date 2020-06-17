@@ -116,14 +116,15 @@ class AutoRegressiveGaussianObservation:
         self.dm_obs = dm_obs
         self.dm_act = dm_act
 
+
         self.prior = prior
         self.reg = reg
 
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        self._sqrt_cov = torch.zeros((self.nb_states, self.dm_obs, self.dm_obs), dtype=torch.float64)
 
-        self.A = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        self.B = np.zeros((self.nb_states, self.dm_obs, self.dm_act))
-        self.c = np.zeros((self.nb_states, self.dm_obs))
+        self.A = torch.zeros((self.nb_states, self.dm_obs, self.dm_obs), dtype=torch.float64)
+        self.B = torch.zeros((self.nb_states, self.dm_obs, self.dm_act), dtype=torch.float64)
+        self.c = torch.zeros((self.nb_states, self.dm_obs), dtype=torch.float64)
 
         # for k in range(self.nb_states):
         #     self._sqrt_cov[k, ...] = npr.randn(self.dm_obs, self.dm_obs)
@@ -132,11 +133,11 @@ class AutoRegressiveGaussianObservation:
         #     self.c[k, :] = npr.randn(self.dm_obs)
 
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs))
-            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
-            self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
-            self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
-            self.c[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, 0]
+            _cov = torch.from_numpy(sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs)))
+            self._sqrt_cov[k, ...] = torch.cholesky(_cov * torch.eye(self.dm_obs, dtype=torch.float64))
+            self.A[k, ...] = torch.from_numpy(sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov.numpy(), colcov=_cov.numpy()))
+            self.B[k, ...] = torch.from_numpy(sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov.numpy(), colcov=_cov.numpy())[:, [0]])
+            self.c[k, ...] = torch.from_numpy(sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov.numpy(), colcov=_cov.numpy())[:, 0])
 
     @property
     def params(self):
@@ -147,16 +148,17 @@ class AutoRegressiveGaussianObservation:
         self.A, self.B, self.c, self._sqrt_cov = value
 
     def mean(self, z, x, u):
-        return np.einsum('kh,...h->...k', self.A[z, ...], x) +\
-               np.einsum('kh,...h->...k', self.B[z, ...], u) + self.c[z, :]
+        # Einsum throws error if action dimension is 0
+        return torch.einsum('kh,...h->...k', self.A[z, ...], x) +\
+               (torch.einsum('kh,...h->...k', self.B[z, ...], u) if u.shape[1] else 0.) + self.c[z, :]
 
     @property
     def cov(self):
-        return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
+        return torch.matmul(self._sqrt_cov, self._sqrt_cov.permute(0, 2, 1))
 
     @cov.setter
     def cov(self, value):
-        self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
+        self._sqrt_cov = torch.cholesky(value + self.reg * torch.eye(self.dm_obs, dtype=torch.float64))
 
     def sample(self, z, x, u):
         _x = mvn(self.mean(z, x, u), cov=self.cov[z, ...]).rvs()
@@ -176,11 +178,11 @@ class AutoRegressiveGaussianObservation:
         #     self.c[k, :] = npr.randn(self.dm_obs)
 
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, 1. * np.eye(self.dm_obs))
-            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
-            self.A[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)
-            self.B[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, [0]]
-            self.c[k, ...] = sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov, colcov=_cov)[:, 0]
+            _cov = torch.from_numpy(sc.stats.invwishart.rvs(self.dm_obs + 1, 1. * np.eye(self.dm_obs)))
+            self._sqrt_cov[k, ...] = torch.cholesky(_cov * np.eye(self.dm_obs, dtype=torch.float64))
+            self.A[k, ...] = torch.from_numpy(sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov.numpy(), colcov=_cov.numpy()))
+            self.B[k, ...] = torch.from_numpy(sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov.numpy(), colcov=_cov.numpy())[:, [0]])
+            self.c[k, ...] = torch.from_numpy(sc.stats.matrix_normal.rvs(mean=None, rowcov=_cov.numpy(), colcov=_cov.numpy())[:, 0])
 
     def initialize(self, x, u, **kwargs):
         localize = kwargs.get('localize', True)
@@ -191,17 +193,17 @@ class AutoRegressiveGaussianObservation:
             km = KMeans(self.nb_states)
             km.fit(np.hstack((np.vstack(x), np.vstack(u))))
             zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
-            zs = [z[:-1] for z in zs]
+            zs = [torch.from_numpy(z[:-1]) for z in zs]
         else:
-            zs = [npr.choice(self.nb_states, size=T - 1) for T in Ts]
+            zs = [torch.from_numpy(npr.choice(self.nb_states, size=T - 1)) for T in Ts]
 
-        _cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        _cov = torch.zeros((self.nb_states, self.dm_obs, self.dm_obs), dtype=torch.float64)
         for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [np.hstack((_x[t, :], _u[t, :])) for t, _x, _u in zip(ts, x, u)]
+            ts = [torch.where(z == k)[0] for z in zs]
+            xs = [torch.cat((_x[t, :], _u[t, :]), dim=1) for t, _x, _u in zip(ts, x, u)]
             ys = [_x[t + 1, :] for t, _x in zip(ts, x)]
 
-            coef_, intercept_, sigma = linear_regression(np.vstack(xs), np.vstack(ys),
+            coef_, intercept_, sigma = linear_regression(torch.cat(xs), torch.cat(ys),
                                                          weights=None, fit_intercept=True,
                                                          **self.prior)
             self.A[k, ...] = coef_[:, :self.dm_obs]
@@ -230,8 +232,8 @@ class AutoRegressiveGaussianObservation:
     def log_likelihood(self, x, u):
         loglik = []
         for _x, _u in zip(x, u):
-            _loglik = np.column_stack([lg_mvn(_x[1:, :], self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]), self.cov[k])
-                                       for k in range(self.nb_states)])
+            _loglik = torch.stack([torch.distributions.MultivariateNormal(self.mean(k, _x[:-1, :], _u[:-1, :self.dm_act]), self.cov[k]).log_prob(_x[1:, :])
+                                       for k in range(self.nb_states)], dim=1)
             loglik.append(_loglik)
         return loglik
 
@@ -244,14 +246,14 @@ class AutoRegressiveGaussianObservation:
 
         xs, ys, ws = [], [], []
         for _x, _u, _w in zip(x, u, gamma):
-            xs.append(np.hstack((_x[:-1, :], _u[:-1, :self.dm_act], np.ones((_x.shape[0] - 1, 1)))))
+            xs.append(torch.cat((_x[:-1, :], _u[:-1, :self.dm_act], torch.ones((_x.shape[0] - 1, 1), dtype=torch.float64)), dim=1))
             ys.append(_x[1:, :])
             ws.append(_w[1:, :])
 
-        _cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
+        _cov = torch.zeros((self.nb_states, self.dm_obs, self.dm_obs), dtype=torch.float64)
         for k in range(self.nb_states):
-            coef_, sigma = linear_regression(Xs=np.vstack(xs), ys=np.vstack(ys),
-                                             weights=np.vstack(ws)[:, k], fit_intercept=False,
+            coef_, sigma = linear_regression(Xs=torch.cat(xs), ys=torch.cat(ys),
+                                             weights=torch.cat(ws)[:, k], fit_intercept=False,
                                              **self.prior if use_prior else {})
 
             self.A[k, ...] = coef_[:, :self.dm_obs]

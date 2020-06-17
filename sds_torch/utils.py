@@ -86,14 +86,14 @@ def lod2dol(*dicts):
 def ensure_args_are_viable_lists(f):
     def wrapper(self, obs, act=None, **kwargs):
         assert obs is not None
-        obs = [np.atleast_2d(obs)] if not isinstance(obs, (list, tuple)) else obs
+        obs = [torch.from_numpy(np.atleast_2d(obs.numpy()))] if not isinstance(obs, (list, tuple)) else obs
 
         if act is None:
             act = []
             for _obs in obs:
-                act.append(np.zeros((_obs.shape[0], self.dm_act)))
+                act.append(torch.zeros((_obs.shape[0], self.dm_act), dtype=torch.float64))
 
-        act = [np.atleast_2d(act)] if not isinstance(act, (list, tuple)) else act
+        act = [torch.from_numpy(np.atleast_2d(act.numpy()))] if not isinstance(act, (list, tuple)) else act
 
         return f(self, obs, act, **kwargs)
     return wrapper
@@ -193,33 +193,35 @@ def linear_regression(Xs, ys, weights=None,
     assert all([y.shape[1] == P for y in ys])
     assert all([X.shape[0] == y.shape[0] for X, y in zip(Xs, ys)])
 
-    mu0 = mu0 * np.ones((P, D))
-    sigma0 = sigma0 * np.eye(D)
+    mu0 = mu0 * torch.ones((P, D), dtype=torch.float64)
+    sigma0 = sigma0 * torch.eye(D, dtype=torch.float64)
 
     # Make sure the weights are the weights
     if weights is not None:
         weights = weights if isinstance(weights, (list, tuple)) else [weights]
     else:
-        weights = [np.ones(X.shape[0]) for X in Xs]
+        weights = [torch.ones(X.shape[0], dtype=torch.float64) for X in Xs]
 
     # Add weak prior on intercept
     if fit_intercept:
-        mu0 = np.column_stack((mu0, np.zeros(P)))
-        sigma0 = block_diag(sigma0, np.eye(1))
+        mu0 = torch.cat((mu0, torch.zeros(P, dtype=torch.float64)[:, None]), dim=1)
+        sigma0 = torch.from_numpy(block_diag(sigma0, torch.eye(1, dtype=torch.float64)))
 
     # Compute the posterior
-    J = np.linalg.inv(sigma0)
-    h = np.dot(J, mu0.T)
+    J = torch.inverse(sigma0)
+    h = torch.mm(J, mu0.T)
+    # np.dot(J, mu0.T)
 
     for X, y, weight in zip(Xs, ys, weights):
-        X = np.column_stack((X, np.ones(X.shape[0]))) if fit_intercept else X
-        J += np.dot(X.T * weight, X)
-        h += np.dot(X.T * weight, y)
+        X = torch.cat((X, torch.ones(X.shape[0], dtype=torch.float64)[:, None]), dim=-1) if fit_intercept else X
+        J += torch.mm(X.T * weight, X)
+        h += torch.mm(X.T * weight, y)
 
     # Solve for the MAP estimate
     # W = np.linalg.solve(J, h).T
     # W = np.dot(h.T, np.linalg.pinv(J))
-    WT, _, _, _ = np.linalg.lstsq(J, h, rcond=None)
+    # WT, _, _, _ = np.linalg.lstsq(J, h, rcond=None)
+    WT, _ = torch.lstsq(h, J)
     W = WT.T
 
     if fit_intercept:
@@ -229,12 +231,12 @@ def linear_regression(Xs, ys, weights=None,
 
     # Compute the residual and the posterior variance
     nu = nu0
-    Psi = psi0 * np.eye(P)
+    Psi = psi0 * torch.eye(P, dtype=torch.float64)
     for X, y, weight in zip(Xs, ys, weights):
-        yhat = np.dot(X, W.T) + b
+        yhat = torch.mm(X, W.T) + b
         resid = y - yhat
-        nu += np.sum(weight)
-        tmp = np.einsum('t,ti,tj->ij', weight, resid, resid)
+        nu += torch.sum(weight)
+        tmp = torch.einsum('t,ti,tj->ij', weight, resid, resid)
         # tmp = np.sum(weight[:, None, None] * resid[:, :, None] * resid[:, None, :], axis=0)
         # assert np.allclose(tmp1, tmp2)
         Psi += tmp
