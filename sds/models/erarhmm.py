@@ -3,23 +3,23 @@ import numpy.random as npr
 
 from scipy.special import logsumexp
 
-from sds import rARHMM
+from sds.models import rARHMM
 
-from sds.initial import GaussianInitControl
+from sds.initial import InitGaussianControl
 from sds.controls import AutoregRessiveLinearGaussianControl, LinearGaussianControl
-from sds.utils import ensure_args_are_viable_lists
+from sds.utils.decorate import ensure_args_are_viable_lists
 
 
 class erARHMM(rARHMM):
 
-    def __init__(self, nb_states, dm_obs, dm_act, trans_type='neural', ar_ctl=False, lags=1,
+    def __init__(self, nb_states, obs_dim, act_dim, trans_type='neural', ar_ctl=False, lags=1,
                  init_state_prior={}, init_obs_prior={}, init_ctl_prior={},
                  trans_prior={}, obs_prior={}, ctl_prior={},
                  init_state_kwargs={}, init_obs_kwargs={}, init_ctl_kwargs={},
                  trans_kwargs={}, obs_kwargs={}, ctl_kwargs={},
                  learn_dyn=True, learn_ctl=False):
 
-        super(erARHMM, self).__init__(nb_states, dm_obs, dm_act, trans_type,
+        super(erARHMM, self).__init__(nb_states, obs_dim, act_dim, trans_type,
                                       init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
                                       obs_prior=obs_prior, trans_prior=trans_prior,
                                       init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
@@ -32,13 +32,13 @@ class erARHMM(rARHMM):
         self.lags = lags
 
         if self.ar_ctl:
-            self.init_control = GaussianInitControl(self.nb_states, self.dm_obs, self.dm_act,
+            self.init_control = InitGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
                                                     prior=init_ctl_prior, lags=self.lags, **init_ctl_kwargs)
 
-            self.controls = AutoregRessiveLinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
+            self.controls = AutoregRessiveLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
                                                                 prior=ctl_prior, lags=self.lags, **ctl_kwargs)
         else:
-            self.controls = LinearGaussianControl(self.nb_states, self.dm_obs, self.dm_act,
+            self.controls = LinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
                                                   prior=ctl_prior, **ctl_kwargs)
 
     @ensure_args_are_viable_lists
@@ -48,14 +48,6 @@ class erARHMM(rARHMM):
             if self.ar_ctl:
                 self.init_control.initialize(obs, act, **kwargs)
             self.controls.initialize(obs, act, **kwargs)
-
-    def log_priors(self):
-        lp = 0.
-        if self.learn_dyn:
-            lp += super(erARHMM, self).log_priors()
-        if self.learn_ctl:
-            lp += self.controls.log_prior()
-        return lp
 
     @ensure_args_are_viable_lists
     def log_likelihoods(self, obs, act=None):
@@ -115,7 +107,7 @@ class erARHMM(rARHMM):
         for _alpha, _obs, _act in zip(alpha, obs, act):
             _weight = np.exp(_alpha - logsumexp(_alpha, axis=-1, keepdims=True))
             _state = np.zeros((len(_obs,)), dtype=np.int64)
-            _ctl = np.zeros((len(_act), self.dm_act))
+            _ctl = np.zeros((len(_act), self.act_dim))
             for t in range(len(_obs)):
                 if stoch:
                     _state[t] = npr.choice(self.nb_states, p=_weight[t, :])
