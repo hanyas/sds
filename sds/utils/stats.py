@@ -1,5 +1,6 @@
 import numpy as np
-from sds.utils import flatten_to_dim
+
+from sds.utils.general import flatten_to_dim
 
 
 def batch_mahalanobis(L, x):
