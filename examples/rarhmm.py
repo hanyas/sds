@@ -1,74 +1,98 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import rARHMM
-from sds.utils import permutation
-
-import matplotlib.pyplot as plt
-from hips.plotting.colormaps import gradient_cmap
-
-import seaborn as sns
-
 import torch
 
-npr.randn(1337)
-torch.manual_seed(1337)
+from sds.models import rARHMM
+from sds.utils.general import random_rotation
 
-sns.set_style("white")
-sns.set_context("talk")
+import matplotlib.pyplot as plt
 
-color_names = ["windows blue", "red", "amber",
-               "faded green", "dusty purple", "orange"]
+# npr.seed(1337)
+# torch.manual_seed(1337)
+torch.set_num_threads(1)
 
-colors = sns.xkcd_palette(color_names)
-cmap = gradient_cmap(colors)
 
-true_rarhmm = rARHMM(nb_states=3, dm_obs=2, trans_type='poly')
+# from https://github.com/lindermanlab/ssm
+def make_nascar_model():
+    As = [random_rotation(2, np.pi/24.),
+          random_rotation(2, np.pi/48.)]
+
+    # Set the center points for each system
+    centers = [np.array([+2.0, 0.]),
+               np.array([-2.0, 0.])]
+    cs = [-(A - np.eye(2)).dot(center) for A, center in zip(As, centers)]
+
+    # Add a "right" state
+    As.append(np.eye(2))
+    cs.append(np.array([+0.1, 0.]))
+
+    # Add a "right" state
+    As.append(np.eye(2))
+    cs.append(np.array([-0.25, 0.]))
+
+    # Construct multinomial regression to divvy up the space
+    w1 = 100 * np.array([-2.0, +1.0, 0.0])   # x + b > 0 -> x > -b
+    w2 = 100 * np.array([-2.0, -1.0, 0.0])   # -x + b > 0 -> x < b
+    w3 = 10 * np.array([0.0, 0.0, +1.0])    # y > 0
+    w4 = 10 * np.array([0.0, 0.0, -1.0])    # y < 0
+    coef = np.row_stack((w1, w2, w3, w4))
+
+    true_rarhmm = rARHMM(nb_states=4, obs_dim=2,
+                         trans_type='poly-only')
+
+    true_rarhmm.init_observation.mu = np.tile(np.array([[0, 1]]), (4, 1))
+    true_rarhmm.init_observation.sigma = np.array([1e0 * np.eye(2) for _ in range(4)])
+    true_rarhmm.observations.A = np.array(As)
+    true_rarhmm.observations.c = np.array(cs)
+    true_rarhmm.observations.sigma = np.array([1e-4 * np.eye(2) for _ in range(4)])
+
+    true_rarhmm.transitions.params = coef
+
+    return true_rarhmm
+
+
+true_rarhmm = make_nascar_model()
 
 # trajectory lengths
-T = [1250, 1150, 1025]
+T = [750, 750, 750]
 
 true_z, x = true_rarhmm.sample(horizon=T)
-true_ll = true_rarhmm.log_norm(x)
+true_ll = true_rarhmm.log_normalizer(x)
 
-rarhmm = rARHMM(nb_states=3, dm_obs=2,
-                trans_type='poly', preprocess=True)
-rarhmm.initialize(x)
+# poly transition
+trans_type = 'poly-only'
+trans_kwargs = {'norm': {'mean': np.mean(np.vstack(x), axis=0),
+                         'std': np.std(np.vstack(x), axis=0)},
+                'device': 'cpu'}
 
-lls = rarhmm.em(x, nb_iter=100, prec=0.)
-print("true_ll=", true_ll, "hmm_ll=", lls[-1])
+# # neural transition
+# trans_type = 'neural-only'
+# trans_kwargs = {'hidden_sizes': (16, ), 'activation': 'relu',
+#                 'norm': {'mean': np.mean(np.vstack(x), axis=0),
+#                          'std': np.std(np.vstack(x), axis=0)},
+#                 'device': 'cpu'}
 
-plt.figure(figsize=(5, 5))
-plt.plot(np.ones(len(lls)) * true_ll, '-r')
-plt.plot(lls)
+trans_mstep_kwargs = {'nb_iter': 50, 'l2': 1e-32}
+
+# npr.seed(1337)
+std_rarhmm = rARHMM(nb_states=4, obs_dim=2,
+                    algo_type='MAP',
+                    trans_type=trans_type,
+                    trans_kwargs=trans_kwargs)
+
+std_lls = std_rarhmm.em(x, nb_iter=1000,
+                        prec=0., initialize=True,
+                        trans_mstep_kwargs=trans_mstep_kwargs)
+
+print("true_ll=", true_ll, "std_ll=", std_lls[-1])
+
+plt.figure(figsize=(7, 7))
+plt.axhline(y=true_ll, color='r')
+plt.plot(std_lls)
+plt.xscale('symlog')
+plt.yscale('symlog')
 plt.show()
 
-_, rarhmm_z = rarhmm.viterbi(x)
-_seq = npr.choice(len(x))
-rarhmm.permute(permutation(true_z[_seq], rarhmm_z[_seq], K1=3, K2=3))
-
-_, rarhmm_z = rarhmm.viterbi(x[_seq])
-
-plt.figure(figsize=(8, 4))
-plt.subplot(211)
-plt.imshow(true_z[_seq][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-plt.xlim(0, len(x[_seq]))
-plt.ylabel("$z_{\\mathrm{true}}$")
-plt.yticks([])
-
-plt.subplot(212)
-plt.imshow(rarhmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-plt.xlim(0, len(x[_seq]))
-plt.ylabel("$z_{\\mathrm{inferred}}$")
-plt.yticks([])
-plt.xlabel("time")
-
-plt.tight_layout()
-plt.show()
-
-rarhmm_x = rarhmm.mean_observation(x)
-
-plt.figure(figsize=(8, 4))
-plt.plot(x[_seq] + 10 * np.arange(rarhmm.dm_obs), '-k', lw=2)
-plt.plot(rarhmm_x[_seq] + 10 * np.arange(rarhmm.dm_obs), '-', lw=2)
-plt.show()
+seq = npr.choice(len(x))
+std_rarhmm.plot(x[seq], true_state=true_z[seq], title='Standard')
