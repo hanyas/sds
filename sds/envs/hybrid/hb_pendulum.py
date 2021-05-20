@@ -15,9 +15,9 @@ def end2ang(x):
 class HybridPendulum(gym.Env):
 
     def __init__(self, rarhmm):
-        self.dm_state = 2
-        self.dm_act = 1
-        self.dm_obs = 2
+        self.state_dim = 2
+        self.act_dim = 1
+        self.obs_dim = 2
 
         # g = [th, thd]
         self._goal = np.array([0., 0.])
@@ -41,8 +41,8 @@ class HybridPendulum(gym.Env):
 
         self.obs = None
 
-        self.hist_obs = np.empty((0, self.dm_obs))
-        self.hist_act = np.empty((0, self.dm_act))
+        self.hist_obs = np.empty((0, self.obs_dim))
+        self.hist_act = np.empty((0, self.act_dim))
 
         self.np_random = None
 
@@ -97,8 +97,8 @@ class HybridPendulum(gym.Env):
         return self.obs, rwrd, False, {}
 
     def reset(self):
-        self.hist_obs = np.empty((0, self.dm_obs))
-        self.hist_act = np.empty((0, self.dm_act))
+        self.hist_obs = np.empty((0, self.obs_dim))
+        self.hist_act = np.empty((0, self.act_dim))
 
         _state = self.rarhmm.init_state.sample()
         self.obs = self.rarhmm.init_observation.sample(z=_state)
@@ -125,7 +125,7 @@ class HybridPendulumWithCartesianObservation(HybridPendulum):
 
     def __init__(self, rarhmm):
         super(HybridPendulumWithCartesianObservation, self).__init__(rarhmm)
-        self.dm_obs = 3
+        self.obs_dim = 3
 
         # o = [cos, sin, thd]
         self._obs_max = np.array([1., 1., 8.0])

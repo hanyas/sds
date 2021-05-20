@@ -8,9 +8,9 @@ import numpy as np
 class HybridMassSpringDamper(gym.Env):
 
     def __init__(self, rarhmm):
-        self.dm_state = 2
-        self.dm_act = 1
-        self.dm_obs = 2
+        self.state_dim = 2
+        self.act_dim = 1
+        self.obs_dim = 2
 
         self._goal = np.array([1., 0.])
         self._goal_weight = - np.array([1.e0, 1.e-1])
@@ -30,8 +30,8 @@ class HybridMassSpringDamper(gym.Env):
 
         self.obs = None
 
-        self.hist_obs = np.empty((0, self.dm_obs))
-        self.hist_act = np.empty((0, self.dm_act))
+        self.hist_obs = np.empty((0, self.obs_dim))
+        self.hist_act = np.empty((0, self.act_dim))
 
         self.np_random = None
 
@@ -85,8 +85,8 @@ class HybridMassSpringDamper(gym.Env):
         return self.obs, rwrd, False, {}
 
     def reset(self):
-        self.hist_obs = np.empty((0, self.dm_obs))
-        self.hist_act = np.empty((0, self.dm_act))
+        self.hist_obs = np.empty((0, self.obs_dim))
+        self.hist_act = np.empty((0, self.act_dim))
 
         _state = self.rarhmm.init_state.sample()
 

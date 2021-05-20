@@ -4,7 +4,7 @@ from gym.utils import seeding
 
 import numpy as np
 
-from sds import rARHMM
+from sds.models import rARHMM
 
 
 def mass_spring_damper(param):
@@ -20,9 +20,9 @@ def mass_spring_damper(param):
 class MassSpringDamper(gym.Env):
 
     def __init__(self):
-        self.dm_state = 2
-        self.dm_act = 1
-        self.dm_obs = 2
+        self.state_dim = 2
+        self.act_dim = 1
+        self.obs_dim = 2
 
         self._dt = 0.01
 
@@ -46,21 +46,21 @@ class MassSpringDamper(gym.Env):
                  [-0.5, 0.25, 0.25, 5.0, 0.0])
 
         self.rarhmm = rARHMM(nb_states=2,
-                             dm_obs=self.dm_obs,
-                             dm_act=self.dm_act,
+                             obs_dim=self.obs_dim,
+                             act_dim=self.act_dim,
                              trans_type='poly')
 
-        _sigma = np.zeros((2, self.dm_state, self.dm_state))
-        _init_sigma = np.zeros((2, self.dm_state, self.dm_state))
+        _sigma = np.zeros((2, self.state_dim, self.state_dim))
+        _init_sigma = np.zeros((2, self.state_dim, self.state_dim))
         for k in range(2):
             A, B, c = mass_spring_damper(param[k])
-            self.rarhmm.observations.A[k, ...] = np.eye(self.dm_obs) + self._dt * A
+            self.rarhmm.observations.A[k, ...] = np.eye(self.obs_dim) + self._dt * A
             self.rarhmm.observations.B[k, ...] = self._dt * B
             self.rarhmm.observations.c[k, ...] = self._dt * c
-            _sigma[k, ...] = 1.e-4 * np.eye(self.dm_state)
+            _sigma[k, ...] = 1.e-4 * np.eye(self.state_dim)
 
-            self.rarhmm.init_observation.mu[k, :] = np.zeros((self.dm_obs, ))
-            _init_sigma[k, ...] = 1e-4 * np.eye(self.dm_obs)
+            self.rarhmm.init_observation.mu[k, :] = np.zeros((self.obs_dim, ))
+            _init_sigma[k, ...] = 1e-4 * np.eye(self.obs_dim)
 
         self.rarhmm.observations.cov = _sigma
         self.rarhmm.init_observation.cov = _init_sigma
@@ -70,8 +70,8 @@ class MassSpringDamper(gym.Env):
 
         self.obs = None
 
-        self.hist_obs = np.empty((0, self.dm_obs))
-        self.hist_act = np.empty((0, self.dm_act))
+        self.hist_obs = np.empty((0, self.obs_dim))
+        self.hist_act = np.empty((0, self.act_dim))
 
         self.np_random = None
 
@@ -129,8 +129,8 @@ class MassSpringDamper(gym.Env):
         return self.obs, rwrd, False, {}
 
     def reset(self):
-        self.hist_obs = np.empty((0, self.dm_obs))
-        self.hist_act = np.empty((0, self.dm_act))
+        self.hist_obs = np.empty((0, self.obs_dim))
+        self.hist_act = np.empty((0, self.act_dim))
 
         _state = self.rarhmm.init_state.sample()
 
