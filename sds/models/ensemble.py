@@ -31,15 +31,12 @@ class Ensemble:
 
     def _parallel_em(self, obs, act, **kwargs):
 
-        def _create_job(kwargs):
-            model = kwargs.pop('model')
-
-            obs = kwargs.pop('obs')
-            act = kwargs.pop('act')
+        def _create_job(model, obs, act,
+                        kwargs, seed):
 
             nb_iter = kwargs.pop('nb_iter', 25)
             prec = kwargs.pop('prec', 1e-4)
-            proc_id = kwargs.pop('proc_id')
+            proc_id = seed
 
             init_mstep_kwargs = kwargs.pop('init_mstep_kwargs', {})
             trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs', {})
@@ -55,18 +52,13 @@ class Ensemble:
             return model, ll
 
         nb_jobs = len(obs)
+        kwargs_list = [kwargs.copy() for _ in range(nb_jobs)]
+        seeds = np.linspace(0, nb_jobs - 1, nb_jobs, dtype=int)
 
-        kwargs_list = []
-        for n in range(nb_jobs):
-            kwargs['obs'], kwargs['act'] = obs[n], act[n]
-            kwargs['model'] = self.models[n]
-            kwargs['proc_id'] = n
-            kwargs_list.append(kwargs.copy())
+        results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
+            (map(delayed(_create_job), self.models, obs, act, kwargs_list, seeds))
 
-        results = Parallel(n_jobs=min(nb_jobs, nb_cores),
-                           verbose=10, backend='loky')(map(delayed(_create_job), kwargs_list))
         models, lls = list(map(list, zip(*results)))
-
         return models, lls
 
     @ensure_args_are_viable_lists
@@ -75,16 +67,10 @@ class Ensemble:
            init_mstep_kwargs={}, trans_mstep_kwargs={},
            obs_mstep_kwargs={}, **kwargs):
 
-        from sklearn.model_selection import train_test_split
-
-        # split train and test data
-        train_obs, train_act = [], []
-        for n in range(self.ensemble_size):
-            list_idx = np.linspace(0, len(obs) - 1, len(obs), dtype=int)
-            _train_idx, _ = train_test_split(list_idx, test_size=0.2, random_state=n)
-
-            train_obs.append([obs[i] for i in _train_idx])
-            train_act.append([act[i] for i in _train_idx])
+        from sds.utils.general import train_validate_split
+        train_obs, train_act = train_validate_split(obs, act,
+                                                    nb_traj_splits=self.ensemble_size,
+                                                    split_trajs=False)[:2]
 
         self.models, lls = self._parallel_em(train_obs, train_act,
                                              nb_iter=nb_iter, prec=prec,

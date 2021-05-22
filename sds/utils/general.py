@@ -12,6 +12,39 @@ from functools import reduce
 from itertools import tee
 
 
+def train_validate_split(obs, act, nb_traj_splits=7, seed=0,
+                         split_trajs=False, begin=50, horizon=150, nb_time_splits=3):
+
+    from sklearn.model_selection import KFold
+
+    train_obs, train_act, valid_obs, valid_act = [], [], [], []
+    list_idx = np.linspace(0, len(obs) - 1, len(obs), dtype=int)
+
+    kf = KFold(nb_traj_splits, shuffle=True, random_state=seed)
+    for train_list_idx, valid_list_idx in kf.split(list_idx):
+        _train_obs = [obs[i] for i in train_list_idx]
+        _train_act = [act[i] for i in train_list_idx]
+
+        if split_trajs:
+            _train_obs_splits, _train_act_splits = [], []
+            for _obs, _act in zip(_train_obs, _train_act):
+                length = _obs.shape[0]
+                points = np.linspace(0, length - horizon, nb_time_splits + 1, dtype=int)[1:]
+                for t in points:
+                    _train_obs_splits.append(_obs[t: t + horizon])
+                    _train_act_splits.append(_act[t: t + horizon])
+
+            _train_obs += _train_obs_splits
+            _train_act += _train_act_splits
+
+        train_obs.append(_train_obs)
+        train_act.append(_train_act)
+        valid_obs.append([obs[i] for i in valid_list_idx])
+        valid_act.append([act[i] for i in valid_list_idx])
+
+    return train_obs, train_act, valid_obs, valid_act
+
+
 def one_hot(z, K):
     z = np.atleast_1d(z).astype(int)
     assert np.all(z >= 0) and np.all(z < K)

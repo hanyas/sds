@@ -13,7 +13,9 @@ import multiprocessing
 nb_cores = multiprocessing.cpu_count()
 
 
-def create_job(kwargs):
+def create_job(train_obs, train_act,
+               valid_obs, valid_act, kwargs, seed):
+
     # model arguments
     nb_states = kwargs.pop('nb_states')
     obs_dim = kwargs.pop('obs_dim')
@@ -38,27 +40,13 @@ def create_job(kwargs):
     obs_kwargs = kwargs.pop('obs_kwargs')
 
     # em arguments
-    obs = kwargs.pop('obs')
-    act = kwargs.pop('act')
-
     nb_iter = kwargs.pop('nb_iter')
     prec = kwargs.pop('prec')
-    proc_id = kwargs.pop('proc_id')
+    proc_id = seed
 
     init_mstep_kwargs = kwargs.pop('init_mstep_kwargs')
     trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs')
     obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs')
-
-    # split train and test data
-    from sklearn.model_selection import train_test_split
-    list_idx = np.linspace(0, len(obs) - 1, len(obs), dtype=int)
-    train_idx, test_idx = train_test_split(list_idx, test_size=0.2, random_state=proc_id)
-
-    train_obs = [obs[i] for i in train_idx]
-    train_act = [act[i] for i in train_idx]
-
-    test_obs = [obs[i] for i in test_idx]
-    test_act = [act[i] for i in test_idx]
 
     rarhmm = rARHMM(nb_states=nb_states, obs_dim=obs_dim,
                     act_dim=act_dim, nb_lags=nb_lags,
@@ -77,28 +65,29 @@ def create_job(kwargs):
               obs_mstep_kwargs=obs_mstep_kwargs)
 
     nb_train = np.vstack(train_obs).shape[0]
-    nb_all = np.vstack(obs).shape[0]
+    nb_valid = np.vstack(valid_obs).shape[0]
 
     train_ll = rarhmm.log_normalizer(train_obs, train_act)
-    all_ll = rarhmm.log_normalizer(obs, act)
+    valid_ll = rarhmm.log_normalizer(valid_obs, valid_act)
 
     train_score = train_ll / nb_train
-    test_score = (all_ll - train_ll) / (nb_all - nb_train)
+    valid_score = valid_ll / nb_valid
 
-    return rarhmm, train_score, test_score
+    return rarhmm, train_score, valid_score
 
 
-def parallel_em(nb_jobs=50, **kwargs):
-    kwargs_list = []
-    for n in range(nb_jobs):
-        kwargs['proc_id'] = n
-        kwargs_list.append(kwargs.copy())
+def parallel_em(train_obs, train_act,
+                valid_obs, valid_act, **kwargs):
 
-    results = Parallel(n_jobs=min(nb_jobs, nb_cores),
-                       verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
-    rarhmms, train_scores, test_scores = list(map(list, zip(*results)))
+    nb_jobs = len(train_obs)
+    kwargs_list = [kwargs.copy() for _ in range(nb_jobs)]
+    seeds = np.linspace(0, nb_jobs - 1, nb_jobs, dtype=int)
 
-    return rarhmms, train_scores, test_scores
+    results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
+        (map(delayed(create_job), train_obs, train_act, valid_obs, valid_act, kwargs_list, seeds))
+
+    rarhmms, train_scores, valid_scores = list(map(list, zip(*results)))
+    return rarhmms, train_scores, valid_scores
 
 
 if __name__ == "__main__":
@@ -121,8 +110,13 @@ if __name__ == "__main__":
     nb_train_rollouts, nb_train_steps = 15, 250
     nb_test_rollouts, nb_test_steps = 5, 100
 
-    train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
+    obs, act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
+
+    from sds.utils.general import train_validate_split
+    train_obs, train_act, valid_obs, valid_act = train_validate_split(obs, act,
+                                                                      nb_traj_splits=6,
+                                                                      split_trajs=False)
 
     nb_states = 5
     obs_dim = env.observation_space.shape[0]
@@ -182,30 +176,43 @@ if __name__ == "__main__":
     trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 64,
                           'lr': 5e-4, 'l2': 1e-32}
 
-    models, train_scores, test_scores = parallel_em(nb_jobs=1, nb_states=nb_states,
-                                                    obs_dim=obs_dim, act_dim=act_dim, nb_lags=1,
-                                                    algo_type=algo_type, init_obs_type=init_obs_type,
-                                                    trans_type=trans_type, obs_type=obs_type,
-                                                    init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
-                                                    trans_prior=trans_prior, obs_prior=obs_prior,
-                                                    init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
-                                                    trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs,
-                                                    obs=train_obs, act=train_act,
-                                                    nb_iter=50, prec=1e-4,
-                                                    init_mstep_kwargs=init_mstep_kwargs,
-                                                    trans_mstep_kwargs=trans_mstep_kwargs,
-                                                    obs_mstep_kwargs=obs_mstep_kwargs)
+    models, train_scores, valid_scores = parallel_em(train_obs=train_obs, train_act=train_act,
+                                                     valid_obs=valid_obs, valid_act=valid_act,
+                                                     nb_states=nb_states, obs_dim=obs_dim,
+                                                     act_dim=act_dim, nb_lags=1,
+                                                     algo_type=algo_type, init_obs_type=init_obs_type,
+                                                     trans_type=trans_type, obs_type=obs_type,
+                                                     init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
+                                                     trans_prior=trans_prior, obs_prior=obs_prior,
+                                                     init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
+                                                     trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs,
+                                                     nb_iter=50, prec=1e-4,
+                                                     init_mstep_kwargs=init_mstep_kwargs,
+                                                     trans_mstep_kwargs=trans_mstep_kwargs,
+                                                     obs_mstep_kwargs=obs_mstep_kwargs)
 
-    scores = -1. * np.array([train_scores]) - 1. * np.array([test_scores])
+    scores = -1. * np.array([train_scores]) - 1. * np.array([valid_scores])
     rarhmm = models[np.argmin(sc.stats.rankdata(scores))]
 
     print("rarhmm, stochastic, " + rarhmm.trans_type)
-    print(np.c_[train_scores, test_scores])
+    print(np.c_[train_scores, valid_scores])
 
-    for i in range(len(train_obs)):
-        rarhmm.plot(train_obs[i], train_act[i])
+    for i in range(len(obs)):
+        rarhmm.plot(obs[i], act[i])
 
     hr = [1, 5, 10, 15, 20, 25]
     for h in hr:
         mse, smse, evar = rarhmm.kstep_error(test_obs, test_act, horizon=h, average=True)
         print(f"MSE: {mse}, SMSE:{smse}, EVAR:{evar}")
+
+    # from sds.utils.general import one_hot
+    # from sds.initial import InitGaussianControl
+    #
+    # ctl = InitGaussianControl(nb_states, obs_dim, act_dim, 1, 1)
+    # ctl.initialize(train_obs, train_act)
+    #
+    # T = [_obs.shape[0] for _obs in train_obs]
+    # z = [npr.choice(rarhmm.nb_states, size=t) for t in T]
+    # z = [one_hot(_z, rarhmm.nb_states) for _z in z]
+    #
+    # mu_ctl = ctl.smooth(z, train_obs)
