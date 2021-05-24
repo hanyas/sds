@@ -3,7 +3,7 @@ import numpy.random as npr
 
 from scipy.special import logsumexp
 
-from sds.models import HMM
+from sds.models import HiddenMarkovModel
 
 from sds.initial import InitGaussianObservation
 from sds.initial import BayesianInitGaussianObservation
@@ -20,64 +20,99 @@ from sds.utils.decorate import ensure_args_are_viable_lists
 from pathos.multiprocessing import ProcessPool
 
 
-class ARHMM(HMM):
+class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
 
-    def __init__(self, nb_states, obs_dim, act_dim=0, nb_lags=1,
+    def __init__(self, nb_states, obs_dim, act_dim=0, obs_lag=1,
                  algo_type='MAP', init_obs_type='full', obs_type='full',
                  init_state_prior={}, init_obs_prior={}, trans_prior={}, obs_prior={},
                  init_state_kwargs={}, init_obs_kwargs={}, trans_kwargs={}, obs_kwargs={}):
 
-        super(ARHMM, self).__init__(nb_states, obs_dim, act_dim,
-                                    init_state_kwargs=init_state_kwargs,
-                                    trans_kwargs=trans_kwargs)
+        super(AutoRegressiveHiddenMarkovModel, self).__init__(nb_states, obs_dim, act_dim,
+                                                              init_state_kwargs=init_state_kwargs,
+                                                              trans_kwargs=trans_kwargs)
 
-        self.nb_lags = nb_lags
+        self.obs_lag = obs_lag
 
         if algo_type == 'ML':
             self.init_observation = InitGaussianObservation(self.nb_states, self.obs_dim,
-                                                            self.act_dim, self.nb_lags, **init_obs_kwargs)
+                                                            self.act_dim, self.obs_lag, **init_obs_kwargs)
             self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.obs_dim,
-                                                                  self.act_dim, self.nb_lags, **obs_kwargs)
+                                                                  self.act_dim, self.obs_lag, **obs_kwargs)
         else:
             if init_obs_type == 'full':
                 self.init_observation = BayesianInitGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
-                                                                        self.nb_lags, prior=init_obs_prior,
+                                                                        self.obs_lag, prior=init_obs_prior,
                                                                         **init_obs_kwargs)
             elif init_obs_type == 'diagonal':
                 self.init_observation = BayesianInitDiagonalGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                self.nb_lags, prior=init_obs_prior,
+                                                                                self.obs_lag, prior=init_obs_prior,
                                                                                 **init_obs_kwargs)
             else:
                 raise NotImplementedError
 
             if obs_type == 'full':
                 self.observations = BayesianAutoRegressiveGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
-                                                                              self.nb_lags, prior=obs_prior, **obs_kwargs)
+                                                                              self.obs_lag, prior=obs_prior, **obs_kwargs)
             elif obs_type == 'diagonal':
                 self.observations = BayesianAutoRegressiveDiagonalGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                      self.nb_lags, prior=obs_prior, **obs_kwargs)
+                                                                                      self.obs_lag, prior=obs_prior, **obs_kwargs)
             elif obs_type == 'tied-full':
                 self.observations = BayesianAutoRegressiveTiedGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                  self.nb_lags, prior=obs_prior, **obs_kwargs)
+                                                                                  self.obs_lag, prior=obs_prior, **obs_kwargs)
             elif obs_type == 'tied-diagonal':
                 self.observations = BayesianAutoRegressiveTiedDiagonalGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                          self.nb_lags, prior=obs_prior, **obs_kwargs)
+                                                                                          self.obs_lag, prior=obs_prior, **obs_kwargs)
             else:
                 raise NotImplementedError
 
+    @property
+    def params(self):
+        return self.init_state.params, \
+               self.init_observation.params,\
+               self.transitions.params, \
+               self.observations.params
+
+    @params.setter
+    def params(self, value):
+        self.init_state.params = value[0]
+        self.init_observation.params = value[1]
+        self.transitions.params = value[2]
+        self.observations.params = value[3]
+
+    def permute(self, perm):
+        self.init_state.permute(perm)
+        self.init_observation.permute(perm)
+        self.transitions.permute(perm)
+        self.observations.permute(perm)
+
+    @ensure_args_are_viable_lists
+    def initialize(self, obs, act=None, **kwargs):
+        super(AutoRegressiveHiddenMarkovModel, self).initialize(obs, act)
+        self.init_observation.initialize(obs)
+
     @ensure_args_are_viable_lists
     def log_likelihoods(self, obs, act=None):
-        loginit = self.init_state.log_init()
-        logtrans = self.transitions.log_transition(obs, act)
+        loginit, logtrans, arlogobs =\
+            super(AutoRegressiveHiddenMarkovModel, self).log_likelihoods(obs, act)
 
-        ilog = self.init_observation.log_likelihood(obs)
-        arlog = self.observations.log_likelihood(obs, act)
-
-        logobs = []
-        for _ilog, _arlog in zip(ilog, arlog):
-            logobs.append(np.vstack((_ilog, _arlog)))
+        ilogobs = self.init_observation.log_likelihood(obs)
+        arlogobs = self.observations.log_likelihood(obs, act)
+        logobs = [np.vstack((i, ar)) for i, ar in zip(ilogobs, arlogobs)]
 
         return loginit, logtrans, logobs
+
+    def mstep(self, gamma, zeta,
+              obs, act,
+              init_mstep_kwargs,
+              trans_mstep_kwargs,
+              obs_mstep_kwargs, **kwargs):
+
+        super(AutoRegressiveHiddenMarkovModel, self).mstep(gamma, zeta, obs, act,
+                                                           init_mstep_kwargs,
+                                                           trans_mstep_kwargs,
+                                                           obs_mstep_kwargs)
+        init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
+        self.init_observation.mstep(gamma, obs, **init_obs_mstep_kwargs)
 
     @ensure_args_are_viable_lists
     def mean_observation(self, obs, act=None):
@@ -86,13 +121,10 @@ class ARHMM(HMM):
         beta = self.backward(*loglikhds, scale=norm)
         gamma = self.posterior(alpha, beta)
 
-        imu = self.init_observation.smooth(gamma, obs)
-        armu = self.observations.smooth(gamma, obs, act)
+        iobs = self.init_observation.smooth(gamma, obs)
+        arobs = self.observations.smooth(gamma, obs, act)
 
-        mean_obs = []
-        for _imu, _armu in zip(imu, armu):
-            mean_obs.append(np.vstack((_imu, _armu)))
-
+        mean_obs = [np.vstack((i, ar)) for i, ar in zip(iobs, arobs)]
         return mean_obs
 
     def _sample(self, horizon, act=None, seed=None):
@@ -105,13 +137,13 @@ class ARHMM(HMM):
         state[0] = self.init_state.sample()
         obs[0, :] = self.init_observation.sample(state[0])
 
-        for t in range(1, self.nb_lags):
+        for t in range(1, self.obs_lag):
             state[t] = self.transitions.sample(state[t - 1], obs[t - 1, :], act[t - 1, :])
             obs[t, :] = self.init_observation.sample(state[t])
 
-        for t in range(self.nb_lags, horizon):
+        for t in range(self.obs_lag, horizon):
             state[t] = self.transitions.sample(state[t - 1], obs[t - 1, :], act[t - 1, :])
-            obs[t, :] = self.observations.sample(state[t], obs[t - self.nb_lags:t, :], act[t - 1, :])
+            obs[t, :] = self.observations.sample(state[t], obs[t - self.obs_lag:t, :], act[t - 1, :])
 
         return state, obs
 
@@ -129,7 +161,7 @@ class ARHMM(HMM):
     def _forcast(self, horizon=1, hist_obs=None, hist_act=None,
                  nxt_act=None, stoch=False, average=False, seed=None):
 
-        assert hist_obs.shape[0] >= self.nb_lags
+        assert hist_obs.shape[0] >= self.obs_lag
 
         npr.seed(seed)
 
@@ -137,59 +169,49 @@ class ARHMM(HMM):
         hist_act = np.atleast_2d(hist_act) if hist_act is not None else None
 
         nxt_act = np.zeros((horizon, self.act_dim)) if nxt_act is None else nxt_act
-        nxt_obs = np.zeros((self.nb_lags + horizon, self.obs_dim))
-        nxt_state = np.zeros((self.nb_lags + horizon, ), np.int64)
+        nxt_obs = np.zeros((self.obs_lag + horizon, self.obs_dim))
+        nxt_state = np.zeros((self.obs_lag + horizon, ), np.int64)
 
         belief = self.filter(hist_obs, hist_act)[0]
 
-        if stoch:
-            for t in range(self.nb_lags):
-                nxt_state[t] = npr.choice(self.nb_states, p=belief[-self.nb_lags:][t])
-                nxt_obs[t, :] = hist_obs[-self.nb_lags:][t]
+        if average:
+            # return empty discrete state when mixing
+            nxt_state = None
+            for t in range(self.obs_lag):
+                nxt_obs[t, :] = hist_obs[-self.obs_lag:][t]
 
-            for t in range(self.nb_lags, self.nb_lags + horizon):
-                nxt_state[t] = self.transitions.sample(nxt_state[t - 1],
-                                                       nxt_obs[t - 1, :],
-                                                       nxt_act[t - self.nb_lags, :])
-                nxt_obs[t, :] = self.observations.sample(nxt_state[t],
-                                                         nxt_obs[t - self.nb_lags:t, :],
-                                                         nxt_act[t - self.nb_lags, :])
+            # take last belief state from filter
+            alpha = belief[-1]
+            for t in range(self.obs_lag, self.obs_lag + horizon):
+                # average over transitions and belief space
+                x, u = nxt_obs[t - 1, :], nxt_act[t - self.obs_lag, :]
+                matrix = self.transitions.matrix(x, u)
+
+                # update belief
+                alpha = matrix.T @ alpha
+                alpha /= alpha.sum()
+
+                # average observations
+                for k in range(self.nb_states):
+                    z = k
+                    x = nxt_obs[t - self.obs_lag:t, :]
+                    u = nxt_act[t - self.obs_lag, :]
+                    nxt_obs[t, :] += alpha[k] * self.observations.mean(z, x, u)
         else:
-            if average:
-                # return empty discrete state when mixing
-                nxt_state = None
-                for t in range(self.nb_lags):
-                    nxt_obs[t, :] = hist_obs[-self.nb_lags:][t]
+            for t in range(self.obs_lag):
+                nxt_state[t] = npr.choice(self.nb_states, p=belief[-self.obs_lag:][t]) if stoch\
+                               else np.argmax(belief[-self.obs_lag:][t])
+                nxt_obs[t, :] = hist_obs[-self.obs_lag:][t]
 
-                # take last belief state from filter
-                alpha = belief[-1]
-                for t in range(self.nb_lags, self.nb_lags + horizon):
-                    # average over transitions and belief space
-                    logtrans = np.squeeze(self.transitions.log_transition(nxt_obs[t - 1, :],
-                                                                          nxt_act[t - self.nb_lags, :])[0])
-                    trans = np.exp(logtrans - logsumexp(logtrans, axis=1, keepdims=True))
+            for t in range(self.obs_lag, self.obs_lag + horizon):
+                z = nxt_state[t - 1]
+                x = nxt_obs[t - 1, :]
+                u = nxt_act[t - self.obs_lag, :]
+                nxt_state[t] = self.transitions.sample(z, x, u) if stoch else self.transitions.mean(z, x, u)
 
-                    # update belief
-                    alpha = trans.T @ alpha
-                    alpha /= alpha.sum()
-
-                    # average observations
-                    for k in range(self.nb_states):
-                        nxt_obs[t, :] += alpha[k] * self.observations.mean(k,
-                                                                           nxt_obs[t - self.nb_lags:t, :],
-                                                                           nxt_act[t - self.nb_lags, :])
-            else:
-                for t in range(self.nb_lags):
-                    nxt_state[t] = np.argmax(belief[-self.nb_lags:][t])
-                    nxt_obs[t, :] = hist_obs[-self.nb_lags:][t]
-
-                for t in range(self.nb_lags, self.nb_lags + horizon):
-                    nxt_state[t] = self.transitions.likeliest(nxt_state[t - 1],
-                                                              nxt_obs[t - 1, :],
-                                                              nxt_act[t - self.nb_lags, :])
-                    nxt_obs[t, :] = self.observations.mean(nxt_state[t],
-                                                           nxt_obs[t - self.nb_lags:t, :],
-                                                           nxt_act[t - self.nb_lags, :])
+                zn = nxt_state[t]
+                xr = nxt_obs[t - self.obs_lag:t, :]
+                nxt_obs[t, :] = self.observations.sample(zn, xr, u) if stoch else self.observations.mean(zn, xr, u)
 
         return nxt_state, nxt_obs
 
@@ -219,18 +241,18 @@ class ARHMM(HMM):
         hist_obs, hist_act, nxt_act = [], [], []
         forcast, target, prediction = [], [], []
 
-        nb_steps = obs.shape[0] - horizon - self.nb_lags + 1
+        nb_steps = obs.shape[0] - horizon - self.obs_lag + 1
         for t in range(nb_steps):
-            hist_obs.append(obs[:t + self.nb_lags, :])
-            hist_act.append(act[:t + self.nb_lags, :])
-            nxt_act.append(act[t + self.nb_lags - 1:t + self.nb_lags - 1 + horizon, :])
+            hist_obs.append(obs[:t + self.obs_lag, :])
+            hist_act.append(act[:t + self.obs_lag, :])
+            nxt_act.append(act[t + self.obs_lag - 1:t + self.obs_lag - 1 + horizon, :])
 
         hr = [horizon for _ in range(nb_steps)]
         _, forcast = self.forcast(horizon=hr, hist_obs=hist_obs, hist_act=hist_act,
                                   nxt_act=nxt_act, stoch=stoch, average=average)
 
         for t in range(nb_steps):
-            target.append(obs[t + self.nb_lags - 1 + horizon, :])
+            target.append(obs[t + self.obs_lag - 1 + horizon, :])
             prediction.append(forcast[t][-1, :])
 
         target = np.vstack(target)

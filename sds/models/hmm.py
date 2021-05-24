@@ -9,7 +9,6 @@ from sds.observations import GaussianObservation
 
 from sds.utils.decorate import ensure_args_are_viable_lists
 from sds.utils.decorate import init_empty_logctl_to_zero
-from sds.utils.decorate import init_empty_scale_to_zero
 from sds.utils.general import find_permutation
 from sds.cython.hmm_cy import forward_cy, backward_cy
 
@@ -20,7 +19,7 @@ to_c = lambda arr: np.copy(arr, 'C') \
     if not arr.flags['C_CONTIGUOUS'] else arr
 
 
-class HMM:
+class HiddenMarkovModel:
 
     def __init__(self, nb_states, obs_dim, act_dim=0,
                  init_state_kwargs={}, trans_kwargs={}, obs_kwargs={}):
@@ -54,8 +53,6 @@ class HMM:
     @ensure_args_are_viable_lists
     def initialize(self, obs, act=None, **kwargs):
         self.init_state.initialize()
-        if hasattr(self, 'init_observation'):
-            self.init_observation.initialize(obs)
         self.transitions.initialize(obs, act)
         self.observations.initialize(obs, act)
 
@@ -107,7 +104,6 @@ class HMM:
         return alpha, norm
 
     @init_empty_logctl_to_zero
-    @init_empty_scale_to_zero
     def backward(self, loginit, logtrans, logobs,
                  logctl=None, scale=None, cython=True):
 
@@ -187,26 +183,23 @@ class HMM:
         beta = self.backward(*loglikhds, scale=norm)
         gamma = self.posterior(alpha, beta, temperature=temperature)
         zeta = self.joint_posterior(alpha, beta, *loglikhds, temperature=temperature)
-
         return gamma, zeta
 
     def mstep(self, gamma, zeta,
               obs, act,
-              init_mstep_kwargs,
+              init_state_mstep_kwargs,
               trans_mstep_kwargs,
               obs_mstep_kwargs, **kwargs):
 
-        if hasattr(self, 'init_observation'):
-            self.init_observation.mstep(gamma, obs)
-
-        self.init_state.mstep(gamma, **init_mstep_kwargs)
+        self.init_state.mstep(gamma, **init_state_mstep_kwargs)
         self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
         self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
 
     @ensure_args_are_viable_lists
     def em(self, train_obs, train_act=None,
            nb_iter=50, prec=1e-4, initialize=True,
-           init_mstep_kwargs={}, trans_mstep_kwargs={},
+           init_state_mstep_kwargs={},
+           trans_mstep_kwargs={},
            obs_mstep_kwargs={}, **kwargs):
 
         proc_id = kwargs.get('proc_id', 0)
@@ -226,7 +219,7 @@ class HMM:
             gamma, zeta = self.estep(train_obs, train_act)
             self.mstep(gamma, zeta,
                        train_obs, train_act,
-                       init_mstep_kwargs,
+                       init_state_mstep_kwargs,
                        trans_mstep_kwargs,
                        obs_mstep_kwargs,
                        **kwargs)
@@ -247,7 +240,8 @@ class HMM:
     def annealed_em(self, train_obs, train_act=None,
                     nb_iter=50, nb_sub_iter=25,
                     prec=1e-4, discount=0.99,
-                    init_mstep_kwargs={}, trans_mstep_kwargs={},
+                    init_state_mstep_kwargs={},
+                    trans_mstep_kwargs={},
                     obs_mstep_kwargs={}, **kwargs):
 
         proc_id = kwargs.get('proc_id', 0)
@@ -266,7 +260,7 @@ class HMM:
                 gamma, zeta = self.estep(train_obs, train_act, temperature)
                 self.mstep(gamma, zeta,
                            train_obs, train_act,
-                           init_mstep_kwargs,
+                           init_state_mstep_kwargs,
                            trans_mstep_kwargs,
                            obs_mstep_kwargs,
                            **kwargs)
@@ -286,7 +280,7 @@ class HMM:
     @ensure_args_are_viable_lists
     def earlystop_em(self, train_obs, train_act=None,
                      nb_iter=50, prec=1e-4, initialize=True,
-                     init_mstep_kwargs={}, trans_mstep_kwargs={},
+                     init_state_mstep_kwargs={}, trans_mstep_kwargs={},
                      obs_mstep_kwargs={}, test_obs=None, test_act=None,
                      **kwargs):
 
@@ -323,7 +317,7 @@ class HMM:
         for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
             self.mstep(gamma, zeta, train_obs, train_act,
-                       init_mstep_kwargs,
+                       init_state_mstep_kwargs,
                        trans_mstep_kwargs,
                        obs_mstep_kwargs,
                        **kwargs)
@@ -353,7 +347,6 @@ class HMM:
         alpha, norm = self.forward(*loglikhds)
         beta = self.backward(*loglikhds, scale=norm)
         gamma = self.posterior(alpha, beta)
-
         mean_obs = self.observations.smooth(gamma, obs, act)
         return mean_obs
 

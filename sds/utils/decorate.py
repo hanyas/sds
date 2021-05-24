@@ -40,24 +40,22 @@ def ensure_args_are_viable_lists(f):
 
 def init_empty_logctl_to_zero(f):
     def wrapper(self, *args,  logctl=None, **kwargs):
-        logobs = args[-1]
-        if logctl is None:
-            logctl = []
-            for _logobs in logobs:
-                logctl.append(np.zeros((_logobs.shape[0], self.nb_states)))
-
-        return f(self, *args, logctl, **kwargs)
-    return wrapper
-
-
-def init_empty_scale_to_zero(f):
-    def wrapper(self, loginit, logtrans, logobs, logctl=None, scale=None, **kwargs):
-        if scale is None:
-            scale = []
-            for _logobs in logobs:
-                scale.append(np.zeros((_logobs.shape[0], )))
-
-        return f(self, loginit, logtrans, logobs, logctl,  scale, **kwargs)
+        if f.__name__ == 'forward' or f.__name__ == 'backward':
+            if len(args) == 3:
+                logobs = args[-1]
+                logctl = [np.zeros_like(_logobs) for _logobs in logobs]
+                return f(self, *args, logctl, **kwargs)
+            else:
+                return f(self, *args, **kwargs)
+        if f.__name__ == 'joint_posterior':
+            if len(args) == 5:
+                logobs = args[-1]
+                logctl = [np.zeros_like(_logobs) for _logobs in logobs]
+                return f(self, *args, logctl, **kwargs)
+            else:
+                return f(self, *args, **kwargs)
+        else:
+            raise NotImplementedError
     return wrapper
 
 
@@ -113,7 +111,7 @@ def parse_init_values(f):
 
 def ensure_ar_stack(f):
     @wraps(f)
-    def wrapper(self, z, x, u):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
-        return f(self, z, xr, u)
+    def wrapper(self, z, x, *args):
+        xr = np.reshape(x, (-1, self.obs_dim * self.nb_lags))
+        return f(self, z, xr, *args)
     return wrapper

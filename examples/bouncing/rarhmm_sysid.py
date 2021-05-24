@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 
-from sds.models import rARHMM
+from sds.models import RecurrentAutoRegressiveHiddenMarkovModel
 from sds.utils.envs import sample_env
 import matplotlib.pyplot as plt
 
@@ -82,14 +82,14 @@ if __name__ == "__main__":
     trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256,
                           'lr': 1e-3, 'l2': 1e-32}
 
-    rarhmm = rARHMM(nb_states=nb_states, obs_dim=obs_dim,
-                    act_dim=act_dim, nb_lags=nb_lags,
-                    algo_type=algo_type, init_obs_type=init_obs_type,
-                    obs_type=obs_type, trans_type=trans_type,
-                    init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
-                    trans_prior=trans_prior, obs_prior=obs_prior,
-                    init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
-                    trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
+    rarhmm = RecurrentAutoRegressiveHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim,
+                                                      act_dim=act_dim, obs_lag=nb_lags,
+                                                      algo_type=algo_type, init_obs_type=init_obs_type,
+                                                      obs_type=obs_type, trans_type=trans_type,
+                                                      init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
+                                                      trans_prior=trans_prior, obs_prior=obs_prior,
+                                                      init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
+                                                      trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     rarhmm.em(obs, act,
               nb_iter=100, prec=1e-4,

@@ -1,5 +1,5 @@
-from .hmm import HMM
-from .arhmm import ARHMM
-from .rarhmm import rARHMM
-# from .erarhmm import erARHMM
-from .ensemble import Ensemble
+from .hmm import HiddenMarkovModel
+from .arhmm import AutoRegressiveHiddenMarkovModel
+from .rarhmm import RecurrentAutoRegressiveHiddenMarkovModel
+from .clrarhmm import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
+from .ensemble import EnsembleHiddenMarkovModel

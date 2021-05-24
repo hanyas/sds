@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 
-from sds.models import ARHMM, rARHMM
+from sds.models import AutoRegressiveHiddenMarkovModel, RecurrentAutoRegressiveHiddenMarkovModel
 from sds.utils.decorate import ensure_args_are_viable_lists
 
 from joblib import Parallel, delayed
@@ -10,23 +10,24 @@ import multiprocessing
 nb_cores = multiprocessing.cpu_count()
 
 
-class Ensemble:
+class EnsembleHiddenMarkovModel:
 
-    def __init__(self, nb_states, obs_dim, act_dim=0, nb_lags=1,
+    def __init__(self, nb_states, obs_dim, act_dim=0, obs_lag=1,
                  model_type='rarhmm', ensemble_size=5, **kwargs):
 
         self.nb_states = nb_states
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        self.nb_lags = nb_lags
+        self.obs_lag = obs_lag
 
         self.ensemble_size = ensemble_size
 
-        _type_list = dict(arhmm=ARHMM, rarhmm=rARHMM)
-        self.model_type = _type_list[model_type]
+        type_list = dict(arhmm=AutoRegressiveHiddenMarkovModel,
+                         rarhmm=RecurrentAutoRegressiveHiddenMarkovModel)
+        self.model_type = type_list[model_type]
 
         self.models = [self.model_type(self.nb_states, self.obs_dim,
-                                       self.act_dim, self.nb_lags, **kwargs)
+                                       self.act_dim, self.obs_lag, **kwargs)
                        for _ in range(self.ensemble_size)]
 
     def _parallel_em(self, obs, act, **kwargs):
@@ -38,14 +39,16 @@ class Ensemble:
             prec = kwargs.pop('prec', 1e-4)
             proc_id = seed
 
-            init_mstep_kwargs = kwargs.pop('init_mstep_kwargs', {})
+            init_state_mstep_kwargs = kwargs.pop('init_state_mstep_kwargs', {})
+            init_obs_mstep_kwargs = kwargs.pop('init_obs_mstep_kwargs', {})
             trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs', {})
             obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs', {})
 
             ll = model.em(obs, act,
                           nb_iter=nb_iter, prec=prec,
                           initialize=True, proc_id=proc_id,
-                          init_mstep_kwargs=init_mstep_kwargs,
+                          init_state_mstep_kwargs=init_state_mstep_kwargs,
+                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                           trans_mstep_kwargs=trans_mstep_kwargs,
                           obs_mstep_kwargs=obs_mstep_kwargs)
 
@@ -64,28 +67,30 @@ class Ensemble:
     @ensure_args_are_viable_lists
     def em(self, obs, act=None,
            nb_iter=50, prec=1e-4, initialize=True,
-           init_mstep_kwargs={}, trans_mstep_kwargs={},
+           init_state_mstep_kwargs={},
+           init_obs_mstep_kwargs={},
+           trans_mstep_kwargs={},
            obs_mstep_kwargs={}, **kwargs):
 
-        from sds.utils.general import train_validate_split
-        train_obs, train_act = train_validate_split(obs, act,
-                                                    nb_traj_splits=self.ensemble_size,
-                                                    split_trajs=False)[:2]
+        from sds.utils.general import train_test_split
+        train_obs, train_act = train_test_split(obs, act,
+                                                nb_traj_splits=self.ensemble_size,
+                                                split_trajs=False)[:2]
 
         self.models, lls = self._parallel_em(train_obs, train_act,
                                              nb_iter=nb_iter, prec=prec,
-                                             init_mstep_kwargs=init_mstep_kwargs,
+                                             init_state_mstep_kwargs=init_state_mstep_kwargs,
+                                             init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                                              trans_mstep_kwargs=trans_mstep_kwargs,
                                              obs_mstep_kwargs=obs_mstep_kwargs)
 
-        nb_train = []
+        nb_train = [np.vstack(x).shape[0] for x in train_obs]
         nb_total = np.vstack(obs).shape[0]
 
         train_ll, total_ll = [], []
-        for _train_obs, _train_act, _model in zip(train_obs, train_act, self.models):
-            nb_train.append(np.vstack(_train_obs).shape[0])
-            train_ll.append(_model.log_normalizer(_train_obs, _train_act))
-            total_ll.append(_model.log_normalizer(obs, act))
+        for x, u, m in zip(train_obs, train_act, self.models):
+            train_ll.append(m.log_normalizer(x, u))
+            total_ll.append(m.log_normalizer(obs, act))
 
         train_scores = np.hstack(train_ll) / np.hstack(nb_train)
         test_scores = (np.hstack(total_ll) - np.hstack(train_ll))\
@@ -113,18 +118,18 @@ class Ensemble:
         hist_obs, hist_act, nxt_act = [], [], []
         forcast, target, prediction = [], [], []
 
-        nb_steps = obs.shape[0] - horizon - self.nb_lags + 1
+        nb_steps = obs.shape[0] - horizon - self.obs_lag + 1
         for t in range(nb_steps):
-            hist_obs.append(obs[:t + self.nb_lags, :])
-            hist_act.append(act[:t + self.nb_lags, :])
-            nxt_act.append(act[t + self.nb_lags - 1:t + self.nb_lags - 1 + horizon, :])
+            hist_obs.append(obs[:t + self.obs_lag, :])
+            hist_act.append(act[:t + self.obs_lag, :])
+            nxt_act.append(act[t + self.obs_lag - 1:t + self.obs_lag - 1 + horizon, :])
 
         hr = [horizon for _ in range(nb_steps)]
         forcast = self.forcast(horizon=hr, hist_obs=hist_obs, hist_act=hist_act,
                                nxt_act=nxt_act, stoch=stoch, average=average)
 
         for t in range(nb_steps):
-            target.append(obs[t + self.nb_lags - 1 + horizon, :])
+            target.append(obs[t + self.obs_lag - 1 + horizon, :])
             prediction.append(forcast[t][-1, :])
 
         target = np.vstack(target)
