@@ -37,7 +37,7 @@ class Cartpole(gym.Env):
                                             high=self.ymax,
                                             dtype=np.float64)
 
-        self.uw = - 1e-5 * np.ones((self.act_dim, ))
+        self.uw = - 1e-3 * np.ones((self.act_dim, ))
         self.umax = 5.0 * np.ones((self.act_dim, ))
         self.action_space = spaces.Box(low=-self.umax,
                                        high=self.umax, shape=(1,),
