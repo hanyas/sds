@@ -3,7 +3,7 @@ import numpy.random as npr
 
 import torch
 
-from sds.models import rARHMM
+from sds.models import RecurrentAutoRegressiveHiddenMarkovModel
 from sds.utils.general import random_rotation
 
 import matplotlib.pyplot as plt
@@ -38,8 +38,8 @@ def make_nascar_model():
     w4 = 10 * np.array([0.0, 0.0, -1.0])    # y < 0
     coef = np.row_stack((w1, w2, w3, w4))
 
-    true_rarhmm = rARHMM(nb_states=4, obs_dim=2,
-                         trans_type='poly-only')
+    true_rarhmm = RecurrentAutoRegressiveHiddenMarkovModel(nb_states=4, obs_dim=2,
+                                                           trans_type='poly-only')
 
     true_rarhmm.init_observation.mu = np.tile(np.array([[0, 1]]), (4, 1))
     true_rarhmm.init_observation.sigma = np.array([1e0 * np.eye(2) for _ in range(4)])
@@ -76,10 +76,10 @@ trans_kwargs = {'norm': {'mean': np.mean(np.vstack(x), axis=0),
 trans_mstep_kwargs = {'nb_iter': 50, 'l2': 1e-32}
 
 # npr.seed(1337)
-std_rarhmm = rARHMM(nb_states=4, obs_dim=2,
-                    algo_type='MAP',
-                    trans_type=trans_type,
-                    trans_kwargs=trans_kwargs)
+std_rarhmm = RecurrentAutoRegressiveHiddenMarkovModel(nb_states=4, obs_dim=2,
+                                                      algo_type='MAP',
+                                                      trans_type=trans_type,
+                                                      trans_kwargs=trans_kwargs)
 
 std_lls = std_rarhmm.em(x, nb_iter=1000,
                         prec=0., initialize=True,

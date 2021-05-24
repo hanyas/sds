@@ -1,5 +1,5 @@
 import numpy as np
-from sds.models.hmm import HMM as Ours
+from sds.models.hmm import HiddenMarkovModel as Ours
 from ssm.hmm import HMM as Theirs
 
 import warnings

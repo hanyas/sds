@@ -4,13 +4,13 @@ import numpy.random as npr
 import scipy as sc
 from scipy import stats
 
-from sds.models import HMM
+from sds.models import HiddenMarkovModel
 
 import matplotlib.pyplot as plt
 
 # npr.seed(1337)
 
-true_hmm = HMM(nb_states=3, obs_dim=2)
+true_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
 
 obs_dim = true_hmm.obs_dim
 act_dim = true_hmm.act_dim
@@ -32,13 +32,13 @@ true_z, x = true_hmm.sample(horizon=T)
 true_ll = true_hmm.log_normalizer(x)
 
 npr.seed(1337)
-ann_hmm = HMM(nb_states=3, obs_dim=2)
+ann_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
 ann_lls = ann_hmm.annealed_em(x, nb_iter=500,
                               nb_sub_iter=25,
                               prec=0., discount=0.985)
 
 npr.seed(1337)
-std_hmm = HMM(nb_states=3, obs_dim=2)
+std_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
 std_lls = std_hmm.em(x, nb_iter=500, prec=0.,
                      initialize=True)
 

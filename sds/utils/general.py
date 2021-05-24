@@ -12,16 +12,17 @@ from functools import reduce
 from itertools import tee
 
 
-def train_validate_split(obs, act, nb_traj_splits=7, seed=0,
-                         split_trajs=False, begin=50, horizon=150, nb_time_splits=3):
+def train_test_split(obs, act, nb_traj_splits=7, seed=0,
+                     split_trajs=False, begin=50, horizon=150, nb_time_splits=3):
 
-    from sklearn.model_selection import KFold
+    from sklearn.model_selection import KFold, ShuffleSplit
 
-    train_obs, train_act, valid_obs, valid_act = [], [], [], []
+    train_obs, train_act, test_obs, test_act = [], [], [], []
     list_idx = np.linspace(0, len(obs) - 1, len(obs), dtype=int)
 
-    kf = KFold(nb_traj_splits, shuffle=True, random_state=seed)
-    for train_list_idx, valid_list_idx in kf.split(list_idx):
+    # cv = KFold(nb_traj_splits, shuffle=True, random_state=seed)
+    cv = ShuffleSplit(nb_traj_splits, test_size=0.2, random_state=seed)
+    for train_list_idx, test_list_idx in cv.split(list_idx):
         _train_obs = [obs[i] for i in train_list_idx]
         _train_act = [act[i] for i in train_list_idx]
 
@@ -39,10 +40,10 @@ def train_validate_split(obs, act, nb_traj_splits=7, seed=0,
 
         train_obs.append(_train_obs)
         train_act.append(_train_act)
-        valid_obs.append([obs[i] for i in valid_list_idx])
-        valid_act.append([act[i] for i in valid_list_idx])
+        test_obs.append([obs[i] for i in test_list_idx])
+        test_act.append([act[i] for i in test_list_idx])
 
-    return train_obs, train_act, valid_obs, valid_act
+    return train_obs, train_act, test_obs, test_act
 
 
 def one_hot(z, K):
@@ -74,16 +75,16 @@ def np_cache(function):
     return wrapper
 
 
-def groupwise(x, n=2):
-    t = tee(x, n)
+def arstack(x, lag=1):
+    t = tee(x, lag)
 
-    for i in range(1, n):
+    for i in range(1, lag):
         for j in range(0, i):
             next(t[i], None)
 
     xl = list(zip(*t))
     if len(xl) == 0:
-        xr = np.zeros((0, n * x.shape[-1]))
+        xr = np.zeros((0, lag * x.shape[-1]))
         return xr
     else:
         xr = np.stack(xl)

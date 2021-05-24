@@ -1,5 +1,5 @@
 import numpy as np
-from sds.models.arhmm import ARHMM as Ours
+from sds.models.arhmm import AutoRegressiveHiddenMarkovModel as Ours
 from ssm.hmm import HMM as Theirs
 
 import warnings

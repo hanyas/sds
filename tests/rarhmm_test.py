@@ -1,4 +1,4 @@
-from sds.models.rarhmm import rARHMM as Ours
+from sds.models.rarhmm import RecurrentAutoRegressiveHiddenMarkovModel as Ours
 from ssm.hmm import HMM as Theirs
 
 import warnings

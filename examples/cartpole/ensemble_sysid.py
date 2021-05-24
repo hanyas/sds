@@ -1,8 +1,9 @@
 import numpy as np
 import numpy.random as npr
 
-from sds.models import Ensemble
+from sds.models import EnsembleHiddenMarkovModel
 from sds.utils.envs import sample_env
+
 
 if __name__ == "__main__":
 
@@ -15,7 +16,7 @@ if __name__ == "__main__":
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    env = gym.make('Pendulum-ID-v1')
+    env = gym.make('Cartpole-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped.dt = 0.01
     env.unwrapped.sigma = 1e-4
@@ -27,10 +28,10 @@ if __name__ == "__main__":
     train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    nb_states = 5
+    nb_states = 7
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
-    nb_lags = 1
+    obs_lag = 1
 
     # model types
     algo_type = 'MAP'
@@ -55,7 +56,7 @@ if __name__ == "__main__":
                                           nus=np.array([nu for _ in range(nb_states)]))
 
     # obs_prior
-    input_dim = obs_dim * nb_lags + act_dim + 1
+    input_dim = obs_dim * obs_lag + act_dim + 1
     output_dim = obs_dim
 
     M = np.zeros((output_dim, input_dim))
@@ -77,27 +78,28 @@ if __name__ == "__main__":
     init_state_kwargs, init_obs_kwargs, obs_kwargs = {}, {}, {}
     trans_kwargs = {'device': 'cpu',
                     'hidden_sizes': (16,), 'activation': 'splus',
-                    'norm': {'mean': np.array([0., 0., 0., 0.]),
-                             'std': np.array([1., 1., 10., 2.5])}}
+                    'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
+                             'std': np.array([5., 1., 1., 5., 10., 5.])}}
 
     # mstep kwargs
-    init_mstep_kwargs, obs_mstep_kwargs = {}, {}
-    trans_mstep_kwargs = {'nb_iter': 100, 'batch_size': 64,
-                          'lr': 5e-4, 'l2': 1e-32}
+    init_state_mstep_kwargs, init_obs_mstep_kwargs, obs_mstep_kwargs = {}, {}, {}
+    trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 128,
+                          'lr': 1e-3, 'l2': 1e-32}
 
-    ensemble = Ensemble(nb_states=nb_states, obs_dim=obs_dim,
-                        act_dim=act_dim, nb_lags=nb_lags,
-                        model_type='rarhmm', ensemble_size=6,
-                        algo_type=algo_type, init_obs_type=init_obs_type,
-                        trans_type=trans_type, obs_type=obs_type,
-                        init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
-                        trans_prior=trans_prior, obs_prior=obs_prior,
-                        init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
-                        trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
+    ensemble = EnsembleHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim,
+                                         act_dim=act_dim, obs_lag=obs_lag,
+                                         model_type='rarhmm', ensemble_size=6,
+                                         algo_type=algo_type, init_obs_type=init_obs_type,
+                                         trans_type=trans_type, obs_type=obs_type,
+                                         init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
+                                         trans_prior=trans_prior, obs_prior=obs_prior,
+                                         init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
+                                         trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     lls, scores = ensemble.em(train_obs, train_act,
-                              nb_iter=50, prec=1e-4,
-                              init_mstep_kwargs=init_mstep_kwargs,
+                              nb_iter=1, prec=1e-4,
+                              init_state_mstep_kwargs=init_state_mstep_kwargs,
+                              init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                               trans_mstep_kwargs=trans_mstep_kwargs,
                               obs_mstep_kwargs=obs_mstep_kwargs)
 
