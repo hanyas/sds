@@ -120,12 +120,15 @@ class AugmentedTransition:
     def permute(self, perm):
         self.regressor.permute(perm)
 
+    def matrix(self, x, u):
+        return np.squeeze(np.exp(self.log_transition(x, u)[0]))
+
     def likeliest(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        mat = self.matrix(x, u)
         return np.argmax(mat[z, :])
 
     def sample(self, z, x, u):
-        mat = np.squeeze(np.exp(self.log_transition(x, u)[0]))
+        mat = self.matrix(z, x, u)
         return npr.choice(self.nb_states, p=mat[z, :])
 
     @ensure_args_are_viable_lists

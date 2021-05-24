@@ -1,13 +1,10 @@
 import numpy as np
 import numpy.random as npr
 
-import scipy as sc
-from scipy import stats
 from scipy.stats import multivariate_normal as mvn
 
 from sds.utils.stats import multivariate_normal_logpdf as lg_mvn
-from sds.utils.general import linear_regression, one_hot, groupwise
-from sds.utils.decorate import ensure_ar_stack
+from sds.utils.general import linear_regression, one_hot, arstack
 
 from sds.distributions.gaussian import StackedGaussiansWithPrecision
 
@@ -32,11 +29,6 @@ class GaussianObservation:
         self.mu = npr.randn(self.nb_states, self.obs_dim)
         self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
-        # self._sigma_chol = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
-        # for k in range(self.nb_states):
-        #     _sigma = sc.stats.invwishart.rvs(self.obs_dim + 1, np.eye(self.obs_dim))
-        #     self._sigma_chol[k, ...] = np.linalg.cholesky(_sigma)
-
     @property
     def sigma(self):
         return np.matmul(self._sigma_chol, np.swapaxes(self._sigma_chol, -1, -2))
@@ -58,13 +50,20 @@ class GaussianObservation:
         self._sigma_chol = self._sigma_chol[perm]
 
     def initialize(self, x, u=None, **kwargs):
-        from sklearn.cluster import KMeans
-        obs = np.concatenate(x)
-        km = KMeans(self.nb_states).fit(obs)
+        kmeans = kwargs.get('kmeans', True)
 
-        self.mu = km.cluster_centers_
-        self.sigma = np.array([np.cov(obs[km.labels_ == k].T)
-                               for k in range(self.nb_states)])
+        ts = [_x.shape[0] for _x in x]
+
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.hstack((np.vstack(x), np.vstack(u))))
+            zs = np.split(km.labels_, np.cumsum(ts)[:-1])
+        else:
+            zs = [npr.choice(self.nb_states, size=t) for t in ts]
+
+        zs = [one_hot(z, self.nb_states) for z in zs]
+        self.mstep(zs, x, u)
 
     def mean(self, z, x=None, u=None):
         return self.mu[z, :]
@@ -122,18 +121,6 @@ class AutoRegressiveGaussianObservation:
         self.c = npr.randn(self.nb_states, self.obs_dim, )
         self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
-        # self.A = np.zeros((self.nb_states, self.obs_dim, self.obs_dim * self.nb_lags))
-        # self.B = np.zeros((self.nb_states, self.obs_dim, self.act_dim))
-        # self.c = np.zeros((self.nb_states, self.obs_dim))
-        #
-        # self._sigma_chol = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
-        # for k in range(self.nb_states):
-        #     _sigma = sc.stats.invwishart.rvs(self.obs_dim + 1, np.eye(self.obs_dim))
-        #     self._sigma_chol[k, ...] = np.linalg.cholesky(_sigma * np.eye(self.obs_dim))
-        #     self.A[k, ...] = sc.stats.multivariate_normal.rvs(mean=None, cov=1e-6 * _sigma, size=(self.obs_dim, self.obs_dim * self.nb_lags))
-        #     self.B[k, ...] = sc.stats.multivariate_normal.rvs(mean=None, cov=1e-6 * _sigma, size=(self.obs_dim, self.act_dim))
-        #     self.c[k, ...] = sc.stats.multivariate_normal.rvs(mean=None, cov=1e-6 * _sigma, size=(self.obs_dim, ))
-
     @property
     def sigma(self):
         return np.matmul(self._sigma_chol, np.swapaxes(self._sigma_chol, -1, -2))
@@ -150,56 +137,57 @@ class AutoRegressiveGaussianObservation:
     def params(self, value):
         self.A, self.B, self.c, self._sigma_chol = value
 
-    def arstack(self, x, u):
-        if isinstance(x, np.ndarray) \
-                and isinstance(u, np.ndarray):
-            xr = groupwise(x[:-1], self.nb_lags)
-            ur = u[self.nb_lags - 1:-1]
-            xn = x[self.nb_lags:]
-            return xr, ur, xn
-        else:
-            res = map(self.arstack, x, u)
-            return list(map(list, zip(*res)))
-
-    def iostack(self, x, u):
-        if isinstance(x, np.ndarray) \
-                and isinstance(u, np.ndarray):
-            xr = groupwise(x[:-1], self.nb_lags)
-            ur = u[self.nb_lags - 1:-1]
-            xu = np.hstack((xr, ur))
-            xn = x[self.nb_lags:]
-            return xu, xn
-        else:
-            res = map(self.iostack, x, u)
-            return list(map(list, zip(*res)))
-
-    def initialize(self, x, u, **kwargs):
-        kmeans = kwargs.get('kmeans', True)
-
-        T = [_x.shape[0] for _x in x]
-        if kmeans:
-            from sklearn.cluster import KMeans
-            km = KMeans(self.nb_states)
-            km.fit(np.hstack((np.vstack(x), np.vstack(u))))
-            z = np.split(km.labels_, np.cumsum(T)[:-1])
-        else:
-            z = [npr.choice(self.nb_states, size=t) for t in T]
-
-        z = [one_hot(_z, self.nb_states) for _z in z]
-        self.mstep(z, x, u)
-
     def permute(self, perm):
         self.A = self.A[perm, ...]
         self.B = self.B[perm, ...]
         self.c = self.c[perm, :]
         self._sigma_chol = self._sigma_chol[perm, ...]
 
-    @ensure_ar_stack
+    def initialize(self, x, u, **kwargs):
+        kmeans = kwargs.get('kmeans', True)
+
+        xu, xn = [], []
+        for _x, _u in zip(x, u):
+            _xr = arstack(_x[:-1], self.nb_lags)
+            _ur = _u[self.nb_lags - 1:-1]
+            xu.append(np.hstack((_xr, _ur)))
+            xn.append(_x[self.nb_lags:])
+
+        ts = [_xu.shape[0] for _xu in xu]
+
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.vstack(xu))
+            zs = np.split(km.labels_, np.cumsum(ts)[:-1])
+        else:
+            zs = [npr.choice(self.nb_states, size=t) for t in ts]
+
+        zs = [one_hot(z, self.nb_states) for z in zs]
+
+        mu0 = kwargs.get('mu0', 0.)
+        sigma0 = kwargs.get('sigma0', 1e64)
+        psi0 = kwargs.get('psi0', 1.)
+        nu0 = kwargs.get('nu0', self.obs_dim + 1)
+
+        _sigma = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
+        for k in range(self.nb_states):
+            coef, intercept, sigma = linear_regression(Xs=np.vstack(xu), ys=np.vstack(xn),
+                                                       weights=np.vstack(zs)[:, k], fit_intercept=True,
+                                                       mu0=mu0, sigma0=sigma0, psi0=psi0, nu0=nu0)
+
+            self.A[k, ...] = coef[:, :self.obs_dim * self.nb_lags]
+            self.B[k, ...] = coef[:, self.obs_dim * self.nb_lags:]
+            self.c[k, ...] = intercept
+            _sigma[k, ...] = sigma
+
+        self.sigma = _sigma
+
     def mean(self, z, x, u):
-        return np.einsum('kh,...h->...k', self.A[z, ...], x) +\
+        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
+        return np.einsum('kh,...h->...k', self.A[z, ...], xr) +\
                np.einsum('kh,...h->...k', self.B[z, ...], u) + self.c[z, :]
 
-    @ensure_ar_stack
     def sample(self, z, x, u):
         xn = mvn(self.mean(z, x, u), cov=self.sigma[z, ...]).rvs()
         return np.atleast_1d(xn)
@@ -211,7 +199,11 @@ class AutoRegressiveGaussianObservation:
         self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
     def log_likelihood(self, x, u):
-        xr, ur, xn = self.arstack(x, u)
+        xr, ur, xn = [], [], []
+        for _x, _u in zip(x, u):
+            xr.append(arstack(_x[:-1], self.nb_lags))
+            ur.append(_u[self.nb_lags - 1:-1])
+            xn.append(_x[self.nb_lags:])
 
         loglik = []
         for _xr, _ur, _xn in zip(xr, ur, xn):
@@ -229,13 +221,18 @@ class AutoRegressiveGaussianObservation:
         psi0 = kwargs.get('psi0', 1.)
         nu0 = kwargs.get('nu0', self.obs_dim + 1)
 
-        xu, xn = self.iostack(x, u)
-        w = [_p[self.nb_lags:] for _p in p]
+        xu, xn, ws = [], [], []
+        for _x, _u, _w in zip(x, u, p):
+            _xr = arstack(_x[:-1], self.nb_lags)
+            _ur = _u[self.nb_lags - 1:-1]
+            xu.append(np.hstack((_xr, _ur)))
+            xn.append(_x[self.nb_lags:])
+            ws.append(_w[self.nb_lags:])
 
         _sigma = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
         for k in range(self.nb_states):
             coef, intercept, sigma = linear_regression(Xs=np.vstack(xu), ys=np.vstack(xn),
-                                                       weights=np.vstack(w)[:, k], fit_intercept=True,
+                                                       weights=np.vstack(ws)[:, k], fit_intercept=True,
                                                        mu0=mu0, sigma0=sigma0, psi0=psi0, nu0=nu0)
 
             self.A[k, ...] = coef[:, :self.obs_dim * self.nb_lags]
@@ -246,15 +243,18 @@ class AutoRegressiveGaussianObservation:
         self.sigma = _sigma
 
     def smooth(self, p, x, u):
-        xr, ur, _ = self.arstack(x, u)
-        pr = [_pr[self.nb_lags:] for _pr in p]
+        xr, ur, pr = [], [], []
+        for _x, _u, _p in zip(x, u, p):
+            xr.append(arstack(_x[:-1], self.nb_lags))
+            ur.append(_u[self.nb_lags - 1:-1])
+            pr.append(_p[self.nb_lags:])
 
         mean = []
         for _xr, _ur, _pr in zip(xr, ur, pr):
-            mu = np.zeros((len(_xr), self.nb_states, self.obs_dim))
+            _mu = np.zeros((len(_xr), self.nb_states, self.obs_dim))
             for k in range(self.nb_states):
-                mu[:, k, :] = self.mean(k, _xr, _ur)
-            mean.append(np.einsum('nk,nkl->nl', _pr, mu))
+                _mu[:, k, :] = self.mean(k, _xr, _ur)
+            mean.append(np.einsum('nk,nkl->nl', _pr, _mu))
 
         return mean
 
@@ -312,14 +312,13 @@ class BayesianGaussianObservation:
         return self.likelihood.log_likelihood(x)
 
     def mstep(self, p, x, u, **kwargs):
-        stats = self.likelihood.statistics(x) if p is None\
-            else self.likelihood.weighted_statistics(x, p)
+        stats = self.likelihood.weighted_statistics(x, p)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.mode()
 
-        self.prior.nat_param = (1. - 0.01) * self.prior.nat_param\
-                               + 0.01 * self.posterior.nat_param
+        # self.prior.nat_param = (1. - 0.001) * self.prior.nat_param\
+        #                        + 0.001 * self.posterior.nat_param
 
     def smooth(self, p, x, u):
         mean = []
@@ -332,6 +331,7 @@ class _BayesianAutoRegressiveObservationBase:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, likelihood=None):
+
         self.nb_states = nb_states
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -353,42 +353,29 @@ class _BayesianAutoRegressiveObservationBase:
     def params(self, values):
         self.likelihood.params = values
 
-    def arstack(self, x, u):
-        if isinstance(x, np.ndarray) \
-                and isinstance(u, np.ndarray):
-            xr = groupwise(x[:-1], self.nb_lags)
-            ur = u[self.nb_lags - 1:-1]
-            xn = x[self.nb_lags:]
-            return xr, ur, xn
-        else:
-            res = map(self.arstack, x, u)
-            return list(map(list, zip(*res)))
-
-    def iostack(self, x, u):
-        if isinstance(x, np.ndarray) \
-                and isinstance(u, np.ndarray):
-            xr = groupwise(x[:-1], self.nb_lags)
-            ur = u[self.nb_lags - 1:-1]
-            xu = np.hstack((xr, ur))
-            xn = x[self.nb_lags:]
-            return xu, xn
-        else:
-            res = map(self.iostack, x, u)
-            return list(map(list, zip(*res)))
-
     def initialize(self, x, u, **kwargs):
-        T = [_x.shape[0] for _x in x]
+        kmeans = kwargs.get('kmeans', True)
 
-        from sklearn.cluster import KMeans
-        km = KMeans(self.nb_states)
-        km.fit(np.hstack((np.vstack(x), np.vstack(u))))
-        z = np.split(km.labels_, np.cumsum(T)[:-1])
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        xu, xn = [], []
+        for _x, _u in zip(x, u):
+            _xr = arstack(_x[:-1], self.nb_lags)
+            _ur = _u[self.nb_lags - 1:-1]
+            xu.append(np.hstack((_xr, _ur)))
+            xn.append(_x[self.nb_lags:])
 
-        xu, xn = self.iostack(x, u)
-        w = [_z[self.nb_lags:] for _z in z]
+        ts = [_xu.shape[0] for _xu in xu]
 
-        stats = self.likelihood.weighted_statistics(xu, xn, w)
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.vstack(xu))
+            zs = np.split(km.labels_, np.cumsum(ts)[:-1])
+        else:
+            zs = [npr.choice(self.nb_states, size=t) for t in ts]
+
+        zs = [one_hot(z, self.nb_states) for z in zs]
+
+        stats = self.likelihood.weighted_statistics(xu, xn, zs)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.rvs()
@@ -396,50 +383,57 @@ class _BayesianAutoRegressiveObservationBase:
     def permute(self, perm):
         raise NotImplementedError
 
-    @ensure_ar_stack
-    def mean(self, z, x=None, u=None):
-        assert isinstance(x, np.ndarray)
-        assert isinstance(u, np.ndarray)
-
-        xu = np.hstack((x, u))
+    def mean(self, z, x, u):
+        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
+        xu = np.hstack((xr, u))
         return self.likelihood.dists[z].mean(xu)
 
-    @ensure_ar_stack
-    def sample(self, z, x=None, u=None):
-        assert isinstance(x, np.ndarray)
-        assert isinstance(u, np.ndarray)
-
+    def sample(self, z, x, u):
+        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
         xu = np.hstack((x, u))
         xn = self.likelihood.dists[z].rvs(xu)
         return np.atleast_1d(xn)
 
     def log_likelihood(self, x, u):
-        xu, xn = self.iostack(x, u)
+        xu, xn = [], []
+        for _x, _u in zip(x, u):
+            _xr = arstack(_x[:-1], self.nb_lags)
+            _ur = _u[self.nb_lags - 1:-1]
+            xu.append(np.hstack((_xr, _ur)))
+            xn.append(_x[self.nb_lags:])
+
         return self.likelihood.log_likelihood(xu, xn)
 
     def mstep(self, p, x, u, **kwargs):
-        xu, xn = self.iostack(x, u)
-        w = [_p[self.nb_lags:] for _p in p]
+        xu, xn, ws = [], [], []
+        for _x, _u, _w in zip(x, u, p):
+            _xr = arstack(_x[:-1], self.nb_lags)
+            _ur = _u[self.nb_lags - 1:-1]
+            xu.append(np.hstack((_xr, _ur)))
+            xn.append(_x[self.nb_lags:])
+            ws.append(_w[self.nb_lags:])
 
-        stats = self.likelihood.statistics(xu, xn) if w is None\
-            else self.likelihood.weighted_statistics(xu, xn, w)
+        stats = self.likelihood.weighted_statistics(xu, xn, ws)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.mode()
 
-        self.prior.nat_param = (1. - 0.001) * self.prior.nat_param\
-                               + 0.001 * self.posterior.nat_param
+        # self.prior.nat_param = (1. - 0.001) * self.prior.nat_param\
+        #                        + 0.001 * self.posterior.nat_param
 
     def smooth(self, p, x, u):
-        xr, ur, _ = self.arstack(x, u)
-        pr = [_pr[self.nb_lags:] for _pr in p]
+        xr, ur, pr = [], [], []
+        for _x, _u, _p in zip(x, u, p):
+            xr.append(arstack(_x[:-1], self.nb_lags))
+            ur.append(_u[self.nb_lags - 1:-1])
+            pr.append(_p[self.nb_lags:])
 
         mean = []
         for _xr, _ur, _pr in zip(xr, ur, pr):
-            mu = np.zeros((len(_xr), self.nb_states, self.obs_dim))
+            _mu = np.zeros((len(_xr), self.nb_states, self.obs_dim))
             for k in range(self.nb_states):
-                mu[:, k, :] = self.mean(k, _xr, _ur)
-            mean.append(np.einsum('nk,nkl->nl', _pr, mu))
+                _mu[:, k, :] = self.mean(k, _xr, _ur)
+            mean.append(np.einsum('nk,nkl->nl', _pr, _mu))
 
         return mean
 
