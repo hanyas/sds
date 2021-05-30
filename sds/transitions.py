@@ -229,7 +229,7 @@ class ParametricAugmentationRegressor(nn.Module):
 
     def elbo(self, w, xu, batch_size, set_size):
         logtrans = self.forward(xu)
-        return torch.sum(torch.mean(torch.sum(w * logtrans, dim=1) + self.log_prior(logtrans), dim=0))
+        return torch.sum(torch.mean(torch.sum(w * logtrans, dim=2) + self.log_prior(logtrans), dim=0))
 
     @ensure_args_torch_floats
     def fit(self, w, xu, nb_iter=100, batch_size=None,
@@ -584,7 +584,7 @@ class SharedNeuralEnsembleRegressor(ParametricAugmentationRegressor):
         for k in range(self.ensemble_size):
             self.layers[-1].weight.data[k] = self.layers[-1].weight.data[k, perm]
             self.layers[-1].bias.data[k] = self.layers[-1].bias.data[k, perm]
-        self.logmat.data = self.logmat.data[np.ix_(perm, perm)]
+            self.logmat.data[k] = self.logmat.data[k][np.ix_(perm, perm)]
 
     @torch.no_grad()
     def reset_parameters(self):
@@ -596,6 +596,15 @@ class SharedNeuralEnsembleRegressor(ParametricAugmentationRegressor):
             mat = torch.ones(self.nb_states, self.nb_states, device=self.device)
             mat /= torch.sum(mat, dim=-1, keepdim=True)
             self.logmat.data[k] = torch.log(mat)
+
+    def log_prior(self, params):
+        matrix = (torch.exp(params) + 1e-16) \
+                 / torch.sum(torch.exp(params) + 1e-16, dim=-1, keepdim=True)
+
+        lp = torch.zeros((len(params), self.ensemble_size, self.nb_states), device=self.device)
+        for k in range(self.nb_states):
+            lp[..., k] = self.dirichlets[k].log_prob(matrix[..., k, :])
+        return lp
 
     def predict(self, xu):
         self.eval()
@@ -611,8 +620,7 @@ class SharedNeuralEnsembleRegressor(ParametricAugmentationRegressor):
     def elbo(self, w, xu, batch_size, set_size):
         wb = w.unsqueeze(1).repeat(1, self.ensemble_size, 1, 1)  # repeat across ensemble dim
         logtrans = self.forward(xu)  # [samples, ensemble, states, states]
-        return torch.sum(torch.mean(wb * logtrans, dim=(0, 1)))\
-               + 1e-3 * self.log_prior(logtrans)
+        return torch.sum(torch.mean(torch.sum(wb * logtrans, dim=3) + self.log_prior(logtrans), dim=(0, 1)))
 
 
 class StackedNeuralTransition(ParametricAugmentedTransition):
@@ -686,7 +694,12 @@ class StackedNeuralRegressor(ParametricAugmentationRegressor):
         pass
 
     def permute(self, perm):
-        raise NotImplementedError
+        for l in self.layers[:-1]:
+            if isinstance(l, StackedLinear):
+                l.weight.data = l.weight.data[perm]
+                l.bias.data = l.bias.data[perm]
+        self.layers[-1].weight.data = self.layers[-1].weight.data[np.ix_(perm, perm)]
+        self.layers[-1].bias.data = self.layers[-1].bias.data[np.ix_(perm, perm)]
 
     @torch.no_grad()
     def reset_parameters(self):
