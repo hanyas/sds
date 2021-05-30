@@ -66,9 +66,5 @@ class Gamma:
         return np.sum(gammaln(self.alphas) - self.alphas * np.log(self.betas))
 
     def log_likelihood(self, x):
-        loglik = []
-        for _x in x:
-            _loglik = np.sum((self.alphas - 1.) * np.log(_x) - self.betas * _x)
-            _loglik += - self.log_partition() + self.log_base()
-            loglik.append(_loglik)
-        return loglik
+        loglik = np.sum((self.alphas - 1.) * np.log(x) - self.betas * x)
+        return - self.log_partition() + self.log_base() + loglik

@@ -629,7 +629,7 @@ class MatrixNormalWishart:
 
     @staticmethod
     def nat_to_std(natparam):
-        M = np.linalg.solve(natparam[1], natparam[0].T).T
+        M = np.dot(natparam[0], np.linalg.pinv(natparam[1]))
         K = natparam[1]
         psi = np.linalg.inv(natparam[2] - M.dot(K).dot(M.T))
         nu = natparam[3] + natparam[2].shape[0] + 1 - natparam[0].shape[-1]
@@ -830,10 +830,7 @@ class TiedMatrixNormalWishart:
 
     @staticmethod
     def nat_to_std(natparam):
-        aT = np.transpose(natparam[0], (0, 2, 1))
-        bT = np.transpose(natparam[1], (0, 2, 1))
-
-        Ms = np.transpose(np.linalg.solve(bT, aT), (0, 2, 1))
+        Ms = np.einsum('ndl,nlh->ndh', natparam[0], np.linalg.pinv(natparam[1]))
         Ks = natparam[1]
         psi = np.linalg.inv(natparam[2] - np.einsum('kdl,klm,khm->dh', Ms, Ks, Ms))
         nu = natparam[3] + natparam[2].shape[0]
@@ -923,7 +920,7 @@ class MatrixNormalGamma:
 
     @staticmethod
     def nat_to_std(natparam):
-        M = np.linalg.solve(natparam[1], natparam[0].T).T
+        M = np.dot(natparam[0], np.linalg.pinv(natparam[1]))
         K = natparam[1]
         alphas = 0.5 * (natparam[2] + 1.)
         betas = 0.5 * (natparam[3] - np.einsum('dl,lm,dm->d', M, K, M))
