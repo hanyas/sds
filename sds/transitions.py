@@ -184,25 +184,25 @@ class ParametricAugmentationRegressor(nn.Module):
         self.act_dim = act_dim
 
         # Dirichlet parameters
-        self.alpha = torch.tensor(prior['alpha'], dtype=torch.float32, device=self.device)
-        self.kappa = torch.tensor(prior['kappa'], dtype=torch.float32, device=self.device)
+        self.prior = {'alpha': torch.as_tensor(prior['alpha'], dtype=torch.float32, device=self.device),
+                      'kappa': torch.as_tensor(prior['kappa'], dtype=torch.float32, device=self.device)}
 
         # Normalization parameters
-        self.mean = torch.as_tensor(norm['mean'], dtype=torch.float32, device=self.device)
-        self.std = torch.as_tensor(norm['std'], dtype=torch.float32, device=self.device)
+        self.norm = {'mean': torch.as_tensor(norm['mean'], dtype=torch.float32, device=self.device),
+                     'std': torch.as_tensor(norm['std'], dtype=torch.float32, device=self.device)}
+
+        self.dirichlets = []
+        alphas = self.prior['alpha'] * torch.ones(self.nb_states, dtype=torch.float32, device=self.device)
+        for k in range(self.nb_states):
+            kappas = self.prior['kappa'] * torch.as_tensor(torch.arange(self.nb_states) == k,
+                                                           dtype=torch.float32, device=self.device)
+            self.dirichlets.append(dist.Dirichlet(alphas + kappas, validate_args=True))
 
         self.optim = None
 
-        self.dirichlets = []
-
-        alphas = self.alpha * torch.ones(self.nb_states, dtype=torch.float32, device=self.device)
-        for k in range(self.nb_states):
-            kappas = self.kappa * torch.as_tensor(torch.arange(self.nb_states) == k,
-                                                  dtype=torch.float32, device=self.device)
-            self.dirichlets.append(dist.Dirichlet(alphas + kappas, validate_args=True))
-
     def standardize(self, xu):
-        return (xu - self.mean) / self.std
+        mu, std = list(self.norm.values())
+        return (xu - mu) / std
 
     def permute(self, perm):
         raise NotImplementedError
