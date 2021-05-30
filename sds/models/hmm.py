@@ -7,8 +7,8 @@ from sds.initial import InitCategoricalState
 from sds.transitions import StationaryTransition
 from sds.observations import GaussianObservation
 
-from sds.utils.decorate import ensure_args_are_viable_lists
-from sds.utils.decorate import init_empty_logctl_to_zero
+from sds.utils.decorate import ensure_args_are_viable
+from sds.utils.decorate import init_empty_logact_to_zero
 from sds.utils.general import find_permutation
 from sds.cython.hmm_cy import forward_cy, backward_cy
 
@@ -29,14 +29,15 @@ class HiddenMarkovModel:
         self.act_dim = act_dim
 
         self.init_state = InitCategoricalState(self.nb_states, **init_state_kwargs)
-        self.transitions = StationaryTransition(self.nb_states, **trans_kwargs)
+        self.transitions = StationaryTransition(self.nb_states, self.obs_dim,
+                                                self.act_dim, **trans_kwargs)
         self.observations = GaussianObservation(self.nb_states, self.obs_dim,
                                                 self.act_dim, **obs_kwargs)
 
     @property
     def params(self):
-        return self.init_state.params, \
-               self.transitions.params, \
+        return self.init_state.params,\
+               self.transitions.params,\
                self.observations.params
 
     @params.setter
@@ -50,139 +51,167 @@ class HiddenMarkovModel:
         self.transitions.permute(perm)
         self.observations.permute(perm)
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def initialize(self, obs, act=None, **kwargs):
         self.init_state.initialize()
         self.transitions.initialize(obs, act)
         self.observations.initialize(obs, act)
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def log_likelihoods(self, obs, act=None):
-        loginit = self.init_state.log_init()
-        logtrans = self.transitions.log_transition(obs, act)
-        logobs = self.observations.log_likelihood(obs, act)
-        return loginit, logtrans, logobs
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            loginit = self.init_state.log_init()
+            logtrans = self.transitions.log_transition(obs, act)
+            logobs = self.observations.log_likelihood(obs, act)
+            return loginit, logtrans, logobs
+        else:
+            def inner(obs, act):
+                return self.log_likelihoods.__wrapped__(self, obs, act)
+            result = map(inner, obs, act)
+            return list(map(list, zip(*result)))
 
     def log_normalizer(self, obs, act=None):
         loglikhds = self.log_likelihoods(obs, act)
         _, norm = self.forward(*loglikhds)
         return np.sum(np.hstack(norm))
 
-    @init_empty_logctl_to_zero
-    def forward(self, loginit, logtrans, logobs,
-                logctl=None, cython=True):
+    @init_empty_logact_to_zero
+    def forward(self, loginit, logtrans, logobs, logact=None, cython=True):
+        if isinstance(loginit, np.ndarray)\
+                and isinstance(logtrans, np.ndarray)\
+                and isinstance(logobs, np.ndarray)\
+                and isinstance(logact, np.ndarray):
 
-        alpha, norm = [], []
-        for _logobs, _logctl, _logtrans in zip(logobs, logctl, logtrans):
-            T = _logobs.shape[0]
-            _alpha = np.zeros((T, self.nb_states))
-            _norm = np.zeros((T, ))
-
-            if cython:
-                forward_cy(to_c(loginit), to_c(_logtrans),
-                           to_c(_logobs), to_c(_logctl),
-                           to_c(_alpha), to_c(_norm))
-            else:
-                for k in range(self.nb_states):
-                    _alpha[0, k] = loginit[k] + _logobs[0, k]
-
-                _norm[0] = logsumexp(_alpha[0], axis=-1, keepdims=True)
-                _alpha[0] = _alpha[0] - _norm[0]
-
-                _aux = np.zeros((self.nb_states,))
-                for t in range(1, T):
-                    for k in range(self.nb_states):
-                        for j in range(self.nb_states):
-                            _aux[j] = _alpha[t - 1, j] + _logtrans[t - 1, j, k]
-                        _alpha[t, k] = logsumexp(_aux) + _logobs[t, k] + _logctl[t, k]
-
-                    _norm[t] = logsumexp(_alpha[t], axis=-1, keepdims=True)
-                    _alpha[t] = _alpha[t] - _norm[t]
-
-            alpha.append(_alpha)
-            norm.append(_norm)
-        return alpha, norm
-
-    @init_empty_logctl_to_zero
-    def backward(self, loginit, logtrans, logobs,
-                 logctl=None, scale=None, cython=True):
-
-        beta = []
-        for _logobs, _logctl, _logtrans, _scale in zip(logobs, logctl, logtrans, scale):
-            T = _logobs.shape[0]
-            _beta = np.zeros((T, self.nb_states))
+            nb_steps = logobs.shape[0]
+            alpha = np.zeros((nb_steps, self.nb_states))
+            norm = np.zeros((nb_steps, ))
 
             if cython:
-                backward_cy(to_c(loginit), to_c(_logtrans),
-                            to_c(_logobs), to_c(_logctl),
-                            to_c(_beta), to_c(_scale))
+                forward_cy(to_c(loginit), to_c(logtrans),
+                           to_c(logobs), to_c(logact),
+                           to_c(alpha), to_c(norm))
             else:
                 for k in range(self.nb_states):
-                    _beta[T - 1, k] = 0.0 - _scale[T - 1]
+                    alpha[0, k] = loginit[k] + logobs[0, k]
 
-                _aux = np.zeros((self.nb_states,))
-                for t in range(T - 2, -1, -1):
+                norm[0] = logsumexp(alpha[0], axis=-1, keepdims=True)
+                alpha[0] = alpha[0] - norm[0]
+
+                aux = np.zeros((self.nb_states,))
+                for t in range(1, nb_steps):
                     for k in range(self.nb_states):
                         for j in range(self.nb_states):
-                            _aux[j] = _logtrans[t, k, j] + _beta[t + 1, j] \
-                                      + _logobs[t + 1, j] + _logctl[t + 1, j]
-                        _beta[t, k] = logsumexp(_aux) - _scale[t]
+                            aux[j] = alpha[t - 1, j] + logtrans[t - 1, j, k]
+                        alpha[t, k] = logsumexp(aux) + logobs[t, k] + logact[t, k]
 
-            beta.append(_beta)
-        return beta
+                    norm[t] = logsumexp(alpha[t], axis=-1, keepdims=True)
+                    alpha[t] = alpha[t] - norm[t]
 
-    @staticmethod
-    def posterior(alpha, beta, temperature=1.):
-        return [np.exp(temperature * (_alpha + _beta) - logsumexp(temperature * (_alpha + _beta), axis=1, keepdims=True))
-                for _alpha, _beta in zip(alpha, beta)]
+            return alpha, norm
+        else:
+            def partial(loginit, logtrans, logobs, logact):
+                return self.forward.__wrapped__(self, loginit, logtrans,
+                                                logobs, logact, cython)
+            result = map(partial, loginit, logtrans, logobs, logact)
+            return list(map(list, zip(*result)))
 
-    @init_empty_logctl_to_zero
-    def joint_posterior(self, alpha, beta, loginit, logtrans,
-                        logobs, logctl=None, temperature=1.):
+    @init_empty_logact_to_zero
+    def backward(self, loginit, logtrans, logobs, logact=None, scale=None, cython=True):
+        if isinstance(loginit, np.ndarray)\
+                and isinstance(logtrans, np.ndarray)\
+                and isinstance(logobs, np.ndarray)\
+                and isinstance(logact, np.ndarray)\
+                and isinstance(scale, np.ndarray):
 
-        zeta = []
-        for _logobs, _logctl, _logtrans, _alpha, _beta in \
-                zip(logobs, logctl, logtrans, alpha, beta):
-            _zeta = temperature * (_alpha[:-1, :, None] + _beta[1:, None, :]) + _logtrans \
-                    + _logobs[1:, :][:, None, :] + _logctl[1:, :][:, None, :]
+            nb_steps = logobs.shape[0]
+            beta = np.zeros((nb_steps, self.nb_states))
 
-            zeta.append(np.exp(_zeta - logsumexp(_zeta, axis=(1, 2), keepdims=True)))
+            if cython:
+                backward_cy(to_c(loginit), to_c(logtrans),
+                            to_c(logobs), to_c(logact),
+                            to_c(beta), to_c(scale))
+            else:
+                for k in range(self.nb_states):
+                    beta[nb_steps - 1, k] = 0.0 - scale[nb_steps - 1]
 
-        return zeta
+                aux = np.zeros((self.nb_states, ))
+                for t in range(nb_steps - 2, -1, -1):
+                    for k in range(self.nb_states):
+                        for j in range(self.nb_states):
+                            aux[j] = logtrans[t, k, j] + beta[t + 1, j] \
+                                     + logobs[t + 1, j] + logact[t + 1, j]
+                        beta[t, k] = logsumexp(aux) - scale[t]
 
-    @ensure_args_are_viable_lists
+            return beta
+        else:
+            def partial(loginit, logtrans, logobs, logact, scale):
+                return self.backward.__wrapped__(self, loginit, logtrans,
+                                                 logobs, logact, scale, cython)
+            return list(map(partial, loginit, logtrans, logobs, logact, scale))
+
+    def posterior(self, alpha, beta, temperature=1.):
+        if isinstance(alpha, np.ndarray) and isinstance(beta, np.ndarray):
+            return np.exp(temperature * (alpha + beta)
+                          - logsumexp(temperature * (alpha + beta), axis=1, keepdims=True))
+        else:
+            def partial(alpha, beta):
+                return self.posterior(alpha, beta, temperature)
+            return list(map(self.posterior, alpha, beta))
+
+    @init_empty_logact_to_zero
+    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, logact=None, temperature=1.):
+        if isinstance(loginit, np.ndarray)\
+                and isinstance(logtrans, np.ndarray)\
+                and isinstance(logobs, np.ndarray)\
+                and isinstance(logact, np.ndarray)\
+                and isinstance(alpha, np.ndarray)\
+                and isinstance(beta, np.ndarray):
+
+            zeta = temperature * (alpha[:-1, :, None] + beta[1:, None, :]) + logtrans\
+                   + logobs[1:][:, None, :] + logact[1:][:, None, :]
+
+            return np.exp(zeta - logsumexp(zeta, axis=(1, 2), keepdims=True))
+        else:
+            def partial(alpha, beta, loginit, logtrans, logobs, logact):
+                return self.joint_posterior.__wrapped__(self, alpha, beta, loginit,
+                                                        logtrans, logobs, logact, temperature)
+            return list(map(partial, alpha, beta, loginit, logtrans, logobs, logact))
+
+    @ensure_args_are_viable
     def viterbi(self, obs, act=None):
-        loginit, logtrans, logobs = self.log_likelihoods(obs, act)[0:3]
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
 
-        delta = []
-        z = []
-        for _logobs, _logtrans in zip(logobs, logtrans):
-            T = _logobs.shape[0]
+            loginit, logtrans, logobs = self.log_likelihoods(obs, act)[0:3]
 
-            _delta = np.zeros((T, self.nb_states))
-            _args = np.zeros((T, self.nb_states), np.int64)
-            _z = np.zeros((T, ), np.int64)
+            nb_steps = logobs.shape[0]
 
-            for t in range(T - 2, -1, -1):
-                _aux = _logtrans[t, :] + _delta[t + 1, :] + _logobs[t + 1, :]
-                _delta[t, :] = np.max(_aux, axis=1)
-                _args[t + 1, :] = np.argmax(_aux, axis=1)
+            delta = np.zeros((nb_steps, self.nb_states))
+            args = np.zeros((nb_steps, self.nb_states), np.int64)
+            z = np.zeros((nb_steps, ), np.int64)
 
-            _z[0] = np.argmax(loginit + _delta[0, :] + _logobs[0, :], axis=0)
-            for t in range(1, T):
-                _z[t] = _args[t, _z[t - 1]]
+            for t in range(nb_steps - 2, -1, -1):
+                aux = logtrans[t] + delta[t + 1] + logobs[t + 1]
+                delta[t] = np.max(aux, axis=1)
+                args[t + 1] = np.argmax(aux, axis=1)
 
-            delta.append(_delta)
-            z.append(_z)
+            z[0] = np.argmax(loginit + delta[0] + logobs[0], axis=0)
+            for t in range(1, nb_steps):
+                z[t] = args[t, z[t - 1]]
 
-        return delta, z
+            return delta, z
+        else:
+            def inner(obs, act):
+                return self.viterbi.__wrapped__(self, obs, act)
+            result = map(inner, obs, act)
+            return list(map(list, zip(*result)))
 
     def estep(self, obs, act=None, temperature=1.):
         loglikhds = self.log_likelihoods(obs, act)
         alpha, norm = self.forward(*loglikhds)
         beta = self.backward(*loglikhds, scale=norm)
         gamma = self.posterior(alpha, beta, temperature=temperature)
-        zeta = self.joint_posterior(alpha, beta, *loglikhds, temperature=temperature)
+        zeta = self.joint_posterior(alpha, beta, *loglikhds,
+                                    temperature=temperature)
         return gamma, zeta
 
     def mstep(self, gamma, zeta,
@@ -195,7 +224,7 @@ class HiddenMarkovModel:
         self.transitions.mstep(zeta, obs, act, **trans_mstep_kwargs)
         self.observations.mstep(gamma, obs, act, **obs_mstep_kwargs)
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def em(self, train_obs, train_act=None,
            nb_iter=50, prec=1e-4, initialize=True,
            init_state_mstep_kwargs={},
@@ -236,7 +265,7 @@ class HiddenMarkovModel:
 
         return train_lls
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def annealed_em(self, train_obs, train_act=None,
                     nb_iter=50, nb_sub_iter=25,
                     prec=1e-4, discount=0.99,
@@ -277,7 +306,7 @@ class HiddenMarkovModel:
 
         return train_lls
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def earlystop_em(self, train_obs, train_act=None,
                      nb_iter=50, prec=1e-4, initialize=True,
                      init_state_mstep_kwargs={}, trans_mstep_kwargs={},
@@ -341,22 +370,29 @@ class HiddenMarkovModel:
 
         return train_lls
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def mean_observation(self, obs, act=None):
-        loglikhds = self.log_likelihoods(obs, act)
-        alpha, norm = self.forward(*loglikhds)
-        beta = self.backward(*loglikhds, scale=norm)
-        gamma = self.posterior(alpha, beta)
-        mean_obs = self.observations.smooth(gamma, obs, act)
-        return mean_obs
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            loglikhds = self.log_likelihoods(obs, act)
+            alpha, norm = self.forward(*loglikhds)
+            beta = self.backward(*loglikhds, scale=norm)
+            gamma = self.posterior(alpha, beta)
+            return self.observations.smooth(gamma, obs, act)
+        else:
+            def inner(obs, act):
+                return self.mean_observation.__wrapped__(self, obs, act)
+            return list(map(inner, obs, act))
 
-    @ensure_args_are_viable_lists
+    @ensure_args_are_viable
     def filter(self, obs, act=None):
-        logliklhds = self.log_likelihoods(obs, act)
-        alpha, _ = self.forward(*logliklhds)
-        belief = [np.exp(_alpha - logsumexp(_alpha, axis=1, keepdims=True))
-                  for _alpha in alpha]
-        return belief
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            logliklhds = self.log_likelihoods(obs, act)
+            alpha, _ = self.forward(*logliklhds)
+            return np.exp(alpha - logsumexp(alpha, axis=1, keepdims=True))
+        else:
+            def inner(obs, act):
+                return self.filter.__wrapped__(self, obs, act)
+            return list(map(inner, obs, act))
 
     def _sample(self, horizon, act=None, seed=None):
         npr.seed(seed)
@@ -366,10 +402,10 @@ class HiddenMarkovModel:
         state = np.zeros((horizon,), np.int64)
 
         state[0] = self.init_state.sample()
-        obs[0, :] = self.observations.sample(state[0])
+        obs[0] = self.observations.sample(state[0])
         for t in range(1, horizon):
-            state[t] = self.transitions.sample(state[t - 1], obs[t - 1, :], act[t - 1, :])
-            obs[t, :] = self.observations.sample(state[t], obs[t - 1, :], act[t - 1, :])
+            state[t] = self.transitions.sample(state[t - 1], obs[t - 1], act[t - 1])
+            obs[t] = self.observations.sample(state[t], obs[t - 1], act[t - 1])
 
         return state, obs
 
@@ -402,8 +438,9 @@ class HiddenMarkovModel:
 
         _, state = self.viterbi(obs, act)
         if true_state is not None:
-            self.permute(find_permutation(true_state, state[0],
-                                          K1=self.nb_states, K2=self.nb_states))
+            self.permute(find_permutation(true_state, state,
+                                          K1=self.nb_states,
+                                          K2=self.nb_states))
             _, state = self.viterbi(obs, act)
 
         nb_plots = self.obs_dim + self.act_dim + 1
@@ -419,21 +456,21 @@ class HiddenMarkovModel:
         if plot_mean:
             mean = self.mean_observation(obs, act)
             for k in range(self.obs_dim):
-                axes[k].plot(mean[0][:, k], '-k', lw=1)
+                axes[k].plot(mean[:, k], '-k', lw=1)
 
         if self.act_dim > 0:
             for k in range(self.act_dim):
                 axes[self.obs_dim + k].plot(act[:, k], '-r', lw=2)
 
         k = self.obs_dim + self.act_dim
-        axes[k].imshow(state[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+        axes[k].imshow(state[None], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
         axes[k].set_xlim(0, len(obs))
         axes[k].set_ylabel("$z_{\\mathrm{inf}}$")
         axes[k].set_yticks([])
 
         if true_state is not None:
             k = self.obs_dim + self.act_dim + 1
-            axes[k].imshow(true_state[None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+            axes[k].imshow(true_state[None], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
             axes[k].set_xlim(0, len(obs))
             axes[k].set_ylabel("$z_{\\mathrm{true}}$")
             axes[k].set_yticks([])

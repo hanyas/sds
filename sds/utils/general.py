@@ -10,6 +10,8 @@ from functools import wraps
 from functools import reduce
 
 from itertools import tee
+from itertools import islice
+import random
 
 
 def train_test_split(obs, act, nb_traj_splits=7, seed=0,
@@ -44,6 +46,12 @@ def train_test_split(obs, act, nb_traj_splits=7, seed=0,
         test_act.append([act[i] for i in test_list_idx])
 
     return train_obs, train_act, test_obs, test_act
+
+
+def batches(batchsize, datasize):
+    idx_all = random.sample(range(datasize), batchsize)
+    idx_iter = iter(idx_all)
+    yield from iter(lambda: list(islice(idx_iter, batchsize)), [])
 
 
 def one_hot(z, K):
@@ -184,9 +192,8 @@ def linear_regression(Xs, ys, weights=None,
         h += np.dot(X.T * weight, y)
 
     # Solve for the MAP estimate
-    # W = np.linalg.solve(J, h).T  # method 1
-    # W = np.dot(h.T, np.linalg.pinv(J))  # method 2
-    W = np.linalg.lstsq(J, h, rcond=None)[0].T  # method 3
+    # W = np.dot(h.T, np.linalg.pinv(J))  # method 1
+    W = np.linalg.lstsq(J, h, rcond=None)[0].T  # method 2
 
     if fit_intercept:
         W, b = W[:, :-1], W[:, -1]

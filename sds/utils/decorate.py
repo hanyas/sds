@@ -4,6 +4,54 @@ import numpy as np
 import torch
 
 
+def ensure_args_are_viable(f):
+    @wraps(f)
+    def wrapper(self, obs, act=None, **kwargs):
+        assert obs is not None
+
+        if isinstance(obs, list):
+            obs = [np.atleast_2d(_obs) for _obs in obs]
+            if act is None:
+                act = [np.zeros((_obs.shape[0], self.act_dim)) for _obs in obs]
+            else:
+                act = [np.atleast_2d(_act) for _act in act]
+        elif isinstance(obs, np.ndarray):
+            obs = np.atleast_2d(obs)
+            if act is None:
+                act = np.zeros((obs.shape[0], self.act_dim))
+            else:
+                act = np.atleast_2d(act)
+        else:
+            raise NotImplementedError
+
+        return f(self, obs, act, **kwargs)
+    return wrapper
+
+
+def init_empty_logact_to_zero(f):
+    @wraps(f)
+    def wrapper(self, *args, logact=None, **kwargs):
+        if f.__name__ == 'forward' or f.__name__ == 'backward':
+            if len(args) == 3:
+                logobs = args[-1]
+                logact = np.zeros_like(logobs) if isinstance(logobs, np.ndarray) \
+                         else [np.zeros_like(_logobs) for _logobs in logobs]
+                return f(self, *args, logact, **kwargs)
+            else:
+                return f(self, *args, **kwargs)
+        if f.__name__ == 'joint_posterior':
+            if len(args) == 5:
+                logobs = args[-1]
+                logact = np.zeros_like(logobs) if isinstance(logobs, np.ndarray) \
+                         else [np.zeros_like(_logobs) for _logobs in logobs]
+                return f(self, *args, logact, **kwargs)
+            else:
+                return f(self, *args, **kwargs)
+        else:
+            raise NotImplementedError
+    return wrapper
+
+
 def to_float(arr, device=torch.device('cpu')):
     if isinstance(arr, np.ndarray):
         return torch.from_numpy(arr).float().to(device)
@@ -20,43 +68,6 @@ def np_float(arr):
         return arr
     else:
         raise TypeError
-
-
-def ensure_args_are_viable_lists(f):
-    def wrapper(self, obs, act=None, **kwargs):
-        assert obs is not None
-        obs = [np.atleast_2d(obs)] if not isinstance(obs, (list, tuple)) else obs
-
-        if act is None:
-            act = []
-            for _obs in obs:
-                act.append(np.zeros((_obs.shape[0], self.act_dim)))
-
-        act = [np.atleast_2d(act)] if not isinstance(act, (list, tuple)) else act
-
-        return f(self, obs, act, **kwargs)
-    return wrapper
-
-
-def init_empty_logctl_to_zero(f):
-    def wrapper(self, *args,  logctl=None, **kwargs):
-        if f.__name__ == 'forward' or f.__name__ == 'backward':
-            if len(args) == 3:
-                logobs = args[-1]
-                logctl = [np.zeros_like(_logobs) for _logobs in logobs]
-                return f(self, *args, logctl, **kwargs)
-            else:
-                return f(self, *args, **kwargs)
-        if f.__name__ == 'joint_posterior':
-            if len(args) == 5:
-                logobs = args[-1]
-                logctl = [np.zeros_like(_logobs) for _logobs in logobs]
-                return f(self, *args, logctl, **kwargs)
-            else:
-                return f(self, *args, **kwargs)
-        else:
-            raise NotImplementedError
-    return wrapper
 
 
 def ensure_args_torch_floats(f):
