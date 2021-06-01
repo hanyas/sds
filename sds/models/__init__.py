@@ -3,3 +3,4 @@ from .arhmm import AutoRegressiveHiddenMarkovModel
 from .rarhmm import RecurrentAutoRegressiveHiddenMarkovModel
 from .clrarhmm import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
 from .ensemble import EnsembleHiddenMarkovModel
+from .ensemble import EnsembleClosedLoopHiddenMarkovModel

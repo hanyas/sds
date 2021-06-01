@@ -229,7 +229,8 @@ class ParametricAugmentationRegressor(nn.Module):
 
     def elbo(self, w, xu, batch_size, set_size):
         logtrans = self.forward(xu)
-        return torch.sum(torch.mean(torch.sum(w * logtrans, dim=2) + self.log_prior(logtrans), dim=0))
+        return torch.sum(torch.mean(torch.sum(w * logtrans, dim=2)
+                                    + self.log_prior(logtrans), dim=0))
 
     @ensure_args_torch_floats
     def fit(self, w, xu, nb_iter=100, batch_size=None,
