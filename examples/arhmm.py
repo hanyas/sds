@@ -9,10 +9,9 @@ from sds.utils.general import random_rotation
 
 import matplotlib.pyplot as plt
 
-# npr.seed(1337)
+npr.seed(1337)
 
-true_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=5, obs_dim=2,
-                                             algo_type='ML')
+true_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=5, obs_dim=2)
 
 obs_dim = true_arhmm.obs_dim
 act_dim = true_arhmm.act_dim

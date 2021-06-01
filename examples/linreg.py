@@ -55,7 +55,7 @@ for _ in range(100):
     parameter_posterior = deepcopy(parameter_prior)
 
     beta = likelihood_precision_posterior.mean()
-    likelihood_known_precision = IndependentLinearGaussianWithKnownPrecision(input_dim=n_features,
+    likelihood_known_precision = IndependentLinearGaussianWithKnownPrecision(column_dim=n_features,
                                                                              lmbda=beta * np.ones((1, )),
                                                                              affine=False)
 
@@ -64,7 +64,7 @@ for _ in range(100):
 
     # likelihood precision posterior
     param = parameter_posterior.mean()
-    likelihood_known_mean = IndependentLinearGaussianWithKnownMean(input_dim=n_features,
+    likelihood_known_mean = IndependentLinearGaussianWithKnownMean(column_dim=n_features,
                                                                    A=param, affine=False)
 
     stats = likelihood_known_mean.statistics(X, y)
@@ -92,8 +92,8 @@ prior = MatrixNormalGamma(input_dim=n_features,
                           M=M, K=K, alphas=alphas, betas=betas)
 
 posterior = deepcopy(prior)
-likelihood = LinearGaussianWithDiagonalPrecision(input_dim=n_features,
-                                                 output_dim=1,
+likelihood = LinearGaussianWithDiagonalPrecision(column_dim=n_features,
+                                                 row_dim=1,
                                                  affine=False)
 
 stats = likelihood.statistics(X, np.atleast_2d(y).T)

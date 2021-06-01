@@ -33,14 +33,12 @@ true_ll = true_hmm.log_normalizer(x)
 
 npr.seed(1337)
 ann_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
-ann_lls = ann_hmm.annealed_em(x, nb_iter=500,
-                              nb_sub_iter=25,
-                              prec=0., discount=0.985)
+ann_lls = ann_hmm.annealed_em(x, nb_iter=500, nb_sub_iter=25,
+                              prec=0., discount=0.95)
 
 npr.seed(1337)
 std_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
-std_lls = std_hmm.em(x, nb_iter=500, prec=0.,
-                     initialize=True)
+std_lls = std_hmm.em(x, nb_iter=500, prec=0., initialize=True)
 
 print("true_ll=", true_ll, "std_ll=", std_lls[-1], "ann_ll=", ann_lls[-1])
 
