@@ -50,27 +50,27 @@ register(
 #     )
 # except:
 #     pass
-#
-# try:
-#     register(
-#         id='HybridPendulum-ID-v0',
-#         entry_point='sds.envs:HybridPendulum',
-#         max_episode_steps=1000,
-#         kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
-#                                           + '/envs/hybrid/models/neural_rarhmm_pendulum_polar.pkl', 'rb'),
-#                                      map_location='cpu')}
-#     )
-# except:
-#     pass
-#
-# try:
-#     register(
-#         id='HybridPendulum-ID-v1',
-#         entry_point='sds.envs:HybridPendulumWithCartesianObservation',
-#         max_episode_steps=1000,
-#         kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
-#                                           + '/envs/hybrid/models/neural_rarhmm_pendulum_cart.pkl', 'rb'),
-#                                      map_location='cpu')}
-#     )
-# except:
-#     pass
+
+try:
+    register(
+        id='HybridPendulum-ID-v0',
+        entry_point='sds.envs:HybridPendulum',
+        max_episode_steps=1000,
+        kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
+                                          + '/envs/hybrid/models/rarhmm_pendulum_polar.pkl', 'rb'),
+                                     map_location='cpu')}
+    )
+except :
+    pass
+
+try:
+    register(
+        id='HybridPendulum-ID-v1',
+        entry_point='sds.envs:HybridPendulumWithCartesianObservation',
+        max_episode_steps=1000,
+        kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
+                                          + '/envs/hybrid/models/special_rarhmm_pendulum_cart.pkl', 'rb'),
+                                     map_location='cpu')}
+    )
+except:
+    pass

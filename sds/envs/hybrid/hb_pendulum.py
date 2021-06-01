@@ -5,11 +5,24 @@ from gym.utils import seeding
 import numpy as np
 
 
-def end2ang(x):
-    _state = np.zeros((2, ))
-    _state[1] = x[2]
-    _state[0] = np.arctan2(x[1], x[0])
-    return _state
+def cart2ang(x):
+    if x.ndim == 1:
+        state = np.zeros((2,))
+        state[0] = np.arctan2(x[1], x[0])
+        state[1] = x[2]
+        return state
+    else:
+        return np.vstack(list(map(cart2ang, list(x))))
+
+
+def ang2cart(x):
+    if x.ndim == 1:
+        state = np.zeros((3,))
+        state[0] = np.cos(x[0])
+        state[1] = np.sin(x[0])
+        state[2] = x[1]
+        return state
+    return np.vstack(list(map(ang2cart, list(x))))
 
 
 class HybridPendulum(gym.Env):
@@ -20,23 +33,30 @@ class HybridPendulum(gym.Env):
         self.obs_dim = 2
 
         # g = [th, thd]
-        self._goal = np.array([0., 0.])
-        self._goal_weight = - np.array([1.e0, 1.e-1])
+        self.g = np.array([0., 0.])
+        self.gw = - np.array([1e0, 1e-1])
 
         # x = [th, thd]
         self._state_max = np.array([np.inf, 8.0])
 
-        # o = [cos, sin, thd]
-        self._obs_max = np.array([np.inf, 8.0])
-        self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
+        # x = [th, thd]
+        self.xmax = np.array([np.inf, np.inf])
+        self.state_space = spaces.Box(low=-self.xmax,
+                                      high=self.xmax,
+                                      dtype=np.float64)
 
-        self._act_weight = - np.array([1.e-3])
-        self._act_max = 2.5
-        self.action_space = spaces.Box(low=-self._act_max,
-                                       high=self._act_max, shape=(1,))
+        # y = [th, thd]
+        self.ymax = np.array([np.inf, np.inf])
+        self.observation_space = spaces.Box(low=-self.ymax,
+                                            high=self.ymax,
+                                            dtype=np.float64)
 
-        rarhmm.learn_ctl = False
+        self.uw = - 1e-3 * np.ones((self.act_dim, ))
+        self.umax = 2.5 * np.ones((self.act_dim, ))
+        self.action_space = spaces.Box(low=-self.umax,
+                                       high=self.umax, shape=(1,),
+                                       dtype=np.float64)
+
         self.rarhmm = rarhmm
 
         self.obs = None
@@ -50,75 +70,39 @@ class HybridPendulum(gym.Env):
 
     @property
     def xlim(self):
-        return self._state_max
+        return self.xmax
 
     @property
     def ulim(self):
-        return self._act_max
-
-    @property
-    def goal(self):
-        return self._goal
+        return self.umax
 
     def dynamics(self, xhist, uhist):
-        xhist = np.atleast_2d(xhist)
-        uhist = np.atleast_2d(uhist)
-
-        # filter hidden state
-        b = self.rarhmm.filter(xhist, uhist)[0][-1, ...]
-
-        # evolve dynamics
-        x, u = xhist[-1, :], uhist[-1, :]
-        zn, xn = self.rarhmm.step(x, u, b, stoch=False, mix=False)
-
-        return zn, xn
+        xhist, uhist = np.atleast_2d(xhist, uhist)
+        _, xn = self.rarhmm.step(xhist, uhist, stoch=False, average=True)
+        return xn
 
     def rewrad(self, x, u):
-        _x = end2ang(x)
-        return (_x - self._goal).T @ np.diag(self._goal_weight) @ (_x - self._goal)\
-               + u.T @ np.diag(self._act_weight) @ u
+        _x = cart2ang(x)
+        return (_x - self.g).T @ np.diag(self.gw) @ (_x - self.g)\
+               + u.T @ np.diag(self.uw) @ u
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
     def step(self, act):
-        # apply action constraints
-        _act = np.clip(act, -self._act_max, self._act_max)
-        self.hist_act = np.vstack((self.hist_act, _act))
-
-        # compute reward
-        rwrd = self.rewrad(self.obs, _act)
-
-        # evolve dynamics
-        _, self.obs = self.dynamics(self.hist_obs, self.hist_act)
+        self.hist_act = np.vstack((self.hist_act, act))
+        self.obs = self.dynamics(self.hist_obs, self.hist_act)
         self.hist_obs = np.vstack((self.hist_obs, self.obs))
-
-        return self.obs, rwrd, False, {}
+        return self.obs, None, False, {}
 
     def reset(self):
-        self.hist_obs = np.empty((0, self.obs_dim))
-        self.hist_act = np.empty((0, self.act_dim))
-
-        _state = self.rarhmm.init_state.sample()
-        self.obs = self.rarhmm.init_observation.sample(z=_state)
-
-        self.hist_obs = np.vstack((self.hist_obs, self.obs))
-
-        return self.obs
+        pass
 
     # following function for plotting
-    def fake_step(self, value, act):
-        # switch to observation space
-        _obs = value
-
-        # apply action constraints
-        _act = np.clip(act, -self._act_max, self._act_max)
-
-        # evolve dynamics
-        _nxt_state, _nxt_obs = self.dynamics(_obs, _act)
-
-        return _nxt_state, _nxt_obs
+    def fake_step(self, obs, act):
+        nxt_obs = self.dynamics(obs, act)
+        return nxt_obs
 
 
 class HybridPendulumWithCartesianObservation(HybridPendulum):
@@ -127,26 +111,14 @@ class HybridPendulumWithCartesianObservation(HybridPendulum):
         super(HybridPendulumWithCartesianObservation, self).__init__(rarhmm)
         self.obs_dim = 3
 
-        # o = [cos, sin, thd]
-        self._obs_max = np.array([1., 1., 8.0])
-        self.observation_space = spaces.Box(low=-self._obs_max,
-                                            high=self._obs_max)
-
-    def observe(self, x):
-        return np.array([np.cos(x[0]),
-                         np.sin(x[0]),
-                         x[1]])
+        # y = [cos, sin, thd]
+        self.ymax = np.array([1., 1., np.inf])
+        self.observation_space = spaces.Box(low=-self.ymax,
+                                            high=self.ymax,
+                                            dtype=np.float64)
 
     # following function for plotting
-    def fake_step(self, value, act):
-        # switch to observation space
-        _obs = self.observe(value)
-
-        # apply action constraints
-        _act = np.clip(act, -self._act_max, self._act_max)
-
-        # evolve dynamics
-        _nxt_state, _nxt_obs = self.dynamics(_obs, _act)
-
-        return _nxt_state, end2ang(_nxt_obs)
-
+    def fake_step(self, obs, act):
+        query = ang2cart(obs)
+        nxt_obs = self.dynamics(query, act)
+        return cart2ang(nxt_obs)

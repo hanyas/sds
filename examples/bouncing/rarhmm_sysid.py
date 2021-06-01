@@ -78,7 +78,7 @@ if __name__ == "__main__":
                     'hidden_sizes': (16,), 'activation': 'splus'}
 
     # mstep kwargs
-    init_mstep_kwargs, obs_mstep_kwargs = {}, {}
+    init_state_mstep_kwargs, init_obs_mstep_kwargs, obs_mstep_kwargs = {}, {}, {}
     trans_mstep_kwargs = {'nb_iter': 25, 'batch_size': 256,
                           'lr': 1e-3, 'l2': 1e-32}
 
@@ -94,7 +94,8 @@ if __name__ == "__main__":
     rarhmm.em(obs, act,
               nb_iter=100, prec=1e-4,
               initialize=True,
-              init_mstep_kwargs=init_mstep_kwargs,
+              init_state_mstep_kwargs=init_state_mstep_kwargs,
+              init_obs_mstep_kwargs=init_obs_mstep_kwargs,
               trans_mstep_kwargs=trans_mstep_kwargs,
               obs_mstep_kwargs=obs_mstep_kwargs)
 
