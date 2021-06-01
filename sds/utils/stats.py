@@ -27,6 +27,31 @@ def batch_mahalanobis(L, x):
     return np.sum(np.sum(x[..., None] * L_inv, axis=-2)**2, axis=-1)
 
 
+def multinomial_rvs(n, p):
+    """
+    Sample from the multinomial distribution with multiple p vectors.
+
+    * n must be a scalar.
+    * p must an n-dimensional numpy array, n >= 1.  The last axis of p
+      holds the sequence of probabilities for a multinomial distribution.
+
+    The return value has the same shape as p.
+    """
+    count = np.full(p.shape[:-1], n)
+    out = np.zeros(p.shape, dtype=int)
+    ps = p.cumsum(axis=-1)
+    # Conditional probabilities
+    with np.errstate(divide='ignore', invalid='ignore'):
+        condp = p / ps
+    condp[np.isnan(condp)] = 0.0
+    for i in range(p.shape[-1]-1, 0, -1):
+        binsample = np.random.binomial(count, condp[..., i])
+        out[..., i] = binsample
+        count -= binsample
+    out[..., 0] = count
+    return out
+
+
 def _multivariate_normal_logpdf(data, mus, Sigmas, Ls=None):
     """
     Compute the log probability density of a multivariate Gaussian distribution.
