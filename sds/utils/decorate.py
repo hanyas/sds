@@ -30,21 +30,21 @@ def ensure_args_are_viable(f):
 
 def init_empty_logact_to_zero(f):
     @wraps(f)
-    def wrapper(self, *args, logact=None, **kwargs):
+    def wrapper(self, *args, **kwargs):
         if f.__name__ == 'forward' or f.__name__ == 'backward':
             if len(args) == 3:
-                logobs = args[-1]
+                loginit, logtrans, logobs = args
                 logact = np.zeros_like(logobs) if isinstance(logobs, np.ndarray) \
                          else [np.zeros_like(_logobs) for _logobs in logobs]
-                return f(self, *args, logact, **kwargs)
+                return f(self, loginit, logtrans, logobs, logact, **kwargs)
             else:
                 return f(self, *args, **kwargs)
         if f.__name__ == 'joint_posterior':
             if len(args) == 5:
-                logobs = args[-1]
+                alpha, beta, loginit, logtrans, logobs = args
                 logact = np.zeros_like(logobs) if isinstance(logobs, np.ndarray) \
                          else [np.zeros_like(_logobs) for _logobs in logobs]
-                return f(self, *args, logact, **kwargs)
+                return f(self, alpha, beta, loginit, logtrans, logobs, logact, **kwargs)
             else:
                 return f(self, *args, **kwargs)
         else:

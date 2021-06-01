@@ -301,9 +301,6 @@ class BayesianInitCategoricalState:
         self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
 
-        # self.prior.nat_param = (1. - 0.001) * self.prior.nat_param\
-        #                        + 0.001 * self.posterior.nat_param
-
 
 class _BayesianInitGaussianObservationBase:
 
@@ -330,18 +327,23 @@ class _BayesianInitGaussianObservationBase:
     def permute(self, perm):
         raise NotImplementedError
 
-    def initialize(self, x):
+    def initialize(self, x, **kwargs):
+        kmeans = kwargs.get('kmeans', True)
+
         x0 = [_x[:self.nb_lags] for _x in x]
         ts = [_x0.shape[0] for _x0 in x0]
-        zs = [one_hot(npr.choice(self.nb_states, size=t),
-                      self.nb_states) for t in ts]
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.vstack(x0))
+            zs = np.split(km.labels_, np.cumsum(ts)[:-1])
+        else:
+            zs = [npr.choice(self.nb_states, size=t) for t in ts]
 
-        stats = self.likelihood.weighted_statistics(x0, zs)
-
-        from copy import deepcopy
-        posterior = deepcopy(self.posterior)
-        posterior.nat_param = self.prior.nat_param + stats
-        self.likelihood.params = posterior.rvs()
+        z0 = [one_hot(_z[:self.nb_lags], self.nb_states) for _z in zs]
+        stats = self.likelihood.weighted_statistics(x0, z0)
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.rvs()
 
     def mean(self, z):
         return self.likelihood.dists[z].mean()
@@ -363,8 +365,20 @@ class _BayesianInitGaussianObservationBase:
             x0.append(_x[:self.nb_lags])
             p0.append(_p[:self.nb_lags])
 
-        stats = self.likelihood.weighted_statistics(x0, p0)
-        self.posterior.nat_param = self.prior.nat_param + stats
+        method = kwargs.get('method', 'direct')
+        if method == 'direct':
+            stats = self.likelihood.weighted_statistics(x0, p0)
+            self.posterior.nat_param = self.prior.nat_param + stats
+        elif method == 'sgd':
+            lr = kwargs.get('lr', 1e-2)
+            nb_iter = kwargs.get('nb_iter', 1)
+
+            x0, p0 = list(map(np.vstack, (x0, p0)))
+            for _ in range(nb_iter):
+                stats = self.likelihood.weighted_statistics(x0, p0)
+                self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
+                                           + lr * (self.prior.nat_param + stats)
+
         self.likelihood.params = self.posterior.mode()
 
     def smooth(self, p, x):
@@ -464,11 +478,7 @@ class BayesianInitGaussianControl:
             self.likelihood = likelihood
         else:
             As, lmbdas = self.prior.rvs()
-            self.likelihood = StackedLinearGaussiansWithPrecision(size=self.nb_states,
-                                                                  input_dim=self.feat_dim,
-                                                                  output_dim=self.act_dim,
-                                                                  As=As, lmbdas=lmbdas,
-                                                                  affine=True)
+            self.likelihood = StackedLinearGaussiansWithPrecision(size=self.nb_states, column_dim=self.feat_dim, row_dim=self.act_dim, As=As, lmbdas=lmbdas, affine=True)
 
     @property
     def params(self):
