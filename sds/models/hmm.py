@@ -371,7 +371,7 @@ class HiddenMarkovModel:
         return train_lls
 
     @ensure_args_are_viable
-    def mean_observation(self, obs, act=None):
+    def smoothed_observation(self, obs, act=None):
         if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
             loglikhds = self.log_likelihoods(obs, act)
             alpha, norm = self.forward(*loglikhds)
@@ -380,18 +380,18 @@ class HiddenMarkovModel:
             return self.observations.smooth(gamma, obs, act)
         else:
             def inner(obs, act):
-                return self.mean_observation.__wrapped__(self, obs, act)
+                return self.smoothed_observation.__wrapped__(self, obs, act)
             return list(map(inner, obs, act))
 
     @ensure_args_are_viable
-    def filter(self, obs, act=None):
+    def filtered_state(self, obs, act=None):
         if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
             logliklhds = self.log_likelihoods(obs, act)
             alpha, _ = self.forward(*logliklhds)
             return np.exp(alpha - logsumexp(alpha, axis=1, keepdims=True))
         else:
             def inner(obs, act):
-                return self.filter.__wrapped__(self, obs, act)
+                return self.filtered_state.__wrapped__(self, obs, act)
             return list(map(inner, obs, act))
 
     def _sample(self, horizon, act=None, seed=None):
@@ -454,7 +454,7 @@ class HiddenMarkovModel:
             axes[k].plot(obs[:, k], '-b', lw=2)
 
         if plot_mean:
-            mean = self.mean_observation(obs, act)
+            mean = self.smoothed_observation(obs, act)
             for k in range(self.obs_dim):
                 axes[k].plot(mean[:, k], '-k', lw=1)
 

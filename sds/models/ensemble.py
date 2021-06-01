@@ -234,7 +234,8 @@ class EnsembleClosedLoopHiddenMarkovModel:
                                              init_state_mstep_kwargs=init_state_mstep_kwargs,
                                              init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                                              trans_mstep_kwargs=trans_mstep_kwargs,
-                                             obs_mstep_kwargs=obs_mstep_kwargs)
+                                             obs_mstep_kwargs=obs_mstep_kwargs,
+                                             ctl_mstep_kwargs=ctl_mstep_kwargs)
 
         nb_train = [np.vstack(x).shape[0] for x in train_obs]
         nb_total = np.vstack(obs).shape[0]

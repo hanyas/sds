@@ -23,10 +23,9 @@ class RecurrentAutoRegressiveHiddenMarkovModel(AutoRegressiveHiddenMarkovModel):
                                                                        init_obs_kwargs=init_obs_kwargs,
                                                                        obs_kwargs=obs_kwargs)
 
-        self.algo_type = algo_type
-        self.init_obs_type = init_obs_type
         self.trans_type = trans_type
-        self.obs_type = obs_type
+        self.trans_prior = trans_prior
+        self.trans_kwargs = trans_kwargs
 
         if self.trans_type == 'poly-only':
             self.transitions = SharedPolyOnlyTransition(self.nb_states, self.obs_dim, self.act_dim,

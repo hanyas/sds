@@ -30,7 +30,22 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
         super(AutoRegressiveHiddenMarkovModel, self).__init__(nb_states, obs_dim, act_dim,
                                                               init_state_kwargs=init_state_kwargs,
                                                               trans_kwargs=trans_kwargs)
+
         self.obs_lag = obs_lag
+
+        self.algo_type = algo_type
+        self.init_obs_type = init_obs_type
+        self.obs_type = obs_type
+
+        self.init_state_prior = init_state_prior
+        self.init_obs_prior = init_obs_prior
+        self.trans_prior = trans_prior
+        self.obs_prior = obs_prior
+
+        self.init_state_kwargs = init_state_kwargs
+        self.init_obs_kwargs = init_obs_kwargs
+        self.trans_kwargs = trans_kwargs
+        self.obs_kwargs = obs_kwargs
 
         if algo_type == 'ML':
             self.init_observation = InitGaussianObservation(self.nb_states, self.obs_dim,
@@ -118,7 +133,7 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
         self.init_observation.mstep(gamma, obs, **init_obs_mstep_kwargs)
 
     @ensure_args_are_viable
-    def mean_observation(self, obs, act=None):
+    def smoothed_observation(self, obs, act=None):
         if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
             loglikhds = self.log_likelihoods(obs, act)
             alpha, norm = self.forward(*loglikhds)
@@ -130,12 +145,12 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
             return np.vstack((iobs, arobs))
         else:
             def inner(obs, act):
-                return self.mean_observation.__wrapped__(self, obs, act)
+                return self.smoothed_observation.__wrapped__(self, obs, act)
             return list(map(inner, obs, act))
 
     def step(self, hist_obs, hist_act, stoch=False, average=False):
         # take last belief state from filter
-        belief = self.filter(hist_obs, hist_act)[-1]
+        belief = self.filtered_state(hist_obs, hist_act)[-1]
 
         nxt_state = np.zeros((1, ), dtype=np.int64)
         nxt_obs = np.zeros((self.obs_dim, ))
@@ -219,7 +234,7 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
         nxt_obs = np.zeros((self.obs_lag + horizon, self.obs_dim))
         nxt_state = np.zeros((self.obs_lag + horizon, ), np.int64)
 
-        alpha = self.filter(hist_obs, hist_act)
+        alpha = self.filtered_state(hist_obs, hist_act)
 
         if average:
             # empty discrete state when averaging
