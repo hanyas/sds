@@ -23,7 +23,7 @@ class Pendulum(gym.Env):
 
         # g = [th, thd]
         self.g = np.array([0., 0.])
-        self.gw = - np.array([1e1, 1e-1])
+        self.gw = - np.array([1e0, 1e-1])
 
         # x = [th, thd]
         self.xmax = np.array([np.inf, np.inf])
@@ -61,7 +61,7 @@ class Pendulum(gym.Env):
     def dynamics(self, x, u):
         _u = np.clip(u, -self.ulim, self.ulim)
 
-        g, m, l, k = 9.81, 1., 1., 0.025
+        g, m, l, k = 9.81, 1., 1., 1e-3
 
         def f(x, u):
             th, dth = x
@@ -116,7 +116,7 @@ class Pendulum(gym.Env):
     # for plotting
     def fake_step(self, x, u):
         xn = self.dynamics(x, u)
-        return self.observe(xn)
+        return xn
 
 
 class PendulumWithCartesianObservation(Pendulum):
@@ -126,7 +126,7 @@ class PendulumWithCartesianObservation(Pendulum):
         self.obs_dim = 3
         self.sigma = 1e-8
 
-        # x = [cos, sin, thd]
+        # y = [cos, sin, thd]
         self.ymax = np.array([1., 1., np.inf])
         self.observation_space = spaces.Box(low=-self.ymax,
                                             high=self.ymax,
