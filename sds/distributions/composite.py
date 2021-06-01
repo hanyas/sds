@@ -573,16 +573,16 @@ class TiedNormalGamma:
 
 class MatrixNormalWishart:
 
-    def __init__(self, input_dim, output_dim,
+    def __init__(self, column_dim, row_dim,
                  M=None, K=None, psi=None, nu=None):
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
-        self.matnorm = MatrixNormalWithPrecision(input_dim,
-                                                 output_dim,
+        self.matnorm = MatrixNormalWithPrecision(column_dim,
+                                                 row_dim,
                                                  M=M, K=K)
-        self.wishart = Wishart(dim=output_dim, psi=psi, nu=nu)
+        self.wishart = Wishart(dim=row_dim, psi=psi, nu=nu)
 
     @property
     def dcol(self):
@@ -657,12 +657,12 @@ class MatrixNormalWishart:
     def log_partition(self):
         _, K, psi, nu = self.params
         return - 0.5 * self.drow * np.linalg.slogdet(K)[1]\
-               + Wishart(dim=self.output_dim, psi=psi, nu=nu).log_partition()
+               + Wishart(dim=self.row_dim, psi=psi, nu=nu).log_partition()
 
     def log_likelihood(self, x):
         A, lmbda = x
-        return MatrixNormalWithPrecision(input_dim=self.input_dim,
-                                         output_dim=self.output_dim,
+        return MatrixNormalWithPrecision(column_dim=self.column_dim,
+                                         row_dim=self.row_dim,
                                          M=self.matnorm.M, V=lmbda,
                                          K=self.matnorm.K).log_likelihood(A)\
                + self.wishart.log_likelihood(lmbda)
@@ -670,20 +670,20 @@ class MatrixNormalWishart:
 
 class StackedMatrixNormalWishart:
 
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  Ms=None, Ks=None, psis=None, nus=None):
 
         self.size = size
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         Ms = [None] * self.size if Ms is None else Ms
         Ks = [None] * self.size if Ks is None else Ks
         psis = [None] * self.size if psis is None else psis
         nus = [None] * self.size if nus is None else nus
 
-        self.dists = [MatrixNormalWishart(input_dim, output_dim,
+        self.dists = [MatrixNormalWishart(column_dim, row_dim,
                                           Ms[k], Ks[k], psis[k], nus[k])
                       for k in range(self.size)]
 
@@ -779,19 +779,19 @@ class StackedMatrixNormalWishart:
 
 class TiedMatrixNormalWishart:
 
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  Ms=None, Ks=None, psi=None, nu=None):
 
         self.size = size
-        self.input_dim = input_dim
-        self.outpt_dim = output_dim
+        self.column_dim = column_dim
+        self.outpt_dim = row_dim
 
         self.matnorms = StackedMatrixNormalWithPrecision(size=size,
-                                                         input_dim=input_dim,
-                                                         output_dim=output_dim,
+                                                         column_dim=column_dim,
+                                                         row_dim=row_dim,
                                                          Ms=Ms, Ks=Ks)
 
-        self.wishart = Wishart(dim=output_dim, psi=psi, nu=nu)
+        self.wishart = Wishart(dim=row_dim, psi=psi, nu=nu)
 
     @property
     def params(self):
@@ -864,16 +864,16 @@ class TiedMatrixNormalWishart:
 
 class MatrixNormalGamma:
 
-    def __init__(self, input_dim, output_dim,
+    def __init__(self, column_dim, row_dim,
                  M=None, K=None, alphas=None, betas=None):
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
-        self.matnorm = MatrixNormalWithDiagonalPrecision(input_dim,
-                                                         output_dim,
+        self.matnorm = MatrixNormalWithDiagonalPrecision(column_dim,
+                                                         row_dim,
                                                          M=M, K=K)
-        self.gamma = Gamma(dim=output_dim, alphas=alphas, betas=betas)
+        self.gamma = Gamma(dim=row_dim, alphas=alphas, betas=betas)
 
     @property
     def dcol(self):
@@ -955,21 +955,21 @@ class MatrixNormalGamma:
 class StackedMatrixNormalGamma:
 
     def __init__(self, size,
-                 input_dim, output_dim,
+                 column_dim, row_dim,
                  Ms=None, Ks=None,
                  alphas=None, betas=None):
 
         self.size = size
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         Ms = [None] * self.size if Ms is None else Ms
         Ks = [None] * self.size if Ks is None else Ks
         alphas = [None] * self.size if alphas is None else alphas
         betas = [None] * self.size if betas is None else betas
 
-        self.dists = [MatrixNormalGamma(input_dim, output_dim,
+        self.dists = [MatrixNormalGamma(column_dim, row_dim,
                                         Ms[k], Ks[k], alphas[k], betas[k])
                       for k in range(self.size)]
 
@@ -1065,19 +1065,19 @@ class StackedMatrixNormalGamma:
 
 class TiedMatrixNormalGamma:
 
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  Ms=None, Ks=None, alphas=None, betas=None):
 
         self.size = size
-        self.input_dim = input_dim
-        self.outpt_dim = output_dim
+        self.column_dim = column_dim
+        self.outpt_dim = row_dim
 
         self.matnorms = StackedMatrixNormalWithDiagonalPrecision(size=size,
-                                                                 input_dim=input_dim,
-                                                                 output_dim=output_dim,
+                                                                 column_dim=column_dim,
+                                                                 row_dim=row_dim,
                                                                  Ms=Ms, Ks=Ks)
 
-        self.gamma = Gamma(dim=output_dim, alphas=alphas, betas=betas)
+        self.gamma = Gamma(dim=row_dim, alphas=alphas, betas=betas)
 
     @property
     def params(self):

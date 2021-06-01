@@ -12,11 +12,11 @@ from sds.utils.linalg import symmetrize
 
 class LinearGaussianWithPrecision:
 
-    def __init__(self, input_dim, output_dim,
+    def __init__(self, column_dim, row_dim,
                  A=None, lmbda=None, affine=True):
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.A = A
         self.affine = affine
@@ -35,20 +35,17 @@ class LinearGaussianWithPrecision:
 
     @property
     def nb_params(self):
-        return self.dcol * self.drow \
-               + self.drow * (self.drow + 1) / 2
+        return self.column_dim * self.row_dim \
+               + self.row_dim * (self.row_dim + 1) / 2
 
     @property
-    def dcol(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.input_dim - 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
-    def drow(self):
-        return self.output_dim
+    def output_dim(self):
+        return self.row_dim
 
     @property
     def lmbda(self):
@@ -92,11 +89,11 @@ class LinearGaussianWithPrecision:
         return self.predict(x)
 
     def rvs(self, x):
-        return self.mean(x) + npr.normal(size=self.drow).dot(self.lmbda_chol_inv.T)
+        return self.mean(x) + npr.normal(size=self.output_dim).dot(self.lmbda_chol_inv.T)
 
     @property
     def base(self):
-        return np.power(2. * np.pi, - self.drow / 2.)
+        return np.power(2. * np.pi, - self.output_dim / 2.)
 
     def log_base(self):
         return np.log(self.base)
@@ -153,8 +150,8 @@ class LinearGaussianWithPrecision:
             bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                                   np.isnan(np.atleast_2d(y)).any(axis=1))
 
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
+            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
             loglik = np.einsum('nd,dl,nl->n', mu, self.lmbda, y, optimize=True) \
@@ -172,10 +169,10 @@ class LinearGaussianWithPrecision:
             else self.weighted_statistics(x, y, weights)
 
         self.A = np.linalg.solve(xxT, yxT.T).T
-        _sigma = (yyT - self.A.dot(yxT.T)) / n
+        sigma = (yyT - self.A.dot(yxT.T)) / n
 
         # numerical stabilization
-        _sigma = symmetrize(_sigma) + 1e-16 * np.eye(self.drow)
+        _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
         assert np.allclose(_sigma, _sigma.T)
         assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
 
@@ -183,18 +180,18 @@ class LinearGaussianWithPrecision:
 
 
 class StackedLinearGaussiansWithPrecision:
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  As=None, lmbdas=None, affine=True):
 
         self.size = size
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.affine = affine
 
         As = [None] * self.size if As is None else As
         lmbdas = [None] * self.size if lmbdas is None else lmbdas
-        self.dists = [LinearGaussianWithPrecision(input_dim, output_dim,
+        self.dists = [LinearGaussianWithPrecision(column_dim, row_dim,
                                                   As[k], lmbdas[k], affine=affine)
                       for k in range(self.size)]
 
@@ -207,17 +204,13 @@ class StackedLinearGaussiansWithPrecision:
         self.As, self.lmbdas = values
 
     @property
-    def dcol(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.input_dim - 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
-    def drow(self):
-        # output dimension
-        return self.output_dim
+    def output_dim(self):
+        return self.row_dim
 
     @property
     def As(self):
@@ -329,8 +322,8 @@ class StackedLinearGaussiansWithPrecision:
             bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                                   np.isnan(np.atleast_2d(y)).any(axis=1))
 
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
+            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
             loglik = np.einsum('nkd,kdl,nl->nk', mu, self.lmbdas, y, optimize=True)\
@@ -347,30 +340,30 @@ class StackedLinearGaussiansWithPrecision:
         yxTk, xxTk, yyTk, nk = self.statistics(x, y) if weights is None\
             else self.weighted_statistics(x, y, weights)
 
-        As = np.zeros((self.size, self.output_dim, self.input_dim))
+        As = np.zeros((self.size, self.column_dim, self.row_dim))
         lmbdas = np.zeros((self.size, self.output_dim, self.output_dim))
         for k in range(self.size):
             As[k] = np.linalg.solve(xxTk[k], yxTk[k].T).T
             sigma = (yyTk[k] - As[k].dot(yxTk[k].T)) / nk[k]
 
             # numerical stabilization
-            _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.drow)
-            assert np.allclose(sigma, sigma.T)
-            assert np.all(np.linalg.eigvalsh(sigma) > 0.)
+            _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
+            assert np.allclose(_sigma, _sigma.T)
+            assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
 
-            lmbdas[k] = np.linalg.inv(sigma)
+            lmbdas[k] = np.linalg.inv(_sigma)
 
         self.As = As
         self.lmbdas = lmbdas
 
 
 class TiedLinearGaussiansWithPrecision:
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  As=None, lmbda=None, affine=True):
 
         self.size = size
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.affine = affine
 
@@ -379,7 +372,7 @@ class TiedLinearGaussiansWithPrecision:
         self._lmbda_chol_inv = None
 
         As = [None] * self.size if As is None else As
-        self.dists = [LinearGaussianWithPrecision(input_dim, output_dim,
+        self.dists = [LinearGaussianWithPrecision(column_dim, row_dim,
                                                   As[k], lmbda, affine=affine)
                       for k in range(self.size)]
 
@@ -392,17 +385,13 @@ class TiedLinearGaussiansWithPrecision:
         self.As, self.lmbda = values
 
     @property
-    def dcol(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.input_dim - 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
-    def drow(self):
-        # output dimension
-        return self.output_dim
+    def output_dim(self):
+        return self.row_dim
 
     @property
     def As(self):
@@ -516,8 +505,8 @@ class TiedLinearGaussiansWithPrecision:
             bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                                   np.isnan(np.atleast_2d(y)).any(axis=1))
 
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
+            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
             loglik = np.einsum('nkd,dl,nl->nk', mu, self.lmbda, y, optimize=True)\
@@ -534,31 +523,31 @@ class TiedLinearGaussiansWithPrecision:
         yxTk, xxTk, yyT, n = self.statistics(x, y) if weights is None\
             else self.weighted_statistics(x, y, weights)
 
-        A = np.zeros((self.size, self.output_dim, self.input_dim))
+        As = np.zeros((self.size, self.column_dim, self.row_dim))
         sigma = np.zeros((self.output_dim, self.output_dim))
 
         sigma = yyT
         for k in range(self.size):
-            A[k] = np.linalg.solve(xxTk[k], yxTk[k].T).T
-            sigma -= A[k].dot(yxTk[k].T)
+            As[k] = np.linalg.solve(xxTk[k], yxTk[k].T).T
+            sigma -= As[k].dot(yxTk[k].T)
         sigma /= n
 
         # numerical stabilization
-        sigma = symmetrize(sigma) + 1e-16 * np.eye(self.drow)
-        assert np.allclose(sigma, sigma.T)
-        assert np.all(np.linalg.eigvalsh(sigma) > 0.)
+        _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
+        assert np.allclose(_sigma, _sigma.T)
+        assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
 
-        self.As = A
-        self.lmbda = np.linalg.inv(sigma)
+        self.As = As
+        self.lmbda = np.linalg.inv(_sigma)
 
 
 class LinearGaussianWithDiagonalPrecision:
 
-    def __init__(self, input_dim, output_dim,
+    def __init__(self, column_dim, row_dim,
                  A=None, lmbda_diag=None, affine=True):
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.A = A
         self.affine = affine
@@ -577,20 +566,16 @@ class LinearGaussianWithDiagonalPrecision:
 
     @property
     def nb_params(self):
-        return self.dcol * self.drow + self.drow
+        return self.column_dim * self.row_dim + self.row_dim
 
     @property
-    def dcol(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.input_dim - 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
-    def drow(self):
-        # output dimension
-        return self.output_dim
+    def output_dim(self):
+        return self.row_dim
 
     @property
     def lmbda_diag(self):
@@ -639,11 +624,11 @@ class LinearGaussianWithDiagonalPrecision:
         return self.predict(x)
 
     def rvs(self, x):
-        return self.mean(x) + npr.normal(size=self.drow).dot(self.lmbda_chol_inv.T)
+        return self.mean(x) + npr.normal(size=self.output_dim).dot(self.lmbda_chol_inv.T)
 
     @property
     def base(self):
-        return np.power(2. * np.pi, - self.drow / 2.)
+        return np.power(2. * np.pi, - self.output_dim / 2.)
 
     def log_base(self):
         return np.log(self.base)
@@ -696,8 +681,8 @@ class LinearGaussianWithDiagonalPrecision:
             bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                                   np.isnan(np.atleast_2d(y)).any(axis=1))
 
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
+            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
             loglik = np.einsum('nd,dl,nl->n', mu, self.lmbda, y, optimize=True) \
@@ -720,18 +705,18 @@ class LinearGaussianWithDiagonalPrecision:
 
 
 class StackedLinearGaussiansWithDiagonalPrecision:
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  As=None, lmbdas_diag=None, affine=True):
 
         self.size = size
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.affine = affine
 
         As = [None] * self.size if As is None else As
         lmbdas_diag = [None] * self.size if lmbdas_diag is None else lmbdas_diag
-        self.dists = [LinearGaussianWithDiagonalPrecision(input_dim, output_dim,
+        self.dists = [LinearGaussianWithDiagonalPrecision(column_dim, row_dim,
                                                           As[k], lmbdas_diag[k],
                                                           affine=affine)
                       for k in range(self.size)]
@@ -745,17 +730,13 @@ class StackedLinearGaussiansWithDiagonalPrecision:
         self.As, self.lmbdas_diag = values
 
     @property
-    def dcol(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.input_dim - 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
-    def drow(self):
-        # output dimension
-        return self.output_dim
+    def output_dim(self):
+        return self.row_dim
 
     @property
     def As(self):
@@ -868,8 +849,8 @@ class StackedLinearGaussiansWithDiagonalPrecision:
             bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                                   np.isnan(np.atleast_2d(y)).any(axis=1))
 
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
+            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
             loglik = np.einsum('nkd,kdl,nl->nk', mu, self.lmbdas, y, optimize=True)\
@@ -886,7 +867,7 @@ class StackedLinearGaussiansWithDiagonalPrecision:
         yxTk, xxTk, ndk, yyk = self.statistics(x, y) if weights is None\
             else self.weighted_statistics(x, y, weights)
 
-        As = np.zeros((self.size, self.output_dim, self.input_dim))
+        As = np.zeros((self.size, self.column_dim, self.row_dim))
         lmbdas = np.zeros((self.size, self.output_dim))
         for k in range(self.size):
             As[k] = np.linalg.solve(xxTk[k], yxTk[k].T).T
@@ -898,12 +879,12 @@ class StackedLinearGaussiansWithDiagonalPrecision:
 
 
 class TiedLinearGaussiansWithDiagonalPrecision:
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  As=None, lmbda_diag=None, affine=True):
 
         self.size = size
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.affine = affine
 
@@ -912,7 +893,7 @@ class TiedLinearGaussiansWithDiagonalPrecision:
         self._lmbda_chol_inv = None
 
         As = [None] * self.size if As is None else As
-        self.dists = [LinearGaussianWithDiagonalPrecision(input_dim, output_dim,
+        self.dists = [LinearGaussianWithDiagonalPrecision(column_dim, row_dim,
                                                           As[k], lmbda_diag,
                                                           affine=affine)
                       for k in range(self.size)]
@@ -926,17 +907,13 @@ class TiedLinearGaussiansWithDiagonalPrecision:
         self.As, self.lmbda_diag = values
 
     @property
-    def dcol(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.input_dim - 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
-    def drow(self):
-        # output dimension
-        return self.output_dim
+    def output_dim(self):
+        return self.row_dim
 
     @property
     def As(self):
@@ -1055,8 +1032,8 @@ class TiedLinearGaussiansWithDiagonalPrecision:
             bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                                   np.isnan(np.atleast_2d(y)).any(axis=1))
 
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
+            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
             loglik = np.einsum('nkd,dl,nl->nk', mu, self.lmbda, y, optimize=True)\
@@ -1073,7 +1050,7 @@ class TiedLinearGaussiansWithDiagonalPrecision:
         yxTk, xxTk, nd, yy = self.statistics(x, y) if weights is None\
             else self.weighted_statistics(x, y, weights)
 
-        As = np.zeros((self.size, self.output_dim, self.input_dim))
+        As = np.zeros((self.size, self.column_dim, self.row_dim))
         sigma_diag = np.zeros((self.output_dim, ))
 
         sigma_diag = yy
@@ -1088,9 +1065,9 @@ class TiedLinearGaussiansWithDiagonalPrecision:
 
 class _IndependentLinearGaussianBase:
 
-    def __init__(self, input_dim, A=None, lmbda=None, affine=True):
+    def __init__(self, column_dim, A=None, lmbda=None, affine=True):
 
-        self.input_dim = input_dim
+        self.column_dim = column_dim
 
         self.A = A
         self.lmbda = lmbda
@@ -1109,11 +1086,9 @@ class _IndependentLinearGaussianBase:
         raise NotImplementedError
 
     @property
-    def dcol(self):
-        if self.affine:
-            return self.input_dim + 1
-        else:
-            return self.input_dim
+    def input_dim(self):
+        return self.column_dim - 1 if self.affine\
+               else self.column_dim
 
     @property
     def sigma(self):
@@ -1144,8 +1119,8 @@ class _IndependentLinearGaussianBase:
 
 class IndependentLinearGaussianWithKnownPrecision(_IndependentLinearGaussianBase):
 
-    def __init__(self, input_dim, A=None, lmbda=None, affine=True):
-        super(IndependentLinearGaussianWithKnownPrecision, self).__init__(input_dim, A,
+    def __init__(self, column_dim, A=None, lmbda=None, affine=True):
+        super(IndependentLinearGaussianWithKnownPrecision, self).__init__(column_dim, A,
                                                                           lmbda, affine)
 
     @property
@@ -1158,7 +1133,7 @@ class IndependentLinearGaussianWithKnownPrecision(_IndependentLinearGaussianBase
 
     @property
     def nb_params(self):
-        return self.dcol
+        return self.column_dim
 
     def statistics(self, x, y):
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
@@ -1197,8 +1172,8 @@ class IndependentLinearGaussianWithKnownPrecision(_IndependentLinearGaussianBase
 
 class IndependentLinearGaussianWithKnownMean(_IndependentLinearGaussianBase):
 
-    def __init__(self, input_dim, A=None, lmbda=None, affine=True):
-        super(IndependentLinearGaussianWithKnownMean, self).__init__(input_dim, A,
+    def __init__(self, column_dim, A=None, lmbda=None, affine=True):
+        super(IndependentLinearGaussianWithKnownMean, self).__init__(column_dim, A,
                                                                      lmbda, affine)
 
     @property

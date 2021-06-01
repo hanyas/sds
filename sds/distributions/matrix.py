@@ -7,11 +7,11 @@ from scipy import linalg
 
 class MatrixNormalWithPrecision:
 
-    def __init__(self, input_dim, output_dim,
+    def __init__(self, column_dim, row_dim,
                  M=None, V=None, K=None):
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.M = M
         self._V = V
@@ -38,11 +38,11 @@ class MatrixNormalWithPrecision:
 
     @property
     def dcol(self):
-        return self.input_dim
+        return self.column_dim
 
     @property
     def drow(self):
-        return self.output_dim
+        return self.row_dim
 
     @property
     def V(self):
@@ -140,18 +140,18 @@ class MatrixNormalWithPrecision:
 
 class StackedMatrixNormalWithPrecision:
 
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  Ms=None, Vs=None, Ks=None):
 
         self.size = size
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         Ms = [None] * self.size if Ms is None else Ms
         Vs = [None] * self.size if Vs is None else Vs
         Ks = [None] * self.size if Ks is None else Ks
 
-        self.dists = [MatrixNormalWithPrecision(input_dim, output_dim,
+        self.dists = [MatrixNormalWithPrecision(column_dim, row_dim,
                                                 Ms[k], Vs[k], Ks[k])
                       for k in range(self.size)]
 
@@ -170,11 +170,11 @@ class StackedMatrixNormalWithPrecision:
 
     @property
     def dcol(self):
-        return self.input_dim
+        return self.column_dim
 
     @property
     def drow(self):
-        return self.output_dim
+        return self.row_dim
 
     @property
     def Ms(self):
@@ -252,11 +252,11 @@ class StackedMatrixNormalWithPrecision:
 
 class MatrixNormalWithDiagonalPrecision:
 
-    def __init__(self, input_dim, output_dim,
+    def __init__(self, column_dim, row_dim,
                  M=None, V_diag=None, K=None):
 
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         self.M = M
 
@@ -284,11 +284,11 @@ class MatrixNormalWithDiagonalPrecision:
 
     @property
     def dcol(self):
-        return self.input_dim
+        return self.column_dim
 
     @property
     def drow(self):
-        return self.output_dim
+        return self.row_dim
 
     @property
     def V_diag(self):
@@ -390,18 +390,18 @@ class MatrixNormalWithDiagonalPrecision:
 
 class StackedMatrixNormalWithDiagonalPrecision:
 
-    def __init__(self, size, input_dim, output_dim,
+    def __init__(self, size, column_dim, row_dim,
                  Ms=None, Vs_diag=None, Ks=None):
 
         self.size = size
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        self.column_dim = column_dim
+        self.row_dim = row_dim
 
         Ms = [None] * self.size if Ms is None else Ms
         Vs_diag = [None] * self.size if Vs_diag is None else Vs_diag
         Ks = [None] * self.size if Ks is None else Ks
 
-        self.dists = [MatrixNormalWithDiagonalPrecision(input_dim, output_dim,
+        self.dists = [MatrixNormalWithDiagonalPrecision(column_dim, row_dim,
                                                         Ms[k], Vs_diag[k], Ks[k])
                       for k in range(self.size)]
 
@@ -420,11 +420,11 @@ class StackedMatrixNormalWithDiagonalPrecision:
 
     @property
     def dcol(self):
-        return self.input_dim
+        return self.column_dim
 
     @property
     def drow(self):
-        return self.output_dim
+        return self.row_dim
 
     @property
     def Ms(self):
