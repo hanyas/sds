@@ -87,8 +87,8 @@ K = 1e-16 * np.eye(n_features)
 alphas = 1e-16 * np.ones((1, ))
 betas = 1e-16 * np.ones((1, ))
 
-prior = MatrixNormalGamma(input_dim=n_features,
-                          output_dim=1,
+prior = MatrixNormalGamma(column_dim=n_features,
+                          row_dim=1,
                           M=M, K=K, alphas=alphas, betas=betas)
 
 posterior = deepcopy(prior)
