@@ -5,7 +5,7 @@ import scipy as sc
 from scipy import stats
 
 from sds.models import EnsembleClosedLoopHiddenMarkovModel
-from sds.utils.envs import sample_env, rollout_ensemble
+from sds.utils.envs import sample_env, rollout_ensemble_policy
 
 import matplotlib.pyplot as plt
 from matplotlib import rc
@@ -117,6 +117,7 @@ if __name__ == "__main__":
     obs_type = 'full'
     trans_type = 'neural'
     ctl_type = 'full'
+
     ctl_degree = 3
 
     # init_state_prior
@@ -210,7 +211,11 @@ if __name__ == "__main__":
                 obs_mstep_kwargs=obs_mstep_kwargs,
                 ctl_mstep_kwargs=ctl_mstep_kwargs)
 
-    rollouts = rollout_ensemble(env, ensemble, 50, 200, average=True, stoch=True)
+    for m in ensemble.models:
+        m.infer_dyn = True
+        m.infer_ctl = False
+
+    rollouts = rollout_ensemble_policy(env, ensemble, 50, 200, average=True, stoch=True)
 
     # fig, axs = plt.subplots(nrows=3, ncols=1, figsize=(8, 12), constrained_layout=True)
     # fig.suptitle('Pendulum Hybrid Imitation: One Example')
@@ -318,14 +323,11 @@ if __name__ == "__main__":
     for i in range(npts):
         for j in range(npts):
             hist_obs, hist_act = ang2cart(XYh[..., i, j]), np.zeros((hr, act_dim))
-            _us = np.zeros((ensemble.ensemble_size, act_dim))
-            _x = ang2cart(XYh[-1, :, i, j])
+            us = np.zeros((ensemble.ensemble_size, act_dim))
             for l, m in enumerate(ensemble.models):
-                _b = m.filtered_state(hist_obs, hist_act)[-1]
-                for k in range(nb_states):
-                    _us[l] += _b[k] * m.controls.mean(k, _x)
-            _u = np.mean(_us, axis=0)
-            XYn[:, i, j] = env.unwrapped.fake_step(XYh[-1, :, i, j], _u)
+                _, _, us[l] = m.action(hist_obs, hist_act)
+            u = np.mean(us, axis=0)
+            XYn[:, i, j] = env.unwrapped.fake_step(XYh[-1, :, i, j], u)
 
     dXY = XYn - XYh[-1, ...]
 

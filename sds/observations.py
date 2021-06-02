@@ -313,7 +313,20 @@ class BayesianGaussianObservation:
         self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
 
     def initialize(self, x, u=None, **kwargs):
-        stats = self.likelihood.statistics(x)
+        kmeans = kwargs.get('kmeans', True)
+
+        t = [_x.shape[0] for _x in x]
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.vstack(x))
+            z = np.split(km.labels_, np.cumsum(t)[:-1])
+        else:
+            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+
+        z = [one_hot(_z, self.nb_states) for _z in z]
+
+        stats = self.likelihood.weighted_statistics(x, z)
         self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.rvs()
 

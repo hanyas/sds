@@ -111,26 +111,6 @@ def create_job(train_obs, train_act, kwargs, seed):
                 obs_mstep_kwargs=obs_mstep_kwargs,
                 ctl_mstep_kwargs=ctl_mstep_kwargs)
 
-    # from copy import deepcopy
-    # for i in range(3):
-    #     for k in range(nb_states):
-    #         clrarhmm.init_observation.prior.dists[k].wishart =\
-    #             deepcopy(clrarhmm.init_observation.posterior.dists[k].wishart)
-    #
-    #         clrarhmm.observations.prior.dists[k].wishart =\
-    #             deepcopy(clrarhmm.observations.posterior.dists[k].wishart)
-    #
-    #         clrarhmm.controls.prior.dists[k].wishart =\
-    #             deepcopy(clrarhmm.controls.posterior.dists[k].wishart)
-    #
-    #     clrarhmm.em(train_obs, train_act, nb_iter=150,
-    #                 prec=prec, initialize=False, proc_id=proc_id,
-    #                 init_state_mstep_kwargs=init_state_mstep_kwargs,
-    #                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
-    #                 trans_mstep_kwargs=trans_mstep_kwargs,
-    #                 obs_mstep_kwargs=obs_mstep_kwargs,
-    #                 ctl_mstep_kwargs=ctl_mstep_kwargs)
-
     return clrarhmm
 
 
@@ -167,7 +147,7 @@ if __name__ == "__main__":
     import gym
 
     random.seed(1337)
-    # npr.seed(1337)
+    npr.seed(1337)
     torch.manual_seed(1337)
 
     env = gym.make('Pendulum-ID-v1')
@@ -175,7 +155,7 @@ if __name__ == "__main__":
     env.unwrapped.dt = 0.02
     env.unwrapped.sigma = 1e-4
     env.unwrapped.uniform = True
-    # env.seed(1337)
+    env.seed(1337)
 
     from stable_baselines import SAC
 
@@ -224,6 +204,7 @@ if __name__ == "__main__":
     obs_type = 'full'
     trans_type = 'neural'
     ctl_type = 'full'
+
     ctl_degree = 3
 
     # init_state_prior
@@ -335,68 +316,68 @@ if __name__ == "__main__":
     clrarhmm.infer_dyn = True
     clrarhmm.infer_ctl = False
 
-    ctl = clrarhmm.smoothed_control(obs, act)
-    # state, ctl = clrarhmm.filtered_control(obs, act)
-
-    fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
-    fig.suptitle('Demonstration Action Filtering')
-
-    idx = npr.choice(len(obs))
-
-    angle = np.arctan2(obs[idx][:, 1], obs[idx][:, 0])
-    axs[0].plot(angle)
-    axs[0].set_ylabel('$\\theta$')
-    axs[0].set_xlim(0, len(obs[idx]))
-
-    axs[1].plot(obs[idx][:, -1], '-g')
-    axs[1].set_ylabel("$\\dot{\\theta}$")
-    axs[1].set_xlim(0, len(obs[idx]))
-
-    axs[2].plot(act[idx])
-    axs[2].plot(ctl[idx])
-    axs[2].legend(('Actual', 'Smoothed'))
-    axs[2].set_ylabel("$u$")
-    axs[2].set_xlim(0, len(act[idx]))
-
-    # axs[3].imshow(state[idx][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-    # axs[3].set_xlim(0, len(obs[idx]))
-    # axs[3].set_xlabel('Time Step')
-    # axs[3].set_ylabel("$z_{\\mathrm{inferred}}$")
-    # axs[3].set_yticks([])
-
-    plt.show()
+    # ctl = clrarhmm.smoothed_control(obs, act)
+    # # state, ctl = clrarhmm.filtered_control(obs, act)
+    #
+    # fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
+    # fig.suptitle('Demonstration Action Filtering')
+    #
+    # idx = npr.choice(len(obs))
+    #
+    # angle = np.arctan2(obs[idx][:, 1], obs[idx][:, 0])
+    # axs[0].plot(angle)
+    # axs[0].set_ylabel('$\\theta$')
+    # axs[0].set_xlim(0, len(obs[idx]))
+    #
+    # axs[1].plot(obs[idx][:, -1], '-g')
+    # axs[1].set_ylabel("$\\dot{\\theta}$")
+    # axs[1].set_xlim(0, len(obs[idx]))
+    #
+    # axs[2].plot(act[idx])
+    # axs[2].plot(ctl[idx])
+    # axs[2].legend(('Actual', 'Smoothed'))
+    # axs[2].set_ylabel("$u$")
+    # axs[2].set_xlim(0, len(act[idx]))
+    #
+    # # axs[3].imshow(state[idx][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    # # axs[3].set_xlim(0, len(obs[idx]))
+    # # axs[3].set_xlabel('Time Step')
+    # # axs[3].set_ylabel("$z_{\\mathrm{inferred}}$")
+    # # axs[3].set_yticks([])
+    #
+    # plt.show()
 
     rollouts = rollout_policy(env, clrarhmm, 50, 200, average=True, stoch=True)
 
-    fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
-    fig.suptitle('Pendulum Hybrid Imitation: One Example')
-
-    idx = np.random.choice(len(rollouts))
-
-    # angle = np.arctan2(rollouts[idx]['x'][:, 1], rollouts[idx]['x'][:, 0])
-    # axs[0].plot(angle)
-    # axs[0].set_ylabel('$\\theta$')
+    # fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
+    # fig.suptitle('Pendulum Hybrid Imitation: One Example')
+    #
+    # idx = np.random.choice(len(rollouts))
+    #
+    # # angle = np.arctan2(rollouts[idx]['x'][:, 1], rollouts[idx]['x'][:, 0])
+    # # axs[0].plot(angle)
+    # # axs[0].set_ylabel('$\\theta$')
+    # # axs[0].set_xlim(0, len(rollouts[idx]['x']))
+    #
+    # axs[0].plot(rollouts[idx]['x'][:, :-1])
+    # axs[0].set_ylabel('$\\cos(\\theta)/\\sin(\\theta)$')
     # axs[0].set_xlim(0, len(rollouts[idx]['x']))
-
-    axs[0].plot(rollouts[idx]['x'][:, :-1])
-    axs[0].set_ylabel('$\\cos(\\theta)/\\sin(\\theta)$')
-    axs[0].set_xlim(0, len(rollouts[idx]['x']))
-
-    axs[1].plot(rollouts[idx]['x'][:, -1], '-g')
-    axs[1].set_ylabel("$\\dot{\\theta}$")
-    axs[1].set_xlim(0, len(rollouts[idx]['x']))
-
-    axs[2].plot(rollouts[idx]['u'], '-r')
-    axs[2].set_ylabel('$u$')
-    axs[2].set_xlim(0, len(rollouts[idx]['u']))
-
-    axs[3].imshow(rollouts[idx]['z'][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-    axs[3].set_xlim(0, len(rollouts[idx]['z']))
-    axs[3].set_xlabel('Time Step')
-    axs[3].set_ylabel("$z_{\\mathrm{inferred}}$")
-    axs[3].set_yticks([])
-
-    plt.show()
+    #
+    # axs[1].plot(rollouts[idx]['x'][:, -1], '-g')
+    # axs[1].set_ylabel("$\\dot{\\theta}$")
+    # axs[1].set_xlim(0, len(rollouts[idx]['x']))
+    #
+    # axs[2].plot(rollouts[idx]['u'], '-r')
+    # axs[2].set_ylabel('$u$')
+    # axs[2].set_xlim(0, len(rollouts[idx]['u']))
+    #
+    # axs[3].imshow(rollouts[idx]['z'][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
+    # axs[3].set_xlim(0, len(rollouts[idx]['z']))
+    # axs[3].set_xlabel('Time Step')
+    # axs[3].set_ylabel("$z_{\\mathrm{inferred}}$")
+    # axs[3].set_yticks([])
+    #
+    # plt.show()
 
     fig, axs = plt.subplots(nrows=1, ncols=4, figsize=(20, 6), constrained_layout=True)
     fig.suptitle('Pendulum Hybrid Imitation: Many Seeds')
@@ -484,11 +465,8 @@ if __name__ == "__main__":
     for i in range(npts):
         for j in range(npts):
             hist_obs, hist_act = ang2cart(XYh[..., i, j]), np.zeros((hr, act_dim))
-            _b = clrarhmm.filtered_state(hist_obs, hist_act)[-1]
-            _x, _u = ang2cart(XYh[-1, :, i, j]), np.zeros((act_dim, ))
-            for k in range(nb_states):
-                _u += _b[k] * clrarhmm.controls.mean(k, _x)
-            XYn[:, i, j] = env.unwrapped.fake_step(XYh[-1, :, i, j], _u)
+            _, _, u = clrarhmm.action(hist_obs, hist_act)
+            XYn[:, i, j] = env.unwrapped.fake_step(XYh[-1, :, i, j], u)
 
     dXY = XYn - XYh[-1, ...]
 

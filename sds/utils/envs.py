@@ -59,7 +59,7 @@ def sample_env(env, nb_rollouts, nb_steps,
 
 
 def rollout_policy(env, model, nb_rollouts, nb_steps,
-                   average=False, stoch=False):
+                   stoch=False, average=False):
 
     rollouts = []
 
@@ -79,46 +79,21 @@ def rollout_policy(env, model, nb_rollouts, nb_steps,
         x = env.reset()
         roll['x'] = np.vstack((roll['x'], x))
 
-        b = model.init_state.pi
+        b, z, u = model.action(roll['x'], roll['u'], stoch, average)
         roll['b'] = np.vstack((roll['b'], b))
-
-        z = npr.choice(nb_states, p=b) if stoch else np.argmax(b)
         roll['z'] = np.hstack((roll['z'], z))
-
-        u = np.zeros((act_dim, ))
-        if average:
-            for k in range(nb_states):
-                u += b[k] * model.controls.sample(k, x) if stoch \
-                    else model.controls.mean(k, x)
-        else:
-            u = model.controls.sample(z, x) if stoch \
-                else model.controls.mean(z, x)
 
         u = np.clip(u, -ulim, ulim)
         roll['u'] = np.vstack((roll['u'], u))
 
-        for t in range(nb_steps):
+        for t in range(1, nb_steps):
             x, r, _, _ = env.step(u)
             roll['x'] = np.vstack((roll['x'], x))
             roll['r'] = np.hstack((roll['r'], r))
 
-            # pad action for filter
-            aug_u = np.vstack((roll['u'], np.zeros((1, act_dim))))
-
-            b = model.filtered_state(roll['x'], aug_u)[-1]
+            b, z, u = model.action(roll['x'], roll['u'], stoch, average)
             roll['b'] = np.vstack((roll['b'], b))
-
-            z = npr.choice(nb_states, p=b) if stoch else np.argmax(b)
             roll['z'] = np.hstack((roll['z'], z))
-
-            u = np.zeros((act_dim, ))
-            if average:
-                for k in range(nb_states):
-                    u += b[k] * model.controls.sample(k, x) if stoch\
-                         else model.controls.mean(k, x)
-            else:
-                u = model.controls.sample(z, x) if stoch\
-                    else model.controls.mean(z, x)
 
             u = np.clip(u, -ulim, ulim)
             roll['u'] = np.vstack((roll['u'], u))
@@ -127,8 +102,8 @@ def rollout_policy(env, model, nb_rollouts, nb_steps,
     return rollouts
 
 
-def rollout_ensemble(env, ensemble, nb_rollouts, nb_steps,
-                     average=False, stoch=False):
+def rollout_ensemble_policy(env, ensemble, nb_rollouts, nb_steps,
+                            average=False, stoch=False):
 
     rollouts = []
 
@@ -149,41 +124,20 @@ def rollout_ensemble(env, ensemble, nb_rollouts, nb_steps,
 
         us = np.zeros((ensemble_size, act_dim))
         for i, m in enumerate(ensemble.models):
-            b = m.init_state.pi
-            z = npr.choice(nb_states, p=b) if stoch else np.argmax(b)
-
-            if average:
-                for k in range(nb_states):
-                    us[i] += b[k] * m.controls.sample(k, x) if stoch \
-                        else m.controls.mean(k, x)
-            else:
-                us[i] = m.controls.sample(z, x) if stoch \
-                    else m.controls.mean(z, x)
+            _, _, us[i] = m.action(roll['x'], roll['u'])
 
         u = np.mean(us, axis=0)
         u = np.clip(u, -ulim, ulim)
         roll['u'] = np.vstack((roll['u'], u))
 
-        for t in range(nb_steps):
+        for t in range(1, nb_steps):
             x, r, _, _ = env.step(u)
             roll['x'] = np.vstack((roll['x'], x))
             roll['r'] = np.hstack((roll['r'], r))
 
-            # pad action for filter
-            aug_u = np.vstack((roll['u'], np.zeros((1, act_dim))))
-
             us = np.zeros((ensemble_size, act_dim))
             for i, m in enumerate(ensemble.models):
-                b = m.filtered_state(roll['x'], aug_u)[-1]
-                z = npr.choice(nb_states, p=b) if stoch else np.argmax(b)
-
-                if average:
-                    for k in range(nb_states):
-                        us[i] += b[k] * m.controls.sample(k, x) if stoch \
-                            else m.controls.mean(k, x)
-                else:
-                    us[i] = m.controls.sample(z, x) if stoch \
-                        else m.controls.mean(z, x)
+                _, _, us[i] = m.action(roll['x'], roll['u'])
 
             u = np.mean(us, axis=0)
             u = np.clip(u, -ulim, ulim)
