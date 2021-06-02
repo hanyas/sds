@@ -401,10 +401,10 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(RecurrentAutoRegressive
             nxt_act = np.zeros((self.act_dim,))
             if average:
                 for k in range(self.nb_states):
-                    nxt_act += belief[k] * self.controls.sample(k, obs) if stoch\
-                               else self.controls.mean(k, obs)
+                    nxt_act += belief[k] * self.controls.sample(k, obs, ar=True) if stoch\
+                               else self.controls.mean(k, obs, ar=True)
             else:
-                nxt_act = self.controls.sample(state, obs) if stoch\
-                          else self.controls.mean(state, obs)
+                nxt_act = self.controls.sample(state, obs, ar=True) if stoch\
+                          else self.controls.mean(state, obs, ar=True)
 
         return belief, state, nxt_act

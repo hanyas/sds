@@ -79,7 +79,8 @@ class LinearGaussianControl:
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        return np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        u = np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        return np.atleast_1d(u)
 
     def sample(self, z, x):
         u = mvn(mean=self.mean(z, x), cov=self.sigma[z]).rvs()
@@ -194,7 +195,8 @@ class BayesianLinearGaussianControl:
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        return self.likelihood.dists[z].mean(feat)
+        u = self.likelihood.dists[z].mean(feat)
+        return np.atleast_1d(u)
 
     def sample(self, z, x):
         feat = self.featurize(x)
@@ -257,6 +259,8 @@ class AutorRegressiveLinearGaussianControl:
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags=1, degree=1, **kwargs):
 
+        assert nb_lags > 0
+
         self.nb_states = nb_states
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -296,7 +300,7 @@ class AutorRegressiveLinearGaussianControl:
 
         xr, ur = [], []
         for _x, _u in zip(x, u):
-            xr.append(cstack((arstack(_x[:-1], self.nb_lags), _x[self.nb_lags:])))
+            xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
 
@@ -333,10 +337,11 @@ class AutorRegressiveLinearGaussianControl:
         return np.squeeze(feat) if x.ndim == 1\
                else np.reshape(feat, (x.shape[0], -1))
 
-    def mean(self, z, x):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * (self.nb_lags + 1))))
+    def mean(self, z, x, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
         feat = self.featurize(xr)
-        return np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        u = np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        return np.atleast_1d(u)
 
     def sample(self, z, x):
         u = mvn(mean=self.mean(z, x), cov=self.sigma[z]).rvs()
@@ -345,7 +350,7 @@ class AutorRegressiveLinearGaussianControl:
     @ensure_args_are_viable
     def log_likelihood(self, x, u):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
-            xr = cstack((arstack(x[:-1], self.nb_lags), x[self.nb_lags:]))
+            xr = arstack(x, self.nb_lags + 1)
             ur = u[self.nb_lags:]
 
             loglik = np.zeros((ur.shape[0], self.nb_states))
@@ -365,7 +370,7 @@ class AutorRegressiveLinearGaussianControl:
 
         xr, ur, w = [], [], []
         for _x, _u, _w in zip(x, u, p):
-            xr.append(cstack((arstack(_x[:-1], self.nb_lags), _x[self.nb_lags:])))
+            xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
             w.append(_w[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
@@ -384,11 +389,11 @@ class AutorRegressiveLinearGaussianControl:
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
-            xr = cstack((arstack(x[:-1], self.nb_lags), x[self.nb_lags:]))
+            xr = arstack(x, self.nb_lags + 1)
             ur = u[self.nb_lags:]
             pr = p[self.nb_lags:]
 
-            mu = np.zeros((len(xr), self.nb_states, self.act_dim))
+            mu = np.zeros((len(ur), self.nb_states, self.act_dim))
             for k in range(self.nb_states):
                 mu[:, k, :] = self.mean(k, xr)
             return np.einsum('nk,nkl->nl', pr, mu)
@@ -400,6 +405,8 @@ class BayesianAutorRegressiveLinearGaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, degree=1, likelihood=None):
+
+        assert nb_lags > 0
 
         self.nb_states = nb_states
         self.obs_dim = obs_dim
@@ -443,7 +450,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
 
         xr, ur = [], []
         for _x, _u in zip(x, u):
-            xr.append(cstack((arstack(_x[:-1], self.nb_lags), _x[self.nb_lags:])))
+            xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
 
@@ -467,13 +474,14 @@ class BayesianAutorRegressiveLinearGaussianControl:
         return np.squeeze(feat) if x.ndim == 1\
                else np.reshape(feat, (x.shape[0], -1))
 
-    def mean(self, z, x):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * (self.nb_lags + 1))))
+    def mean(self, z, x, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
         fr = self.featurize(xr)
-        return self.likelihood.dists[z].mean(fr)
+        u = self.likelihood.dists[z].mean(fr)
+        return np.atleast_1d(u)
 
-    def sample(self, z, x):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * (self.nb_lags + 1))))
+    def sample(self, z, x, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
         fr = self.featurize(xr)
         u = self.likelihood.dists[z].rvs(fr)
         return np.atleast_1d(u)
@@ -481,7 +489,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
     @ensure_args_are_viable
     def log_likelihood(self, x, u):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
-            xr = cstack((arstack(x[:-1], self.nb_lags), x[self.nb_lags:]))
+            xr = arstack(x, self.nb_lags + 1)
             ur = u[self.nb_lags:]
             fr = self.featurize(xr)
             return self.likelihood.log_likelihood(fr, ur)
@@ -493,7 +501,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
     def mstep(self, p, x, u, **kwargs):
         xr, ur, w = [], [], []
         for _x, _u, _w in zip(x, u, p):
-            xr.append(cstack((arstack(_x[:-1], self.nb_lags), _x[self.nb_lags:])))
+            xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
             w.append(_w[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
@@ -528,11 +536,11 @@ class BayesianAutorRegressiveLinearGaussianControl:
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
-            xr = cstack((arstack(x[:-1], self.nb_lags), x[self.nb_lags:]))
+            xr = arstack(x, self.nb_lags + 1)
             ur = u[self.nb_lags:]
             pr = p[self.nb_lags:]
 
-            mu = np.zeros((len(xr), self.nb_states, self.obs_dim))
+            mu = np.zeros((len(ur), self.nb_states, self.obs_dim))
             for k in range(self.nb_states):
                 mu[:, k, :] = self.mean(k, xr)
             return np.einsum('nk,nkl->nl', pr, mu)

@@ -208,7 +208,8 @@ class InitGaussianControl:
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        return np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        u = np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        return np.atleast_1d(u)
 
     def sample(self, z, x):
         u = mvn(mean=self.mean(z, x), cov=self.sigma[z]).rvs()
@@ -357,7 +358,8 @@ class _BayesianInitGaussianObservationBase:
         self.likelihood.params = self.posterior.rvs()
 
     def mean(self, z):
-        return self.likelihood.dists[z].mean()
+        x = self.likelihood.dists[z].mean()
+        return np.atleast_1d(x)
 
     def sample(self, z):
         x = self.likelihood.dists[z].rvs()
@@ -543,7 +545,8 @@ class BayesianInitGaussianControl:
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        return self.likelihood.dists[z].mean(feat)
+        u = self.likelihood.dists[z].mean(feat)
+        return np.atleast_1d(u)
 
     def sample(self, z, x):
         feat = self.featurize(x)

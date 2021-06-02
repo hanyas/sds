@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 npr.seed(1337)
 
-true_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=5, obs_dim=2)
+true_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=3, obs_dim=2)
 
 obs_dim = true_arhmm.obs_dim
 act_dim = true_arhmm.act_dim
@@ -33,14 +33,13 @@ T = [150, 135, 165]
 true_z, x = true_arhmm.sample(horizon=T)
 true_ll = true_arhmm.log_normalizer(x)
 
-npr.seed(1337)
-ann_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=5, obs_dim=2)
-ann_lls = ann_arhmm.annealed_em(x, nb_iter=1000,
-                                prec=0., discount=0.99)
+# npr.seed(1337)
+ann_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=3, obs_dim=2)
+ann_lls = ann_arhmm.annealed_em(x, nb_iter=100, prec=0., discount=0.95)
 
-npr.seed(1337)
-std_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=5, obs_dim=2)
-std_lls = std_arhmm.em(x, nb_iter=500, prec=0., initialize=True)
+# npr.seed(1337)
+std_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=3, obs_dim=2)
+std_lls = std_arhmm.em(x, nb_iter=100, prec=0., initialize=True)
 
 print("true_ll=", true_ll, "std_ll=", std_lls[-1], "ann_ll=", ann_lls[-1])
 
