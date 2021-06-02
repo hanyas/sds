@@ -26,16 +26,8 @@ class GaussianObservation:
         self.obs_dim = obs_dim
         self.act_dim = act_dim
 
-        # self.mu = npr.randn(self.nb_states, self.obs_dim)
-        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
-
-        self.mu = np.zeros((self.nb_states, self.obs_dim))
-        self._sigma_chol = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
-
-        for k in range(self.nb_states):
-            _sigma = sc.stats.invwishart.rvs(self.obs_dim + 1, np.eye(self.obs_dim))
-            self._sigma_chol[k, ...] = np.linalg.cholesky(_sigma)
-            self.mu[k] = mvn.rvs(mean=None, cov=1e2 * _sigma)
+        self.mu = npr.randn(self.nb_states, self.obs_dim)
+        self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
     @property
     def sigma(self):
@@ -125,22 +117,10 @@ class AutoRegressiveGaussianObservation:
         self.act_dim = act_dim
         self.nb_lags = nb_lags
 
-        # self.A = npr.randn(self.nb_states, self.obs_dim, self.obs_dim * self.nb_lags)
-        # self.B = npr.randn(self.nb_states, self.obs_dim, self.act_dim)
-        # self.c = npr.randn(self.nb_states, self.obs_dim, )
-        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
-
-        self.A = np.zeros((self.nb_states, self.obs_dim, self.obs_dim * self.nb_lags))
-        self.B = np.zeros((self.nb_states, self.obs_dim, self.act_dim))
-        self.c = np.zeros((self.nb_states, self.obs_dim))
-        self._sigma_chol = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
-
-        for k in range(self.nb_states):
-            _sigma = sc.stats.invwishart.rvs(self.obs_dim + 1, np.eye(self.obs_dim))
-            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.obs_dim))
-            self.A[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(self.obs_dim * self.nb_lags, ))
-            self.B[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(self.act_dim, )).T
-            self.c[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
+        self.A = npr.randn(self.nb_states, self.obs_dim, self.obs_dim * self.nb_lags)
+        self.B = npr.randn(self.nb_states, self.obs_dim, self.act_dim)
+        self.c = npr.randn(self.nb_states, self.obs_dim, )
+        self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
     @property
     def sigma(self):
@@ -169,7 +149,7 @@ class AutoRegressiveGaussianObservation:
 
         xr, ur, xn = [], [], []
         for _x, _u in zip(x, u):
-            xr.append(arstack(_x[:-1], self.nb_lags))
+            xr.append(arstack(_x, self.nb_lags)[:-1])
             ur.append(_u[self.nb_lags - 1:-1])
             xn.append(_x[self.nb_lags:])
         xu = list(map(np.hstack, zip(xr, ur)))
@@ -203,25 +183,19 @@ class AutoRegressiveGaussianObservation:
 
         self.sigma = _sigma
 
-    def mean(self, z, x, u):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
+    def mean(self, z, x, u, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags), axis=0) if ar else x
         return np.einsum('kh,...h->...k', self.A[z], xr) +\
                np.einsum('kh,...h->...k', self.B[z], u) + self.c[z, :]
 
-    def sample(self, z, x, u):
-        xn = mvn(self.mean(z, x, u), cov=self.sigma[z]).rvs()
+    def sample(self, z, x, u, ar=False):
+        xn = mvn(self.mean(z, x, u, ar), cov=self.sigma[z]).rvs()
         return np.atleast_1d(xn)
-
-    def reset(self):
-        self.A = npr.randn(self.nb_states, self.obs_dim, self.obs_dim * self.nb_lags)
-        self.B = npr.randn(self.nb_states, self.obs_dim, self.act_dim)
-        self.c = npr.randn(self.nb_states, self.obs_dim, )
-        self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
     @ensure_args_are_viable
     def log_likelihood(self, x, u):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
-            xr = arstack(x[:-1], self.nb_lags)
+            xr = arstack(x, self.nb_lags)[:-1]
             ur = u[self.nb_lags - 1:-1]
             xn = x[self.nb_lags:]
 
@@ -243,7 +217,7 @@ class AutoRegressiveGaussianObservation:
 
         xr, ur, xn, w = [], [], [], []
         for _x, _u, _w in zip(x, u, p):
-            xr.append(arstack(_x[:-1], self.nb_lags))
+            xr.append(arstack(_x, self.nb_lags)[:-1])
             ur.append(_u[self.nb_lags - 1:-1])
             xn.append(_x[self.nb_lags:])
             w.append(_w[self.nb_lags:])
@@ -264,7 +238,7 @@ class AutoRegressiveGaussianObservation:
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
-            xr = arstack(x[:-1], self.nb_lags)
+            xr = arstack(x, self.nb_lags)[:-1]
             ur = u[self.nb_lags - 1:-1]
             pr = p[self.nb_lags:]
 
@@ -358,6 +332,8 @@ class _BayesianAutoRegressiveObservationBase:
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, likelihood=None):
 
+        assert nb_lags > 0
+
         self.nb_states = nb_states
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -384,7 +360,7 @@ class _BayesianAutoRegressiveObservationBase:
 
         xr, ur, xn = [], [], []
         for _x, _u in zip(x, u):
-            xr.append(arstack(_x[:-1], self.nb_lags))
+            xr.append(arstack(_x, self.nb_lags)[:-1])
             ur.append(_u[self.nb_lags - 1:-1])
             xn.append(_x[self.nb_lags:])
         xu = list(map(np.hstack, zip(xr, ur)))
@@ -407,13 +383,13 @@ class _BayesianAutoRegressiveObservationBase:
     def permute(self, perm):
         raise NotImplementedError
 
-    def mean(self, z, x, u):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
+    def mean(self, z, x, u, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags), axis=0) if ar else x
         xu = np.hstack((xr, u))
         return self.likelihood.dists[z].mean(xu)
 
-    def sample(self, z, x, u):
-        xr = np.squeeze(np.reshape(x, (-1, self.obs_dim * self.nb_lags)))
+    def sample(self, z, x, u, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags), axis=0) if ar else x
         xu = np.hstack((xr, u))
         xn = self.likelihood.dists[z].rvs(xu)
         return np.atleast_1d(xn)
@@ -421,7 +397,7 @@ class _BayesianAutoRegressiveObservationBase:
     @ensure_args_are_viable
     def log_likelihood(self, x, u):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
-            xr = arstack(x[:-1], self.nb_lags)
+            xr = arstack(x, self.nb_lags)[:-1]
             ur = u[self.nb_lags - 1:-1]
             xn = x[self.nb_lags:]
             xu = np.hstack((xr, ur))
@@ -435,7 +411,7 @@ class _BayesianAutoRegressiveObservationBase:
 
         xr, ur, xn, w = [], [], [], []
         for _x, _u, _w in zip(x, u, p):
-            xr.append(arstack(_x[:-1], self.nb_lags))
+            xr.append(arstack(_x, self.nb_lags)[:-1])
             ur.append(_u[self.nb_lags - 1:-1])
             xn.append(_x[self.nb_lags:])
             w.append(_w[self.nb_lags:])
@@ -471,7 +447,7 @@ class _BayesianAutoRegressiveObservationBase:
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
-            xr = arstack(x[:-1], self.nb_lags)
+            xr = arstack(x, self.nb_lags)[:-1]
             ur = u[self.nb_lags - 1:-1]
             pr = p[self.nb_lags:]
 

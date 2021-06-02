@@ -169,8 +169,8 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
             # average observations under belief
             for k in range(self.nb_states):
                 xr, ul = hist_obs[-self.obs_lag:], hist_act[-1]
-                nxt_obs += belief[k] * (self.observations.sample(k, xr, ul) if stoch
-                                        else self.observations.mean(k, xr, ul))
+                nxt_obs += belief[k] * (self.observations.sample(k, xr, ul, ar=True) if stoch
+                                        else self.observations.mean(k, xr, ul, ar=True))
         else:
             # sample last discrete state
             zl = npr.choice(self.nb_states, p=belief) if stoch\
@@ -184,8 +184,8 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
             # sample next observation
             zn = nxt_state
             xr = hist_obs[-self.obs_lag:]
-            nxt_obs = self.observations.sample(zn, xr, ul) if stoch\
-                      else self.observations.mean(zn, xr, ul)
+            nxt_obs = self.observations.sample(zn, xr, ul, ar=True) if stoch\
+                      else self.observations.mean(zn, xr, ul, ar=True)
 
         return nxt_state, nxt_obs
 
@@ -205,7 +205,7 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
 
         for t in range(self.obs_lag, horizon):
             state[t] = self.transitions.sample(state[t - 1], obs[t - 1], act[t - 1])
-            obs[t] = self.observations.sample(state[t], obs[t - self.obs_lag:t], act[t - 1])
+            obs[t] = self.observations.sample(state[t], obs[t - self.obs_lag:t], act[t - 1], ar=True)
 
         return state, obs
 
@@ -258,8 +258,8 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
                 for k in range(self.nb_states):
                     xr = nxt_obs[t - self.obs_lag:t]
                     ul = nxt_act[t - self.obs_lag]
-                    nxt_obs[t] += belief[k] * (self.observations.sample(k, xr, ul) if stoch
-                                               else self.observations.mean(k, xr, ul))
+                    nxt_obs[t] += belief[k] * (self.observations.sample(k, xr, ul, ar=True) if stoch
+                                               else self.observations.mean(k, xr, ul, ar=True))
         else:
             for t in range(self.obs_lag):
                 nxt_state[t] = npr.choice(self.nb_states, p=alpha[-self.obs_lag:][t]) if stoch\
@@ -275,8 +275,8 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
 
                 zn = nxt_state[t]
                 xr = nxt_obs[t - self.obs_lag:t]
-                nxt_obs[t] = self.observations.sample(zn, xr, ul) if stoch\
-                             else self.observations.mean(zn, xr, ul)
+                nxt_obs[t] = self.observations.sample(zn, xr, ul, ar=True) if stoch\
+                             else self.observations.mean(zn, xr, ul, ar=True)
 
         return nxt_state, nxt_obs
 

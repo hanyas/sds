@@ -180,7 +180,7 @@ def linear_regression(Xs, ys, weights=None,
     # Add weak prior on intercept
     if fit_intercept:
         mu0 = np.column_stack((mu0, np.zeros(P)))
-        sigma0 = block_diag(sigma0, np.eye(1))
+        sigma0 = block_diag(sigma0, 1e32 * np.eye(1))
 
     # Compute the posterior
     J = np.linalg.inv(sigma0)

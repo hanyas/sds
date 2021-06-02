@@ -8,7 +8,6 @@ from scipy.stats import multivariate_normal as mvn
 
 from sds.utils.stats import multivariate_normal_logpdf as lg_mvn
 from sds.utils.general import linear_regression, one_hot
-from sds.utils.decorate import parse_init_values
 
 from sds.distributions.categorical import Categorical
 from sds.distributions.gaussian import StackedGaussiansWithPrecision
@@ -59,6 +58,9 @@ class InitCategoricalState:
 class InitGaussianObservation:
 
     def __init__(self, nb_states, obs_dim, act_dim, nb_lags=1, **kwargs):
+
+        assert nb_lags > 0
+
         self.nb_states = nb_states
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -87,7 +89,7 @@ class InitGaussianObservation:
         self.mu = self.mu[perm]
         self._sigma_chol = self._sigma_chol[perm]
 
-    def initialize(self, x):
+    def initialize(self, x, **kwargs):
         x0 = np.vstack([_x[:self.nb_lags] for _x in x])
         self.mu = np.array([np.mean(x0, axis=0) for k in range(self.nb_states)])
         self.sigma = np.array([np.cov(x0, rowvar=False) for k in range(self.nb_states)])
@@ -125,7 +127,7 @@ class InitGaussianObservation:
 
         sqerr = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
         norm = np.zeros((self.nb_states, ))
-        for _x, _p in zip(x, p):
+        for _x, _p in zip(x0, p0):
             resid = _x[:, None, :] - self.mu
             sqerr += np.sum(_p[:, :, None, None] * resid[:, :, None, :]
                             * resid[:, :, :, None], axis=0)
@@ -145,6 +147,8 @@ class InitGaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags=1, degree=1, **kwargs):
+
+        assert nb_lags > 0
 
         self.nb_states = nb_states
         self.obs_dim = obs_dim
@@ -251,7 +255,7 @@ class InitGaussianControl:
             u0 = u[:self.nb_lags]
             p0 = p[:self.nb_lags]
 
-            mu = np.zeros((len(x0), self.nb_states, self.act_dim))
+            mu = np.zeros((len(u0), self.nb_states, self.act_dim))
             for k in range(self.nb_states):
                 mu[:, k, :] = self.mean(k, x0)
             return np.einsum('nk,nkl->nl', p, mu)
@@ -310,6 +314,8 @@ class _BayesianInitGaussianObservationBase:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, likelihood=None):
+
+        assert nb_lags > 0
 
         self.nb_states = nb_states
         self.obs_dim = obs_dim
