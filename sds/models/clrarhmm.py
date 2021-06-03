@@ -10,7 +10,9 @@ from sds.initial import BayesianInitGaussianControl
 from sds.controls import AutorRegressiveLinearGaussianControl
 from sds.controls import BayesianAutorRegressiveLinearGaussianControl
 
-from sds.controls import LinearGaussianControl, BayesianLinearGaussianControl
+from sds.controls import LinearGaussianControl
+from sds.controls import BayesianLinearGaussianControl
+from sds.controls import BayesianLinearGaussianControlWithAutomaticRelevance
 
 from sds.utils.decorate import ensure_args_are_viable
 
@@ -45,9 +47,12 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel(RecurrentAutoRegressive
         if self.algo_type == 'ML':
             self.controls = LinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim, **ctl_kwargs)
         else:
-            self.controls = BayesianLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
-                                                          prior=ctl_prior, **ctl_kwargs)
-
+            if self.ctl_type == 'full':
+                self.controls = BayesianLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
+                                                              prior=ctl_prior, **ctl_kwargs)
+            elif self.ctl_type == 'ard':
+                self.controls = BayesianLinearGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                                    prior=ctl_prior, **ctl_kwargs)
         self.infer_dyn = infer_dyn
         self.infer_ctl = infer_ctl
 

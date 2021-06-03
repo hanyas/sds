@@ -219,7 +219,7 @@ class StackedLinearGaussiansWithPrecision:
     @As.setter
     def As(self, value):
         for k, dist in enumerate(self.dists):
-            dist.A = value[k, ...]
+            dist.A = value[k]
 
     @property
     def lmbdas(self):
@@ -228,7 +228,7 @@ class StackedLinearGaussiansWithPrecision:
     @lmbdas.setter
     def lmbdas(self, value):
         for k, dist in enumerate(self.dists):
-            dist.lmbda = value[k, ...]
+            dist.lmbda = value[k]
 
     @property
     def lmbdas_chol(self):
@@ -400,7 +400,7 @@ class TiedLinearGaussiansWithPrecision:
     @As.setter
     def As(self, value):
         for k, dist in enumerate(self.dists):
-            dist.A = value[k, ...]
+            dist.A = value[k]
 
     @property
     def lmbda(self):
@@ -745,7 +745,7 @@ class StackedLinearGaussiansWithDiagonalPrecision:
     @As.setter
     def As(self, value):
         for k, dist in enumerate(self.dists):
-            dist.A = value[k, ...]
+            dist.A = value[k]
 
     @property
     def lmbdas_diag(self):
@@ -754,7 +754,7 @@ class StackedLinearGaussiansWithDiagonalPrecision:
     @lmbdas_diag.setter
     def lmbdas_diag(self, value):
         for k, dist in enumerate(self.dists):
-            dist.lmbda_diag = value[k, ...]
+            dist.lmbda_diag = value[k]
 
     @property
     def lmbdas(self):
@@ -922,7 +922,7 @@ class TiedLinearGaussiansWithDiagonalPrecision:
     @As.setter
     def As(self, value):
         for k, dist in enumerate(self.dists):
-            dist.A = value[k, ...]
+            dist.A = value[k]
 
     @property
     def lmbda_diag(self):
@@ -1063,13 +1063,13 @@ class TiedLinearGaussiansWithDiagonalPrecision:
         self.lmbda_diag = 1. / sigma_diag
 
 
-class _IndependentLinearGaussianBase:
+class _SingleOutputLinearGaussianBase:
 
-    def __init__(self, column_dim, A=None, lmbda=None, affine=True):
+    def __init__(self, column_dim, W=None, lmbda=None, affine=True):
 
         self.column_dim = column_dim
 
-        self.A = A
+        self.W = W
         self.lmbda = lmbda
         self.affine = affine
 
@@ -1096,10 +1096,10 @@ class _IndependentLinearGaussianBase:
 
     def predict(self, x):
         if self.affine:
-            A, b = self.A[:-1], self.A[-1]
-            return x @ A + b
+            W, c = self.W[:-1], self.W[-1]
+            return x @ W + c
         else:
-            return x @ self.A
+            return x @ self.W
 
     def mean(self, x):
         return self.predict(x)
@@ -1117,19 +1117,19 @@ class _IndependentLinearGaussianBase:
         raise NotImplementedError
 
 
-class IndependentLinearGaussianWithKnownPrecision(_IndependentLinearGaussianBase):
+class SingleOutputLinearGaussianWithKnownPrecision(_SingleOutputLinearGaussianBase):
 
-    def __init__(self, column_dim, A=None, lmbda=None, affine=True):
-        super(IndependentLinearGaussianWithKnownPrecision, self).__init__(column_dim, A,
-                                                                          lmbda, affine)
+    def __init__(self, column_dim, W=None, lmbda=None, affine=True):
+        super(SingleOutputLinearGaussianWithKnownPrecision, self).__init__(column_dim, W,
+                                                                           lmbda, affine)
 
     @property
     def params(self):
-        return self.A
+        return self.W
 
     @params.setter
     def params(self, values):
-        self.A = values
+        self.W = values
 
     @property
     def nb_params(self):
@@ -1170,11 +1170,11 @@ class IndependentLinearGaussianWithKnownPrecision(_IndependentLinearGaussianBase
             return reduce(add, stats)
 
 
-class IndependentLinearGaussianWithKnownMean(_IndependentLinearGaussianBase):
+class SingleOutputLinearGaussianWithKnownMean(_SingleOutputLinearGaussianBase):
 
-    def __init__(self, column_dim, A=None, lmbda=None, affine=True):
-        super(IndependentLinearGaussianWithKnownMean, self).__init__(column_dim, A,
-                                                                     lmbda, affine)
+    def __init__(self, column_dim, W=None, lmbda=None, affine=True):
+        super(SingleOutputLinearGaussianWithKnownMean, self).__init__(column_dim, W,
+                                                                      lmbda, affine)
 
     @property
     def params(self):
@@ -1199,8 +1199,8 @@ class IndependentLinearGaussianWithKnownMean(_IndependentLinearGaussianBase):
 
             n = 0.5 * y.shape[0]
             yy = - 0.5 * np.sum(y * y)
-            yxTa = np.einsum('n,nl,l->', y, x, self.A, optimize=True)
-            xTaaTx = - 0.5 * np.einsum('l,nl,nd,d->', self.A, x, x, self.A, optimize=True)
+            yxTa = np.einsum('n,nl,l->', y, x, self.W, optimize=True)
+            xTaaTx = - 0.5 * np.einsum('l,nl,nd,d->', self.W, x, x, self.W, optimize=True)
 
             return Stats([n, yy + yxTa + xTaaTx])
         else:
@@ -1218,8 +1218,8 @@ class IndependentLinearGaussianWithKnownMean(_IndependentLinearGaussianBase):
 
             n = 0.5 * np.sum(weights)
             yy = - 0.5 * np.sum(weights * y * y)
-            yxTa = np.einsum('n,n,nl,l->', y, weights, x, self.A, optimize=True)
-            xTaaTx = - 0.5 * np.einsum('l,nl,n,nd,d->', self.A, x, weights, x, self.A, optimize=True)
+            yxTa = np.einsum('n,n,nl,l->', y, weights, x, self.W, optimize=True)
+            xTaaTx = - 0.5 * np.einsum('l,nl,n,nd,d->', self.W, x, weights, x, self.W, optimize=True)
 
             return Stats([n, yy + yxTa + xTaaTx])
         else:

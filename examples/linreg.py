@@ -30,42 +30,42 @@ ols.fit(X, y)
 
 from copy import deepcopy
 
-from sds.distributions.lingauss import IndependentLinearGaussianWithKnownPrecision
-from sds.distributions.lingauss import IndependentLinearGaussianWithKnownMean
+from sds.distributions.lingauss import SingleOutputLinearGaussianWithKnownPrecision
+from sds.distributions.lingauss import SingleOutputLinearGaussianWithKnownMean
 from sds.distributions.gaussian import GaussianWithPrecision
 from sds.distributions.gaussian import GaussianWithKnownMeanAndDiagonalPrecision
 from sds.distributions.gamma import Gamma
 
-likelihood_precision_prior = Gamma(dim=1, alphas=np.array([1e-16]),
-                                   betas=np.array([1e-16]))
+likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1, )),
+                                   betas=1e-6 * np.ones((1, )))
 
-parameter_precision_prior = Gamma(dim=n_features, alphas=1e-16 * np.ones((n_features, )),
-                                  betas=1e-16 * np.ones((n_features, )))
+parameter_precision_prior = Gamma(dim=n_features, alphas=np.ones((n_features, )),
+                                  betas=1e-6 * np.ones((n_features, )))
 
 likelihood_precision_posterior = deepcopy(likelihood_precision_prior)
 parameter_precision_posterior = deepcopy(parameter_precision_prior)
 parameter_posterior = None
 
-for _ in range(100):
+for i in range(100):
     # parameter posterior
-    alpha = parameter_precision_posterior.mean()
+    alphas = parameter_precision_posterior.mean()
     parameter_prior = GaussianWithPrecision(dim=n_features,
                                             mu=np.zeros((n_features, )),
-                                            lmbda=alpha * np.eye(n_features))
+                                            lmbda=np.diag(alphas))
     parameter_posterior = deepcopy(parameter_prior)
 
     beta = likelihood_precision_posterior.mean()
-    likelihood_known_precision = IndependentLinearGaussianWithKnownPrecision(column_dim=n_features,
-                                                                             lmbda=beta * np.ones((1, )),
-                                                                             affine=False)
+    likelihood_known_precision = SingleOutputLinearGaussianWithKnownPrecision(column_dim=n_features,
+                                                                              lmbda=beta,
+                                                                              affine=False)
 
     stats = likelihood_known_precision.statistics(X, y)
     parameter_posterior.nat_param = parameter_prior.nat_param + stats
 
     # likelihood precision posterior
     param = parameter_posterior.mean()
-    likelihood_known_mean = IndependentLinearGaussianWithKnownMean(column_dim=n_features,
-                                                                   A=param, affine=False)
+    likelihood_known_mean = SingleOutputLinearGaussianWithKnownMean(column_dim=n_features,
+                                                                    W=param, affine=False)
 
     stats = likelihood_known_mean.statistics(X, y)
     likelihood_precision_posterior.nat_param = likelihood_precision_prior.nat_param + stats
@@ -87,8 +87,7 @@ K = 1e-16 * np.eye(n_features)
 alphas = 1e-16 * np.ones((1, ))
 betas = 1e-16 * np.ones((1, ))
 
-prior = MatrixNormalGamma(column_dim=n_features,
-                          row_dim=1,
+prior = MatrixNormalGamma(column_dim=n_features, row_dim=1,
                           M=M, K=K, alphas=alphas, betas=betas)
 
 posterior = deepcopy(prior)

@@ -53,7 +53,7 @@ class Gamma:
 
     def rvs(self):
         # numpy uses a different parameterization
-        return npr.gamma(self.alphas, 1. / self.betas)
+        return npr.gamma(self.alphas, 1. / self.betas, size=(self.dim,))
 
     @property
     def base(self):

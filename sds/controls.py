@@ -254,6 +254,88 @@ class BayesianLinearGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
+class BayesianLinearGaussianControlWithAutomaticRelevance:
+
+    def __init__(self, nb_states, obs_dim,
+                 act_dim, prior, degree=1):
+
+        self.nb_states = nb_states
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+
+        self.degree = degree
+
+        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+
+        self.input_dim = self.feat_dim + 1
+        self.output_dim = self.act_dim
+
+        likelihood_precision_prior = prior['likelihood_precision_prior']
+        parameter_precision_prior = prior['parameter_precision_prior']
+
+        from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
+        self.object = StackedMultiOutputLinearGaussianWithAutomaticRelevance(self.nb_states,
+                                                                             self.input_dim,
+                                                                             self.output_dim,
+                                                                             likelihood_precision_prior,
+                                                                             parameter_precision_prior)
+
+    @property
+    def params(self):
+        return self.object.params
+
+    @params.setter
+    def params(self, values):
+        self.object.params = values
+
+    def permute(self, perm):
+        self.object.As = self.object.As[perm]
+        self.object.lmbdas = self.object.lmbdas[perm]
+
+    def initialize(self, x, u, **kwargs):
+        pass
+
+    def featurize(self, x):
+        feat = self.basis.fit_transform(np.atleast_2d(x))
+        return np.squeeze(feat) if x.ndim == 1\
+               else np.reshape(feat, (x.shape[0], -1))
+
+    def mean(self, z, x):
+        feat = self.featurize(x)
+        u = self.object.mean(z, feat)
+        return np.atleast_1d(u)
+
+    def sample(self, z, x):
+        feat = self.featurize(x)
+        u = self.object.rvs(z, feat)
+        return np.atleast_1d(u)
+
+    @ensure_args_are_viable
+    def log_likelihood(self, x, u):
+        if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
+            f = self.featurize(x)
+            return self.object.log_likelihood(f, u)
+        else:
+            def inner(x, u):
+                return self.log_likelihood.__wrapped__(self, x, u)
+            return list(map(inner, x, u))
+
+    def mstep(self, p, x, u, **kwargs):
+        f = [self.featurize(_x) for _x in x]
+        fs, us, ps = list(map(np.vstack, (f, u, p)))
+        self.object.em(fs, us, ps, **kwargs)
+
+    def smooth(self, p, x, u):
+        if all(isinstance(i, np.ndarray) for i in [p, x, u]):
+            mu = np.zeros((len(x), self.nb_states, self.act_dim))
+            for k in range(self.nb_states):
+                mu[:, k, :] = self.mean(k, x)
+            return np.einsum('nk,nkl->nl', p, mu)
+        else:
+            return list(map(self.smooth, p, x, u))
+
+
 class AutorRegressiveLinearGaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,

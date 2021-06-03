@@ -1,4 +1,8 @@
 import numpy as np
+import numpy.random as npr
+
+import scipy as sc
+from scipy import linalg
 
 from sds.distributions.gaussian import GaussianWithPrecision
 from sds.distributions.gaussian import StackedGaussiansWithPrecision
@@ -10,12 +14,20 @@ from sds.distributions.matrix import StackedMatrixNormalWithPrecision
 from sds.distributions.matrix import MatrixNormalWithDiagonalPrecision
 from sds.distributions.matrix import StackedMatrixNormalWithDiagonalPrecision
 
+from sds.distributions.lingauss import LinearGaussianWithPrecision
+
+from sds.distributions.gaussian import GaussianWithPrecision
+from sds.distributions.lingauss import SingleOutputLinearGaussianWithKnownPrecision
+from sds.distributions.lingauss import SingleOutputLinearGaussianWithKnownMean
+from sds.distributions.gaussian import GaussianWithKnownMeanAndDiagonalPrecision
+
 from sds.distributions.wishart import Wishart
 from sds.distributions.gamma import Gamma
 
 from sds.utils.general import Statistics as Stats
 
 from functools import partial
+from copy import deepcopy
 
 
 class NormalWishart:
@@ -1149,3 +1161,323 @@ class TiedMatrixNormalGamma:
 
     def log_likelihood(self, x):
         raise NotImplementedError
+
+
+class SingleOutputLinearGaussianWithAutomaticRelevance:
+
+    def __init__(self, input_dim,
+                 likelihood_precision_prior,
+                 parameter_precision_prior, affine=True):
+
+        self.input_dim = input_dim
+        self.affine = affine
+
+        self.likelihood_precision_prior = likelihood_precision_prior
+
+        self.parameter_precision_prior = parameter_precision_prior
+
+        alphas = self.parameter_precision_prior.rvs()
+        self.parameter_prior = GaussianWithPrecision(dim=input_dim,
+                                                     mu=np.zeros((self.input_dim, )),
+                                                     lmbda=np.diag(alphas))
+
+        self.likelihood_precision_posterior = deepcopy(likelihood_precision_prior)
+        self.parameter_precision_posterior = deepcopy(parameter_precision_prior)
+        self.parameter_posterior = deepcopy(self.parameter_prior)
+
+        beta = self.likelihood_precision_prior.rvs()
+        self.likelihood_known_precision = SingleOutputLinearGaussianWithKnownPrecision(column_dim=input_dim,
+                                                                                       lmbda=beta,
+                                                                                       affine=affine)
+
+        coef = self.parameter_prior.rvs()
+        self.likelihood_known_mean = SingleOutputLinearGaussianWithKnownMean(column_dim=input_dim,
+                                                                             W=coef, affine=affine)
+
+        self.likelihood = LinearGaussianWithPrecision(column_dim=input_dim, row_dim=1,
+                                                      A=np.expand_dims(coef, axis=0),
+                                                      lmbda=np.diag(beta), affine=affine)
+
+    @property
+    def params(self):
+        return self.A, self.lmbda
+
+    @params.setter
+    def params(self, values):
+        self.A, self.lmbda = values
+
+    @property
+    def A(self):
+        return self.likelihood.A
+
+    @A.setter
+    def A(self, value):
+        # value is a single row 1d-array
+        self.likelihood.A = np.expand_dims(value, axis=0)
+
+    @property
+    def lmbda(self):
+        return self.likelihood.lmbda
+
+    @lmbda.setter
+    def lmbda(self, value):
+        # value is a 1d-array
+        self.likelihood.lmbda = np.diag(value)
+
+    @property
+    def sigma(self):
+        return self.likelihood.sigma
+
+    def predict(self, x):
+        return self.likelihood.predict(x)
+
+    def mean(self, x):
+        return self.likelihood.mean(x)
+
+    def mode(self, x):
+        return self.likelihood.mode(x)
+
+    def rvs(self, x):
+        return self.likelihood.rvs(x)
+
+    def log_likelihood(self, x, y):
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+            yi = np.expand_dims(y, axis=1)
+            return self.likelihood.log_likelihood(x, yi)
+        else:
+            return list(map(self.log_likelihood, x, y))
+
+    def _em(self, x, y, w=None, nb_iter=10):
+        self.likelihood_precision_posterior = deepcopy(self.likelihood_precision_prior)
+        self.parameter_precision_posterior = deepcopy(self.parameter_precision_prior)
+        self.parameter_posterior = deepcopy(self.parameter_prior)
+
+        for i in range(nb_iter):
+            # variational e-step
+
+            # parameter posterior
+            alphas = self.parameter_precision_posterior.mean()
+            self.parameter_prior.lmbda = np.diag(alphas)
+
+            beta = self.likelihood_precision_posterior.mean()
+            self.likelihood_known_precision.lmbda = beta
+
+            stats = self.likelihood_known_precision.statistics(x, y) if w is None\
+                    else self.likelihood_known_precision.weighted_statistics(x, y, w)
+            self.parameter_posterior.nat_param = self.parameter_prior.nat_param + stats
+
+            # variatinoal m-step
+
+            # likelihood precision posterior
+            coef = self.parameter_posterior.mean()
+            self.likelihood_known_mean.W = coef
+
+            stats = self.likelihood_known_mean.statistics(x, y) if w is None\
+                    else self.likelihood_known_mean.weighted_statistics(x, y, w)
+            self.likelihood_precision_posterior.nat_param = self.likelihood_precision_prior.nat_param + stats
+
+            # parameter precision posterior
+            parameter_likelihood = GaussianWithKnownMeanAndDiagonalPrecision(dim=self.input_dim)
+
+            stats = parameter_likelihood.statistics(coef)
+            self.parameter_precision_posterior.nat_param = self.parameter_precision_prior.nat_param + stats
+
+    def _stochastic_em(self, x, y, w=None, nb_sub_iter=10,
+                       lr=1e-3, nb_batches=1):
+        for i in range(nb_sub_iter):
+            # variational e-step
+
+            # parameter posterior
+            alphas = self.parameter_precision_posterior.mean()
+            self.parameter_prior.lmbda = np.diag(alphas)
+
+            beta = self.likelihood_precision_posterior.mean()
+            self.likelihood_known_precision.lmbda = beta
+
+            stats = self.likelihood_known_precision.statistics(x, y) if w is None\
+                    else self.likelihood_known_precision.weighted_statistics(x, y, w)
+            self.parameter_posterior.nat_param = (1. - lr) * self.parameter_posterior.nat_param\
+                                                 + lr * (self.parameter_prior.nat_param + nb_batches * stats)
+
+            # variatinoal m-step
+
+            # likelihood precision posterior
+            coef = self.parameter_posterior.mean()
+            self.likelihood_known_mean.W = coef
+
+            stats = self.likelihood_known_mean.statistics(x, y) if w is None\
+                    else self.likelihood_known_mean.weighted_statistics(x, y, w)
+            self.likelihood_precision_posterior.nat_param = (1. - lr) * self.likelihood_precision_posterior.nat_param\
+                                                            + lr * (self.likelihood_precision_prior.nat_param + nb_batches * stats)
+
+            # parameter precision posterior
+            parameter_likelihood = GaussianWithKnownMeanAndDiagonalPrecision(dim=self.input_dim)
+
+            stats = parameter_likelihood.statistics(coef)
+            self.parameter_precision_posterior.nat_param = self.parameter_precision_prior.nat_param + stats
+
+    def em(self, x, y, w=None, **kwargs):
+        method = kwargs.get('method', 'direct')
+        if method == 'direct':
+            nb_iter = kwargs.get('nb_iter', 25)
+            self._em(x, y, w, nb_iter)
+        elif method == 'sgd':
+            from sds.utils.general import batches
+
+            nb_iter = kwargs.get('nb_iter', 100)
+            nb_sub_iter = kwargs.get('nb_sub_iter', 10)
+            batch_size = kwargs.get('batch_size', 64)
+            lr = kwargs.get('lr', 1e-3)
+
+            set_size = len(x)
+            nb_batches = float(batch_size / set_size)
+            for _ in range(nb_iter):
+                for batch in batches(batch_size, set_size):
+                    self._stochastic_em(x[batch], y[batch], w[batch], nb_sub_iter, nb_batches)
+
+        coef = self.parameter_posterior.mode()
+        beta = self.likelihood_precision_posterior.mode()
+        self.A, self.lmbda = coef, beta
+
+
+class MultiOutputLinearGaussianWithAutomaticRelevance:
+    def __init__(self, input_dim, output_dim,
+                 likelihood_precision_prior,
+                 parameter_precision_prior, affine=True):
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.affine = affine
+
+        self.dists = []
+        for i in range(self.output_dim):
+            dist = SingleOutputLinearGaussianWithAutomaticRelevance(input_dim,
+                                                                    likelihood_precision_prior,
+                                                                    parameter_precision_prior,
+                                                                    affine)
+            self.dists.append(dist)
+
+    @property
+    def params(self):
+        return self.A, self.lmbda
+
+    @params.setter
+    def params(self, values):
+        self.A = values[0]
+        self.lmbda = values[1]
+
+    @property
+    def A(self):
+        return np.vstack([dist.A for dist in self.dists])
+
+    @A.setter
+    def A(self, values):
+        for i, dist in enumerate(self.dists):
+            dist.A = values[i]
+
+    @property
+    def lmbda(self):
+        lmbdas = [dist.lmbda for dist in self.dists]
+        return sc.linalg.block_diag(*lmbdas)
+
+    @lmbda.setter
+    def lmbda(self, values):
+        for i, dist in self.dists:
+            dist.lmbda = np.diag(values[i, i])
+
+    def predict(self, x):
+        return np.hstack([dist.predict(x) for dist in self.dists])
+
+    def mean(self, x):
+        return self.predict(x)
+
+    def mode(self, x):
+        return self.predict(x)
+
+    def rvs(self, x):
+        lmbda_chol_inv = 1. / np.sqrt(self.lmbda)
+        return self.mean(x) + npr.normal(size=self.output_dim).dot(lmbda_chol_inv.T)
+
+    def log_likelihood(self, x, y):
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+            loglik = np.zeros((len(x), ))
+            for i, dist in enumerate(self.dists):
+                loglik += dist.log_likelihood(x, y[:, i])
+            return loglik
+        else:
+            return list(map(self.log_likelihood, x, y))
+
+    def em(self, x, y, w=None, **kwargs):
+        for i, dist in enumerate(self.dists):
+            dist.em(x, y[:, i], w, **kwargs)
+
+
+class StackedMultiOutputLinearGaussianWithAutomaticRelevance:
+    def __init__(self, stack_size, input_dim, output_dim,
+                 likelihood_precision_prior,
+                 parameter_precision_prior, affine=True):
+
+        self.stack_size = stack_size
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.affine = affine
+
+        self.stack = []
+        for k in range(self.stack_size):
+            dist = MultiOutputLinearGaussianWithAutomaticRelevance(input_dim, output_dim,
+                                                                   likelihood_precision_prior,
+                                                                   parameter_precision_prior,
+                                                                   affine)
+            self.stack.append(dist)
+
+    @property
+    def params(self):
+        return self.As, self.lmbdas
+
+    @params.setter
+    def params(self, values):
+        self.As = values[0]
+        self.lmbdas = values[1]
+
+    @property
+    def As(self):
+        return np.array([dist.A for dist in self.stack])
+
+    @As.setter
+    def As(self, values):
+        for k, dist in enumerate(self.stack):
+            dist.A = values[k]
+
+    @property
+    def lmbdas(self):
+        return np.array([dist.lmbda for dist in self.stack])
+
+    @lmbdas.setter
+    def lmbdas(self, values):
+        for k, dist in self.stack:
+            dist.lmbda = values[k]
+
+    def predict(self, z, x):
+        return self.stack[z].predict(x)
+
+    def mean(self, z, x):
+        return self.predict(z, x)
+
+    def mode(self, z, x):
+        return self.predict(z, x)
+
+    def rvs(self, z, x):
+        return self.stack[z].rvs(x)
+
+    def log_likelihood(self, x, y):
+        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+            loglik = np.zeros((len(x), self.stack_size))
+            for k, dist in enumerate(self.stack):
+                loglik[:, k] = dist.log_likelihood(x, y)
+            return loglik
+        else:
+            return list(map(self.log_likelihood, x, y))
+
+    def em(self, x, y, w=None, **kwargs):
+        for k, dist in enumerate(self.stack):
+            dist.em(x, y, w[:, k], **kwargs)
