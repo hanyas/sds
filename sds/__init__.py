@@ -69,7 +69,7 @@ try:
         entry_point='sds.envs:HybridPendulumWithCartesianObservation',
         max_episode_steps=1000,
         kwargs={'rarhmm': torch.load(open(os.path.dirname(__file__)
-                                          + '/envs/hybrid/models/special_rarhmm_pendulum_cart.pkl', 'rb'),
+                                          + '/envs/hybrid/models/rarhmm_pendulum_cart.pkl', 'rb'),
                                      map_location='cpu')}
     )
 except:

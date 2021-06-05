@@ -107,8 +107,8 @@ class Pendulum(gym.Env):
             low = np.array([-np.pi, -8.0])
             high = np.array([np.pi, 8.0])
         else:
-            low, high = np.array([np.pi - np.pi / 18., -1.0]),\
-                        np.array([np.pi + np.pi / 18., 1.0])
+            low, high = np.array([np.pi - np.pi / 10., -0.75]), \
+                        np.array([np.pi + np.pi / 10., 0.75])
 
         self.state = self.np_random.uniform(low=low, high=high)
         return self.observe(self.state)

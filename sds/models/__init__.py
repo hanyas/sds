@@ -5,3 +5,4 @@ from .clrarhmm import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
 from .clrarhmm import AutoRegressiveClosedLoopRecurrentHiddenMarkovModel
 from .ensemble import EnsembleHiddenMarkovModel
 from .ensemble import EnsembleClosedLoopHiddenMarkovModel
+from .ensemble import EnsembleAutoRegressiveClosedLoopHiddenMarkovModel

@@ -476,13 +476,14 @@ class BayesianInitGaussianControl:
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, degree=1, likelihood=None):
 
+        assert nb_lags > 0
+
         self.nb_states = nb_states
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.nb_lags = nb_lags
 
         self.degree = degree
-
         self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
@@ -515,7 +516,7 @@ class BayesianInitGaussianControl:
         self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
 
     def initialize(self, x, u, **kwargs):
-        kmeans = kwargs.get('kmeans', True)
+        kmeans = kwargs.get('kmeans', False)
 
         x0, u0 = [], []
         for _x, _u in zip(x, u):
@@ -596,6 +597,101 @@ class BayesianInitGaussianControl:
             p0 = p[:self.nb_lags]
 
             mu = np.zeros((len(u0), self.nb_states, self.obs_dim))
+            for k in range(self.nb_states):
+                mu[:, k, :] = self.mean(k, x0)
+            return np.einsum('nk,nkl->nl', p0, mu)
+        else:
+            return list(map(self.smooth, p, x, u))
+
+
+class BayesianInitGaussianControlWithAutomaticRelevance:
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, degree=1):
+
+        assert nb_lags > 0
+
+        self.nb_states = nb_states
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.degree = degree
+        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+
+        self.input_dim = self.feat_dim + 1
+        self.output_dim = self.act_dim
+
+        likelihood_precision_prior = prior['likelihood_precision_prior']
+        parameter_precision_prior = prior['parameter_precision_prior']
+
+        from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
+        self.object = StackedMultiOutputLinearGaussianWithAutomaticRelevance(self.nb_states,
+                                                                             self.input_dim,
+                                                                             self.output_dim,
+                                                                             likelihood_precision_prior,
+                                                                             parameter_precision_prior)
+
+    @property
+    def params(self):
+        return self.object.params
+
+    @params.setter
+    def params(self, values):
+        self.object.params = values
+
+    def permute(self, perm):
+        self.object.As = self.object.As[perm]
+        self.object.lmbdas = self.object.lmbdas[perm]
+
+    def initialize(self, x, u, **kwargs):
+        pass
+
+    def featurize(self, x):
+        feat = self.basis.fit_transform(np.atleast_2d(x))
+        return np.squeeze(feat) if x.ndim == 1\
+               else np.reshape(feat, (x.shape[0], -1))
+
+    def mean(self, z, x):
+        feat = self.featurize(x)
+        u = self.object.mean(z, feat)
+        return np.atleast_1d(u)
+
+    def sample(self, z, x):
+        feat = self.featurize(x)
+        u = self.object.rvs(z, feat)
+        return np.atleast_1d(u)
+
+    def log_likelihood(self, x, u):
+        if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            f0 = self.featurize(x0)
+            return self.object.log_likelihood(f0, u0)
+        else:
+            def inner(x, u):
+                return self.log_likelihood(x, u)
+            return list(map(inner, x, u))
+
+    def mstep(self, p, x, u, **kwargs):
+        x0, u0, p0 = [], [], []
+        for _x, _u, _p in zip(x, u, p):
+            x0.append(_x[:self.nb_lags])
+            u0.append(_u[:self.nb_lags])
+            p0.append(_p[:self.nb_lags])
+        f0 = [self.featurize(_x0) for _x0 in x0]
+
+        f0, u0, p0 = list(map(np.vstack, (f0, u0, p0)))
+        self.object.em(f0, u0, p0, **kwargs)
+
+    def smooth(self, p, x, u):
+        if all(isinstance(i, np.ndarray) for i in [p, x, u]):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            p0 = p[:self.nb_lags]
+
+            mu = np.zeros((len(x), self.nb_states, self.act_dim))
             for k in range(self.nb_states):
                 mu[:, k, :] = self.mean(k, x0)
             return np.einsum('nk,nkl->nl', p0, mu)

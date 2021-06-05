@@ -7,8 +7,10 @@ from sds.models import RecurrentAutoRegressiveHiddenMarkovModel
 
 from sds.initial import InitGaussianControl
 from sds.initial import BayesianInitGaussianControl
+from sds.initial import BayesianInitGaussianControlWithAutomaticRelevance
 from sds.controls import AutorRegressiveLinearGaussianControl
 from sds.controls import BayesianAutorRegressiveLinearGaussianControl
+from sds.controls import BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance
 
 from sds.controls import LinearGaussianControl
 from sds.controls import BayesianLinearGaussianControl
@@ -233,10 +235,19 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(RecurrentAutoRegressive
             self.init_control = InitGaussianControl(self.nb_states, self.obs_dim, self.act_dim, self.ctl_lag, **init_ctl_kwargs)
             self.controls = AutorRegressiveLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim, nb_lags=self.ctl_lag, **ctl_kwargs)
         else:
-            self.init_control = BayesianInitGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
-                                                            self.ctl_lag, prior=init_ctl_prior, **init_ctl_kwargs)
-            self.controls = BayesianAutorRegressiveLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
-                                                                         self.ctl_lag, prior=ctl_prior,  **ctl_kwargs)
+            if self.init_ctl_type == 'full':
+                self.init_control = BayesianInitGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
+                                                                self.ctl_lag, prior=init_ctl_prior, **init_ctl_kwargs)
+            elif self.init_ctl_type == 'ard':
+                self.init_control = BayesianInitGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                                      self.ctl_lag, prior=init_ctl_prior, **init_ctl_kwargs)
+
+            if self.ctl_type == 'full':
+                self.controls = BayesianAutorRegressiveLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
+                                                                             self.ctl_lag, prior=ctl_prior,  **ctl_kwargs)
+            elif self.ctl_type == 'ard':
+                self.controls = BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                                                  self.ctl_lag, prior=ctl_prior,  **ctl_kwargs)
 
         self.infer_dyn = infer_dyn
         self.infer_ctl = infer_ctl
@@ -374,8 +385,8 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(RecurrentAutoRegressive
             for t in range(self.ctl_lag, len(obs)):
                 z[t] = npr.choice(self.nb_states, p=w[t, :]) if stoch\
                        else np.argmax(w[t, :])
-                u[t] = self.controls.sample(z[t], obs[t - self.ctl_lag:t + 1]) if stoch\
-                       else self.controls.mean(z[t], obs[t - self.ctl_lag:t + 1])
+                u[t] = self.controls.sample(z[t], obs[t - self.ctl_lag:t + 1], ar=True) if stoch\
+                       else self.controls.mean(z[t], obs[t - self.ctl_lag:t + 1], ar=True)
             return z, u
         else:
             def partial(obs, act):

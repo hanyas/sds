@@ -450,17 +450,17 @@ class AutorRegressiveLinearGaussianControl:
         psi0 = kwargs.get('psi0', 1.)
         nu0 = kwargs.get('nu0', self.act_dim + 1)
 
-        xr, ur, w = [], [], []
+        xr, ur, wr = [], [], []
         for _x, _u, _w in zip(x, u, p):
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
-            w.append(_w[self.nb_lags:])
+            wr.append(_w[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
 
         _sigma = np.zeros((self.nb_states, self.act_dim, self.act_dim))
         for k in range(self.nb_states):
             coef, intercept, sigma = linear_regression(Xs=np.vstack(fr), ys=np.vstack(ur),
-                                                       weights=np.vstack(w)[:, k], fit_intercept=True,
+                                                       weights=np.vstack(wr)[:, k], fit_intercept=True,
                                                        mu0=mu0, sigma0=sigma0, psi0=psi0, nu0=nu0)
 
             self.K[k] = coef
@@ -528,7 +528,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
         self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
 
     def initialize(self, x, u, **kwargs):
-        kmeans = kwargs.get('kmeans', True)
+        kmeans = kwargs.get('kmeans', False)
 
         xr, ur = [], []
         for _x, _u in zip(x, u):
@@ -581,16 +581,16 @@ class BayesianAutorRegressiveLinearGaussianControl:
             return list(map(inner, x, u))
 
     def mstep(self, p, x, u, **kwargs):
-        xr, ur, w = [], [], []
+        xr, ur, wr = [], [], []
         for _x, _u, _w in zip(x, u, p):
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
-            w.append(_w[self.nb_lags:])
+            wr.append(_w[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
 
         method = kwargs.get('method', 'direct')
         if method == 'direct':
-            stats = self.likelihood.weighted_statistics(fr, ur, w)
+            stats = self.likelihood.weighted_statistics(fr, ur, wr)
             self.posterior.nat_param = self.prior.nat_param + stats
         elif method == 'sgd':
             from sds.utils.general import batches
@@ -599,7 +599,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
             nb_iter = kwargs.get('nb_iter', 100)
             batch_size = kwargs.get('batch_size', 64)
 
-            fr, ur, w = list(map(np.vstack, (fr, ur, w)))
+            fr, ur, w = list(map(np.vstack, (fr, ur, wr)))
 
             set_size = len(fr)
             prob = float(batch_size / set_size)
@@ -611,8 +611,8 @@ class BayesianAutorRegressiveLinearGaussianControl:
         else:
             raise NotImplementedError
 
-        self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
-                               + 1e-3 * self.posterior.nat_param
+        # self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
+        #                        + 1e-3 * self.posterior.nat_param
 
         self.likelihood.params = self.posterior.mode()
 
@@ -623,6 +623,104 @@ class BayesianAutorRegressiveLinearGaussianControl:
             pr = p[self.nb_lags:]
 
             mu = np.zeros((len(ur), self.nb_states, self.obs_dim))
+            for k in range(self.nb_states):
+                mu[:, k, :] = self.mean(k, xr)
+            return np.einsum('nk,nkl->nl', pr, mu)
+        else:
+            return list(map(self.smooth, p, x, u))
+
+
+class BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance:
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, degree=1):
+
+        assert nb_lags > 0
+
+        self.nb_states = nb_states
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.degree = degree
+        self.feat_dim = int(sc.special.comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+
+        self.input_dim = self.feat_dim + 1
+        self.output_dim = self.act_dim
+
+        likelihood_precision_prior = prior['likelihood_precision_prior']
+        parameter_precision_prior = prior['parameter_precision_prior']
+
+        from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
+        self.object = StackedMultiOutputLinearGaussianWithAutomaticRelevance(self.nb_states,
+                                                                             self.input_dim,
+                                                                             self.output_dim,
+                                                                             likelihood_precision_prior,
+                                                                             parameter_precision_prior)
+
+    @property
+    def params(self):
+        return self.object.params
+
+    @params.setter
+    def params(self, values):
+        self.object.params = values
+
+    def permute(self, perm):
+        self.object.As = self.object.As[perm]
+        self.object.lmbdas = self.object.lmbdas[perm]
+
+    def initialize(self, x, u, **kwargs):
+        pass
+
+    def featurize(self, x):
+        feat = self.basis.fit_transform(np.atleast_2d(x))
+        return np.squeeze(feat) if x.ndim == 1\
+               else np.reshape(feat, (x.shape[0], -1))
+
+    def mean(self, z, x, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
+        fr = self.featurize(xr)
+        u = self.object.mean(z, fr)
+        return np.atleast_1d(u)
+
+    def sample(self, z, x, ar=False):
+        xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
+        fr = self.featurize(xr)
+        u = self.object.rvs(z, fr)
+        return np.atleast_1d(u)
+
+    @ensure_args_are_viable
+    def log_likelihood(self, x, u):
+        if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
+            xr = arstack(x, self.nb_lags + 1)
+            ur = u[self.nb_lags:]
+            fr = self.featurize(xr)
+            return self.object.log_likelihood(fr, ur)
+        else:
+            def inner(x, u):
+                return self.log_likelihood.__wrapped__(self, x, u)
+            return list(map(inner, x, u))
+
+    def mstep(self, p, x, u, **kwargs):
+        xr, ur, wr = [], [], []
+        for _x, _u, _w in zip(x, u, p):
+            xr.append(arstack(_x, self.nb_lags + 1))
+            ur.append(_u[self.nb_lags:])
+            wr.append(_w[self.nb_lags:])
+        fr = [self.featurize(_xr) for _xr in xr]
+
+        fr, ur, pr = list(map(np.vstack, (fr, ur, wr)))
+        self.object.em(fr, ur, pr, **kwargs)
+
+    def smooth(self, p, x, u):
+        if all(isinstance(i, np.ndarray) for i in [p, x, u]):
+            xr = arstack(x, self.nb_lags + 1)
+            ur = u[self.nb_lags:]
+            pr = p[self.nb_lags:]
+
+            mu = np.zeros((len(x), self.nb_states, self.act_dim))
             for k in range(self.nb_states):
                 mu[:, k, :] = self.mean(k, xr)
             return np.einsum('nk,nkl->nl', pr, mu)

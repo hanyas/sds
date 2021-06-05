@@ -440,8 +440,8 @@ class _BayesianAutoRegressiveObservationBase:
         else:
             raise NotImplementedError
 
-        self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
-                               + 1e-3 * self.posterior.nat_param
+        # self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
+        #                        + 1e-3 * self.posterior.nat_param
 
         self.likelihood.params = self.posterior.mode()
 
