@@ -67,6 +67,7 @@ if __name__ == "__main__":
     random.seed(1337)
     npr.seed(1337)
     torch.manual_seed(1337)
+    torch.set_num_threads(1)
 
     env = gym.make('Pendulum-ID-v1')
     env._max_episode_steps = 5000
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 
     from stable_baselines import SAC
 
-    _ctl = SAC.load("./sac_pendulum_friction_0001_discount_099")
+    _ctl = SAC.load("./sac_pendulum")
     sac_ctl = lambda x: _ctl.predict(x)[0]
 
     nb_rollouts, nb_steps = 50, 200

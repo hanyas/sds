@@ -22,7 +22,8 @@ def ang2cart(x):
         state[1] = np.sin(x[0])
         state[2] = x[1]
         return state
-    return np.vstack(list(map(ang2cart, list(x))))
+    else:
+        return np.vstack(list(map(ang2cart, list(x))))
 
 
 class HybridPendulum(gym.Env):

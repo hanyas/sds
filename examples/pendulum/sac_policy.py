@@ -56,5 +56,5 @@ for _obs, _act in zip(obs, act):
     ax[-1].plot(_act)
 plt.show()
 
-# save ctl
-model.save("sac_pendulum_friction_0001_discount_099")
+# # save ctl
+# model.save("sac_pendulum")
