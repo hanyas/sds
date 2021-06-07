@@ -39,14 +39,14 @@ if __name__ == "__main__":
     import gym
     import sds
 
-    true_env = gym.make('Pendulum-ID-v1')
+    true_env = gym.make('Pole-ID-v0')
     true_env._max_episode_steps = 5000
 
-    hybrid_env = gym.make('HybridPendulum-ID-v1')
+    hybrid_env = gym.make('HybridPole-ID-v0')
     hybrid_env._max_episode_steps = 5000
 
-    xlim = (-np.pi, np.pi)
-    ylim = (-8.0, 8.0)
+    xlim = (-0.25, 0.25)
+    ylim = (-1.5, 1.5)
 
     npts, hr = 35, 2
 
@@ -116,6 +116,6 @@ if __name__ == "__main__":
     ax.set_ylim(ylim)
 
     # from tikzplotlib import save
-    # save("pendulum_openloop.tex")
+    # save("pole_openloop.tex")
 
     plt.show()

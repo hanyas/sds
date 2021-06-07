@@ -32,7 +32,8 @@ def sample_env(env, nb_rollouts, nb_steps,
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
 
-    ulim = env.action_space.high
+    umin = env.action_space.low
+    umax = env.action_space.high
 
     for n in range(nb_rollouts):
         _obs = np.zeros((nb_steps, obs_dim))
@@ -42,12 +43,12 @@ def sample_env(env, nb_rollouts, nb_steps,
 
         for t in range(nb_steps):
             if ctl is None:
-                u = npr.uniform(-ulim, ulim)
+                u = npr.uniform(umin, umax)
             else:
                 u = ctl(x) + noise_std * npr.randn(1, )
 
             if apply_limit:
-                u = np.clip(u, -ulim, ulim)
+                u = np.clip(u, umin, umax)
 
             _obs[t, :], _act[t, :] = x, u
             x, r, _, _ = env.step(u)
