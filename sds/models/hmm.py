@@ -267,7 +267,7 @@ class HiddenMarkovModel:
 
     @ensure_args_are_viable
     def annealed_em(self, train_obs, train_act=None,
-                    nb_iter=50, nb_sub_iter=25,
+                    nb_iter=50, nb_sub_iter=50,
                     prec=1e-4, discount=0.99,
                     init_state_mstep_kwargs={},
                     trans_mstep_kwargs={},
@@ -394,31 +394,28 @@ class HiddenMarkovModel:
                 return self.filtered_state.__wrapped__(self, obs, act)
             return list(map(inner, obs, act))
 
-    def _sample(self, horizon, act=None, seed=None):
-        npr.seed(seed)
+    def sample(self, horizon, act=None, seed=None):
+        if isinstance(horizon, int):
+            assert isinstance(act, np.ndarray) or act is None
 
-        act = np.zeros((horizon, self.act_dim)) if act is None else act
-        obs = np.zeros((horizon, self.obs_dim))
-        state = np.zeros((horizon,), np.int64)
+            npr.seed(seed)
 
-        state[0] = self.init_state.sample()
-        obs[0] = self.observations.sample(state[0])
-        for t in range(1, horizon):
-            state[t] = self.transitions.sample(state[t - 1], obs[t - 1], act[t - 1])
-            obs[t] = self.observations.sample(state[t], obs[t - 1], act[t - 1])
+            act = np.zeros((horizon, self.act_dim)) if act is None else act
+            obs = np.zeros((horizon, self.obs_dim))
+            state = np.zeros((horizon,), np.int64)
 
-        return state, obs
+            state[0] = self.init_state.sample()
+            obs[0] = self.observations.sample(state[0])
+            for t in range(1, horizon):
+                state[t] = self.transitions.sample(state[t - 1], obs[t - 1], act[t - 1])
+                obs[t] = self.observations.sample(state[t], obs[t - 1], act[t - 1])
 
-    def sample(self, horizon, act=None, nodes=8):
-        act = [None] * len(horizon) if act is None else act
-        seeds = [i for i in range(len(horizon))]
-
-        pool = ProcessPool(nodes=nodes)
-        res = pool.map(self._sample, horizon, act, seeds)
-        pool.clear()
-
-        state, obs = list(map(list, zip(*res)))
-        return state, obs
+            return state, obs
+        else:
+            seeds = [i for i in range(len(horizon))]
+            act = [None] * len(horizon) if act is None else act
+            res = list(map(self.sample, horizon, act, seed))
+            return list(map(list, zip(*res)))
 
     def plot(self, obs, act=None, true_state=None, plot_mean=True, title=None):
 

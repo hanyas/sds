@@ -36,7 +36,7 @@ if __name__ == "__main__":
     algo_type = 'MAP'
     init_obs_type = 'full'
     obs_type = 'full'
-    trans_type = 'neural'
+    trans_type = 'neural-ensemble'
 
     # init_state_prior
     init_state_prior = {}
@@ -44,8 +44,10 @@ if __name__ == "__main__":
     # init_obs_prior
     mu = np.zeros((obs_dim,))
     kappa = 1e-64
-    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = obs_dim + 1 + 1e-8
 
     from sds.distributions.composite import StackedNormalWishart
     init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
@@ -60,8 +62,10 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = obs_dim + 1 + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -99,7 +103,7 @@ if __name__ == "__main__":
                                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     ensemble.em(train_obs, train_act,
-                nb_iter=500, prec=1e-4,
+                nb_iter=500, prec=1e-4, initialize=True,
                 init_state_mstep_kwargs=init_state_mstep_kwargs,
                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                 trans_mstep_kwargs=trans_mstep_kwargs,
@@ -112,3 +116,17 @@ if __name__ == "__main__":
 
     # import torch
     # torch.save(ensemble, open("ensemble_pendulum_cart.pkl", "wb"))
+
+    hst, hr = 10, 75
+    import matplotlib.pyplot as plt
+    for obs, act in zip(test_obs, test_act):
+        nxt_obs = ensemble.forcast(horizon=hr, hist_obs=obs[:hst, :],
+                                   hist_act=act[:hst, :act_dim],
+                                   nxt_act=act[hst:, :act_dim], average=True)
+
+        fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(8, 8))
+        for k in range(0, obs_dim):
+            axes[k].plot(obs[hst:hst + hr, k], 'b', lw=2)
+            axes[k].plot(nxt_obs[:, k], 'r', lw=2)
+
+    plt.show()

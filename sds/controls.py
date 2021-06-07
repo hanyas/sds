@@ -1,11 +1,11 @@
 import numpy as np
 import numpy.random as npr
-from numpy import column_stack as cstack
 
 import scipy as sc
 from scipy import stats
 from scipy import special
 from scipy.stats import multivariate_normal as mvn
+from scipy.stats import invwishart
 
 from sds.utils.stats import multivariate_normal_logpdf as lg_mvn
 from sds.utils.general import linear_regression, one_hot, arstack
@@ -31,9 +31,19 @@ class LinearGaussianControl:
         self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
-        self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
-        self.kff = npr.randn(self.nb_states, self.act_dim)
-        self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
+        # self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
+        # self.kff = npr.randn(self.nb_states, self.act_dim)
+        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
+
+        self.K = np.zeros((self.nb_states, self.act_dim, self.feat_dim))
+        self.kff = np.zeros((self.nb_states, self.act_dim))
+        self._sigma_chol = np.zeros((self.nb_states, self.act_dim, self.act_dim))
+
+        for k in range(self.nb_states):
+            _sigma = invwishart.rvs(self.act_dim + 1, np.eye(self.act_dim))
+            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.act_dim))
+            self.K[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(self.feat_dim, )).T
+            self.kff[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
 
     @property
     def sigma(self):
@@ -352,9 +362,19 @@ class AutorRegressiveLinearGaussianControl:
         self.feat_dim = int(sc.special.comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
-        self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
-        self.kff = npr.randn(self.nb_states, self.act_dim)
-        self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
+        # self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
+        # self.kff = npr.randn(self.nb_states, self.act_dim)
+        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
+
+        self.K = np.zeros((self.nb_states, self.act_dim, self.feat_dim))
+        self.kff = np.zeros((self.nb_states, self.act_dim))
+        self._sigma_chol = np.zeros((self.nb_states, self.act_dim, self.act_dim))
+
+        for k in range(self.nb_states):
+            _sigma = invwishart.rvs(self.act_dim + 1, np.eye(self.act_dim))
+            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.act_dim))
+            self.K[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(self.feat_dim, )).T
+            self.kff[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
 
     @property
     def sigma(self):
@@ -711,8 +731,8 @@ class BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance:
             wr.append(_w[self.nb_lags:])
         fr = [self.featurize(_xr) for _xr in xr]
 
-        fr, ur, pr = list(map(np.vstack, (fr, ur, wr)))
-        self.object.em(fr, ur, pr, **kwargs)
+        fr, ur, wr = list(map(np.vstack, (fr, ur, wr)))
+        self.object.em(fr, ur, wr, **kwargs)
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):

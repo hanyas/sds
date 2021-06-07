@@ -109,17 +109,19 @@ class EnsembleHiddenMarkovModel:
             _, nxt_obs[i] = model.step(hist_obs, hist_act, stoch, average)
         return np.mean(nxt_obs, axis=0)
 
-    def forcast(self, horizon=None, hist_obs=None, hist_act=None,
-                nxt_act=None, stoch=False, average=False, nodes=8):
-
-        nxt_obs = []
-        for model in self.models:
-            _, _nxt_obs = model.forcast(horizon, hist_obs, hist_act,
-                                        nxt_act, stoch, average, nodes)
-            nxt_obs.append(np.stack(_nxt_obs, 0))
-
-        nxt_obs = np.stack(nxt_obs, axis=3)
-        return np.mean(nxt_obs, axis=3)
+    def forcast(self, horizon=1, hist_obs=None, hist_act=None,
+                nxt_act=None, stoch=False, average=False):
+        if isinstance(horizon, int) and isinstance(hist_obs, np.ndarray):
+            nxt_obs = []
+            for m in self.models:
+                nxt_obs.append(m.forcast(horizon, hist_obs, hist_act, nxt_act, stoch, average)[1])
+            return np.mean(np.stack(nxt_obs, axis=0), axis=0)
+        else:
+            nxt_obs = []
+            for m in self.models:
+                _nxt_obs = m.forcast(horizon, hist_obs, hist_act, nxt_act, stoch, average)[1]
+                nxt_obs.append(np.stack(_nxt_obs, 0))
+            return np.mean(np.stack(nxt_obs, axis=0), axis=0)
 
     def _kstep_error(self, obs, act, horizon=1, stoch=False, average=False):
 
@@ -154,15 +156,14 @@ class EnsembleHiddenMarkovModel:
 
     @ensure_args_are_viable
     def kstep_error(self, obs, act, horizon=1, stoch=False, average=False):
-
-        mse, smse, evar = [], [], []
-        for _obs, _act in zip(obs, act):
-            _mse, _smse, _evar = self._kstep_error(_obs, _act, horizon, stoch, average)
-            mse.append(_mse)
-            smse.append(_smse)
-            evar.append(_evar)
-
-        return np.mean(mse), np.mean(smse), np.mean(evar)
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            return self._kstep_error(obs, act, horizon, stoch, average)
+        else:
+            def inner(obs, act):
+                return self.kstep_error.__wrapped__(self, obs, act, horizon, stoch, average)
+            res = list(map(inner, obs, act))
+            mse, smse, evar = list(map(list, zip(*res)))
+            return np.mean(mse), np.mean(smse), np.mean(evar)
 
 
 class EnsembleClosedLoopHiddenMarkovModel:

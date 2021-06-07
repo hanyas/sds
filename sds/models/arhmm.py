@@ -1,8 +1,6 @@
 import numpy as np
 import numpy.random as npr
 
-from scipy.special import logsumexp
-
 from sds.models import HiddenMarkovModel
 
 from sds.initial import InitGaussianObservation
@@ -14,6 +12,7 @@ from sds.observations import BayesianAutoRegressiveGaussianObservation
 from sds.observations import BayesianAutoRegressiveDiagonalGaussianObservation
 from sds.observations import BayesianAutoRegressiveTiedGaussianObservation
 from sds.observations import BayesianAutoRegressiveTiedDiagonalGaussianObservation
+from sds.observations import BayesianAutoRegressiveGaussianObservationWithAutomaticRelevance
 
 from sds.utils.decorate import ensure_args_are_viable
 
@@ -76,6 +75,9 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
             elif obs_type == 'tied-diagonal':
                 self.observations = BayesianAutoRegressiveTiedDiagonalGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
                                                                                           self.obs_lag, prior=obs_prior, **obs_kwargs)
+            elif obs_type == 'ard':
+                self.observations = BayesianAutoRegressiveGaussianObservationWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                                                    self.obs_lag, prior=obs_prior, **obs_kwargs)
             else:
                 raise NotImplementedError
 
@@ -221,11 +223,9 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
         return state, obs
 
     def _forcast(self, horizon=1, hist_obs=None, hist_act=None,
-                 nxt_act=None, stoch=False, average=False, seed=None):
+                 nxt_act=None, stoch=False, average=False):
 
         assert hist_obs.shape[0] >= self.obs_lag
-
-        npr.seed(seed)
 
         hist_obs = np.atleast_2d(hist_obs)
         hist_act = np.atleast_2d(hist_act) if hist_act is not None else None
@@ -280,23 +280,21 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
 
         return nxt_state, nxt_obs
 
-    def forcast(self, horizon=None, hist_obs=None, hist_act=None,
-                nxt_act=None, stoch=False, average=False, nodes=8):
+    def forcast(self, horizon, hist_obs, hist_act=None,
+                nxt_act=None, stoch=False, average=False):
+        if isinstance(horizon, int) and isinstance(hist_obs, np.ndarray):
+            if hist_act is None:
+                assert nxt_act is None
+            return self._forcast(horizon, hist_obs, hist_act, nxt_act, stoch, average)
+        else:
+            hist_act = [None] * len(horizon) if hist_act is None else hist_act
+            nxt_act = [None] * len(horizon) if nxt_act is None else nxt_act
 
-        if hist_act is None:
-            assert nxt_act is None
+            def inner(horizon, hist_obs, hist_act, nxt_act):
+                return self.forcast(horizon, hist_obs, hist_act, nxt_act, stoch, average)
 
-        hist_act = [None] * len(horizon) if hist_act is None else hist_act
-        nxt_act = [None] * len(horizon) if nxt_act is None else nxt_act
-        seeds = [i for i in range(len(horizon))]
-
-        nxt_state, nxt_obs = [], []
-        for hr, hobs, hact, nact, seed in zip(horizon, hist_obs, hist_act, nxt_act, seeds):
-            _nxt_state, _nxt_obs = self._forcast(hr, hobs, hact, nact, stoch, average, seed)
-            nxt_state.append(_nxt_state)
-            nxt_obs.append(_nxt_obs)
-
-        return nxt_state, nxt_obs
+            res = list(map(inner, horizon, hist_obs, hist_act, nxt_act))
+            return list(map(list, zip(*res)))
 
     def _kstep_error(self, obs, act, horizon=1, stoch=False, average=False):
 
@@ -331,12 +329,11 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
 
     @ensure_args_are_viable
     def kstep_error(self, obs, act, horizon=1, stoch=False, average=False):
-
-        mse, smse, evar = [], [], []
-        for _obs, _act in zip(obs, act):
-            _mse, _smse, _evar = self._kstep_error(_obs, _act, horizon, stoch, average)
-            mse.append(_mse)
-            smse.append(_smse)
-            evar.append(_evar)
-
-        return np.mean(mse), np.mean(smse), np.mean(evar)
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            return self._kstep_error(obs, act, horizon, stoch, average)
+        else:
+            def inner(obs, act):
+                return self.kstep_error.__wrapped__(self, obs, act, horizon, stoch, average)
+            res = list(map(inner, obs, act))
+            mse, smse, evar = list(map(list, zip(*res)))
+            return np.mean(mse), np.mean(smse), np.mean(evar)

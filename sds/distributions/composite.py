@@ -16,7 +16,6 @@ from sds.distributions.matrix import StackedMatrixNormalWithDiagonalPrecision
 
 from sds.distributions.lingauss import LinearGaussianWithPrecision
 
-from sds.distributions.gaussian import GaussianWithPrecision
 from sds.distributions.lingauss import SingleOutputLinearGaussianWithKnownPrecision
 from sds.distributions.lingauss import SingleOutputLinearGaussianWithKnownMean
 from sds.distributions.gaussian import GaussianWithKnownMeanAndDiagonalPrecision
@@ -1173,7 +1172,6 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
         self.affine = affine
 
         self.likelihood_precision_prior = likelihood_precision_prior
-
         self.parameter_precision_prior = parameter_precision_prior
 
         alphas = self.parameter_precision_prior.rvs()
@@ -1319,13 +1317,13 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
     def em(self, x, y, w=None, **kwargs):
         method = kwargs.get('method', 'direct')
         if method == 'direct':
-            nb_iter = kwargs.get('nb_iter', 25)
+            nb_iter = kwargs.get('nb_iter', 50)
             self._em(x, y, w, nb_iter)
         elif method == 'sgd':
             from sds.utils.general import batches
 
-            nb_iter = kwargs.get('nb_iter', 100)
-            nb_sub_iter = kwargs.get('nb_sub_iter', 10)
+            nb_iter = kwargs.get('nb_iter', 1)
+            nb_sub_iter = kwargs.get('nb_sub_iter', 50)
             batch_size = kwargs.get('batch_size', 64)
             lr = kwargs.get('lr', 1e-3)
 
@@ -1335,10 +1333,14 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
                 for batch in batches(batch_size, set_size):
                     self._stochastic_em(x[batch], y[batch], w[batch], nb_sub_iter, nb_batches)
 
-        coef = self.parameter_posterior.mode()
-        beta = self.likelihood_precision_posterior.mode()
+        values = kwargs.get('values', 'mode')
+        if values == 'mode':
+            coef = self.parameter_posterior.mode()
+            beta = self.likelihood_precision_posterior.mode()
+        else:
+            coef = self.parameter_posterior.rvs()
+            beta = self.likelihood_precision_posterior.rvs()
         self.A, self.lmbda = coef, beta
-
 
 class MultiOutputLinearGaussianWithAutomaticRelevance:
     def __init__(self, input_dim, output_dim,

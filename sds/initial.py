@@ -5,6 +5,7 @@ import scipy as sc
 from scipy import stats
 from scipy.special import logsumexp
 from scipy.stats import multivariate_normal as mvn
+from scipy.stats import invwishart
 
 from sds.utils.stats import multivariate_normal_logpdf as lg_mvn
 from sds.utils.general import linear_regression, one_hot
@@ -66,8 +67,16 @@ class InitGaussianObservation:
         self.act_dim = act_dim
         self.nb_lags = nb_lags
 
-        self.mu = npr.randn(self.nb_states, self.obs_dim)
-        self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
+        # self.mu = npr.randn(self.nb_states, self.obs_dim)
+        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
+
+        self.mu = np.zeros((self.nb_states, self.obs_dim))
+        self._sigma_chol = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
+
+        for k in range(self.nb_states):
+            _sigma = invwishart.rvs(self.obs_dim + 1, np.eye(self.obs_dim))
+            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.obs_dim))
+            self.mu[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
 
     @property
     def sigma(self):
@@ -159,9 +168,19 @@ class InitGaussianControl:
         self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
-        self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
-        self.kff = npr.randn(self.nb_states, self.act_dim)
-        self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
+        # self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
+        # self.kff = npr.randn(self.nb_states, self.act_dim)
+        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
+
+        self.K = np.zeros((self.nb_states, self.act_dim, self.feat_dim))
+        self.kff = np.zeros((self.nb_states, self.act_dim))
+        self._sigma_chol = np.zeros((self.nb_states, self.act_dim, self.act_dim))
+
+        for k in range(self.nb_states):
+            _sigma = invwishart.rvs(self.act_dim + 1, np.eye(self.act_dim))
+            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.act_dim))
+            self.K[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(self.feat_dim, )).T
+            self.kff[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
 
     @property
     def sigma(self):
@@ -392,8 +411,8 @@ class _BayesianInitGaussianObservationBase:
                 self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
                                            + lr * (self.prior.nat_param + stats)
 
-        # self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
-        #                        + 1e-3 * self.posterior.nat_param
+        self.prior.nat_param = (1. - 1e-1) * self.prior.nat_param\
+                               + 1e-1 * self.posterior.nat_param
 
         self.likelihood.params = self.posterior.mode()
 

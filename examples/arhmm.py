@@ -33,11 +33,11 @@ T = [150, 135, 165]
 true_z, x = true_arhmm.sample(horizon=T)
 true_ll = true_arhmm.log_normalizer(x)
 
-# npr.seed(1337)
+npr.seed(1337)
 ann_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=3, obs_dim=2)
-ann_lls = ann_arhmm.annealed_em(x, nb_iter=100, prec=0., discount=0.95)
+ann_lls = ann_arhmm.annealed_em(x, nb_iter=250, prec=0., discount=0.99)
 
-# npr.seed(1337)
+npr.seed(1337)
 std_arhmm = AutoRegressiveHiddenMarkovModel(nb_states=3, obs_dim=2)
 std_lls = std_arhmm.em(x, nb_iter=100, prec=0., initialize=True)
 
