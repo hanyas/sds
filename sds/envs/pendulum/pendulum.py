@@ -59,7 +59,7 @@ class Pendulum(gym.Env):
         return self.umax
 
     def dynamics(self, x, u):
-        _u = np.clip(u, -self.ulim, self.ulim)
+        uc = np.clip(u, -self.ulim, self.ulim)
 
         g, m, l, k = 9.81, 1., 1., 1e-3
 
@@ -68,10 +68,10 @@ class Pendulum(gym.Env):
             return np.hstack((dth, - 3. * g / (2. * l) * np.sin(th + np.pi) +
                               3. / (m * l ** 2) * (u - k * dth)))
 
-        k1 = f(x, _u)
-        k2 = f(x + 0.5 * self.dt * k1, _u)
-        k3 = f(x + 0.5 * self.dt * k2, _u)
-        k4 = f(x + self.dt * k3, _u)
+        k1 = f(x, uc)
+        k2 = f(x + 0.5 * self.dt * k1, uc)
+        k3 = f(x + 0.5 * self.dt * k2, uc)
+        k4 = f(x + self.dt * k3, uc)
 
         xn = x + self.dt / 6. * (k1 + 2. * k2 + 2. * k3 + k4)
         xn = np.clip(xn, -self.xlim, self.xlim)

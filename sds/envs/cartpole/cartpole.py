@@ -59,7 +59,7 @@ class Cartpole(gym.Env):
         return self.umax
 
     def dynamics(self, x, u):
-        _u = np.clip(u, -self.ulim, self.ulim)
+        uc = np.clip(u, -self.ulim, self.ulim)
 
         # Equations: http://coneural.org/florian/papers/05_cart_pole.pdf
         # x = [x, th, dx, dth]
@@ -85,10 +85,10 @@ class Cartpole(gym.Env):
             ddx = (u + Mp * l * (dth**2 * sth - ddth * cth)) / Mt
             return np.hstack((dq, dth, ddx, ddth))
 
-        c1 = f(x, _u)
-        c2 = f(x + 0.5 * self.dt * c1, _u)
-        c3 = f(x + 0.5 * self.dt * c2, _u)
-        c4 = f(x + self.dt * c3, _u)
+        c1 = f(x, uc)
+        c2 = f(x + 0.5 * self.dt * c1, uc)
+        c3 = f(x + 0.5 * self.dt * c2, uc)
+        c4 = f(x + self.dt * c3, uc)
 
         xn = x + self.dt / 6. * (c1 + 2. * c2 + 2. * c3 + c4)
         xn = np.clip(xn, -self.xlim, self.xlim)
