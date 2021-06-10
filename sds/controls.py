@@ -332,6 +332,11 @@ class BayesianLinearGaussianControlWithAutomaticRelevance:
             return list(map(inner, x, u))
 
     def mstep(self, p, x, u, **kwargs):
+        # weighted posterior
+        w = kwargs.get('w', None)
+        if w and isinstance(w, list):
+            p = [_w * _p for _w, _p in zip(w,p)]
+
         f = [self.featurize(_x) for _x in x]
         fs, us, ps = list(map(np.vstack, (f, u, p)))
         self.object.em(fs, us, ps, **kwargs)
