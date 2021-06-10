@@ -386,6 +386,10 @@ class HiddenMarkovModel:
     @ensure_args_are_viable
     def filtered_state(self, obs, act=None):
         if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            # pad action for filtering
+            if len(obs) != len(act):
+                act = np.pad(act, [(0, 1), (0, 0)], 'constant')
+
             logliklhds = self.log_likelihoods(obs, act)
             alpha, _ = self.forward(*logliklhds)
             return np.exp(alpha - logsumexp(alpha, axis=1, keepdims=True))
