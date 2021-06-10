@@ -125,13 +125,14 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
               obs, act,
               init_state_mstep_kwargs,
               trans_mstep_kwargs,
-              obs_mstep_kwargs, **kwargs):
+              obs_mstep_kwargs,
+              init_obs_mstep_kwargs={}):
 
         super(AutoRegressiveHiddenMarkovModel, self).mstep(gamma, zeta, obs, act,
                                                            init_state_mstep_kwargs,
                                                            trans_mstep_kwargs,
                                                            obs_mstep_kwargs)
-        init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
+
         self.init_observation.mstep(gamma, obs, **init_obs_mstep_kwargs)
 
     @ensure_args_are_viable

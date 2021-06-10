@@ -131,15 +131,17 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel(RecurrentAutoRegressive
               obs, act,
               init_state_mstep_kwargs,
               trans_mstep_kwargs,
-              obs_mstep_kwargs, **kwargs):
+              obs_mstep_kwargs,
+              init_obs_mstep_kwargs={},
+              ctl_mstep_kwargs={}):
 
         if self.infer_dyn:
             super(ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel, self).mstep(gamma, zeta, obs, act,
                                                                                   init_state_mstep_kwargs,
                                                                                   trans_mstep_kwargs,
-                                                                                  obs_mstep_kwargs, **kwargs)
+                                                                                  obs_mstep_kwargs,
+                                                                                  init_obs_mstep_kwargs)
         if self.infer_ctl:
-            ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
             self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
 
     @ensure_args_are_viable
@@ -178,10 +180,6 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel(RecurrentAutoRegressive
             return list(map(list, zip(*result)))
 
     def action(self, hist_obs, hist_act, stoch=False, average=False):
-        # pad action for filtering
-        if len(hist_obs) != len(hist_act):
-            hist_act = np.pad(hist_act, [(0, 1), (0, 0)], 'constant')
-
         obs = hist_obs[-1]
         belief = self.filtered_state(hist_obs, hist_act)[-1]
         state = npr.choice(self.nb_states, p=belief) if stoch else np.argmax(belief)
@@ -337,16 +335,18 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(RecurrentAutoRegressive
               obs, act,
               init_state_mstep_kwargs,
               trans_mstep_kwargs,
-              obs_mstep_kwargs, **kwargs):
+              obs_mstep_kwargs,
+              init_obs_mstep_kwargs={},
+              ctl_mstep_kwargs={},
+              init_ctl_mstep_kwargs={}):
 
         if self.infer_dyn:
             super(AutoRegressiveClosedLoopRecurrentHiddenMarkovModel, self).mstep(gamma, zeta, obs, act,
                                                                                   init_state_mstep_kwargs,
                                                                                   trans_mstep_kwargs,
-                                                                                  obs_mstep_kwargs, **kwargs)
+                                                                                  obs_mstep_kwargs,
+                                                                                  init_obs_mstep_kwargs)
         if self.infer_ctl:
-            init_ctl_mstep_kwargs = kwargs.get('init_ctl_mstep_kwargs', {})
-            ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
             self.init_control.mstep(gamma, obs, act, **init_ctl_mstep_kwargs)
             self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
 
