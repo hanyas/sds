@@ -107,10 +107,13 @@ def create_job(train_obs, train_act, kwargs, seed):
                                                                   trans_kwargs=trans_kwargs,
                                                                   obs_kwargs=obs_kwargs,
                                                                   ctl_kwargs=ctl_kwargs,
-                                                                  infer_dyn=True, infer_ctl=True)
+                                                                  infer_dyn=infer_dyn, infer_ctl=infer_ctl)
+
+    if dynamics is not None:
+        clrarhmm.dynamics = dynamics
 
     clrarhmm.em(train_obs, train_act, nb_iter=nb_iter,
-                prec=prec, initialize=True, proc_id=proc_id,
+                prec=prec, initialize=initialize, proc_id=proc_id,
                 init_state_mstep_kwargs=init_state_mstep_kwargs,
                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                 trans_mstep_kwargs=trans_mstep_kwargs,
@@ -223,7 +226,7 @@ if __name__ == "__main__":
     # psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     # nu = (obs_dim + 1) + obs_dim + 1
     psi = np.eye(obs_dim)
-    nu = (obs_dim + 1)
+    nu = (obs_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedNormalWishart
     init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
@@ -244,7 +247,7 @@ if __name__ == "__main__":
     # psi = 1e2 * np.eye(output_dim) / (output_dim + 1)
     # nu = (output_dim + 1) + output_dim + 1
     psi = np.eye(output_dim)
-    nu = (output_dim + 1)
+    nu = (output_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -260,11 +263,11 @@ if __name__ == "__main__":
     output_dim = act_dim
 
     from sds.distributions.gamma import Gamma
-    likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1,)),
+    likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1,)) + 1e-8,
                                        betas=1e-1 * np.ones((1,)))
 
-    parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)),
-                                      betas=1e-1 * np.ones((input_dim,)))
+    parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)) + 1e-8,
+                                      betas=1e1 * np.ones((input_dim,)))
     ctl_prior = {'likelihood_precision_prior': likelihood_precision_prior,
                  'parameter_precision_prior': parameter_precision_prior}
 
@@ -283,7 +286,16 @@ if __name__ == "__main__":
     ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'nb_sub_iter': 5, 'batch_size': 512, 'lr': 2e-3}
     trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 512, 'lr': 5e-4, 'l2': 1e-32}
 
-    models = parallel_em(train_obs=train_obs, train_act=train_act,
+    try:
+        dynamics = torch.load(open('./rarhmm_pendulum_cart.pkl', 'rb'))
+        initialize, infer_dyn, infer_ctl = False, False, True
+    except:
+        dynamics = None
+        initialize, infer_dyn, infer_ctl = True, True, True
+
+    models = parallel_em(dynamics=dynamics, initialize=initialize,
+                         infer_dyn=infer_dyn, infer_ctl=infer_ctl,
+                         train_obs=train_obs, train_act=train_act,
                          nb_states=nb_states, obs_dim=obs_dim,
                          act_dim=act_dim, obs_lag=obs_lag,
                          algo_type=algo_type, init_obs_type=init_obs_type,
@@ -349,7 +361,7 @@ if __name__ == "__main__":
     #
     # plt.show()
 
-    rollouts = rollout_policy(env, clrarhmm, 50, 200, average=True, stoch=True)
+    rollouts = rollout_policy(env, clrarhmm, 50, 250, average=True, stoch=True)
 
     fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
     fig.suptitle('Pendulum Hybrid Imitation: One Example')
@@ -505,7 +517,10 @@ if __name__ == "__main__":
     success = 0.
     for roll in rollouts:
         angle = np.arctan2(roll['x'][:, 1], roll['x'][:, 0])
-        if np.all(np.fabs(angle[150:]) < np.deg2rad(15)):
+        if np.all(np.fabs(angle[175:]) < np.deg2rad(15)):
             success += 1.
 
     print('Imitation Success Rate: ', success / len(rollouts))
+
+    # import torch
+    # torch.save(clrarhmm, open("clrarhmm_pendulum_cart.pkl", "wb"))
