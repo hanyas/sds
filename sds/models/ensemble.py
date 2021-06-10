@@ -39,15 +39,15 @@ class EnsembleHiddenMarkovModel:
         def _create_job(model, obs, act,
                         kwargs, seed):
 
-            nb_iter = kwargs.pop('nb_iter', 25)
-            prec = kwargs.pop('prec', 1e-4)
-            initialize = kwargs.pop('initialize', True)
+            nb_iter = kwargs.get('nb_iter', 25)
+            prec = kwargs.get('prec', 1e-4)
+            initialize = kwargs.get('initialize', True)
             proc_id = seed
 
-            init_state_mstep_kwargs = kwargs.pop('init_state_mstep_kwargs', {})
-            init_obs_mstep_kwargs = kwargs.pop('init_obs_mstep_kwargs', {})
-            trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs', {})
-            obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs', {})
+            init_state_mstep_kwargs = kwargs.get('init_state_mstep_kwargs', {})
+            init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
+            trans_mstep_kwargs = kwargs.get('trans_mstep_kwargs', {})
+            obs_mstep_kwargs = kwargs.get('obs_mstep_kwargs', {})
 
             ll = model.em(obs, act,
                           nb_iter=nb_iter, prec=prec,
@@ -187,16 +187,16 @@ class EnsembleClosedLoopHiddenMarkovModel:
         def _create_job(model, obs, act,
                         kwargs, seed):
 
-            nb_iter = kwargs.pop('nb_iter', 25)
-            prec = kwargs.pop('prec', 1e-4)
-            initialize = kwargs.pop('initialize', True)
+            nb_iter = kwargs.get('nb_iter', 25)
+            prec = kwargs.get('prec', 1e-4)
+            initialize = kwargs.get('initialize', True)
             proc_id = seed
 
-            init_state_mstep_kwargs = kwargs.pop('init_state_mstep_kwargs', {})
-            init_obs_mstep_kwargs = kwargs.pop('init_obs_mstep_kwargs', {})
-            trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs', {})
-            obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs', {})
-            ctl_mstep_kwargs = kwargs.pop('ctl_mstep_kwargs', {})
+            init_state_mstep_kwargs = kwargs.get('init_state_mstep_kwargs', {})
+            init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
+            trans_mstep_kwargs = kwargs.get('trans_mstep_kwargs', {})
+            obs_mstep_kwargs = kwargs.get('obs_mstep_kwargs', {})
+            ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
 
             ll = model.em(obs, act,
                           nb_iter=nb_iter, prec=prec,
@@ -278,17 +278,17 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
         def _create_job(model, obs, act,
                         kwargs, seed):
 
-            nb_iter = kwargs.pop('nb_iter', 25)
-            prec = kwargs.pop('prec', 1e-4)
-            initialize = kwargs.pop('initialize', True)
+            nb_iter = kwargs.get('nb_iter', 25)
+            prec = kwargs.get('prec', 1e-4)
+            initialize = kwargs.get('initialize', True)
             proc_id = seed
 
-            init_state_mstep_kwargs = kwargs.pop('init_state_mstep_kwargs', {})
-            init_obs_mstep_kwargs = kwargs.pop('init_obs_mstep_kwargs', {})
-            init_ctl_mstep_kwargs = kwargs.pop('init_ctl_mstep_kwargs', {})
-            trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs', {})
-            obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs', {})
-            ctl_mstep_kwargs = kwargs.pop('ctl_mstep_kwargs', {})
+            init_state_mstep_kwargs = kwargs.get('init_state_mstep_kwargs', {})
+            init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
+            init_ctl_mstep_kwargs = kwargs.get('init_ctl_mstep_kwargs', {})
+            trans_mstep_kwargs = kwargs.get('trans_mstep_kwargs', {})
+            obs_mstep_kwargs = kwargs.get('obs_mstep_kwargs', {})
+            ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
 
             ll = model.em(obs, act,
                           nb_iter=nb_iter, prec=prec,

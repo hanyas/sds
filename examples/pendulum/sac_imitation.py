@@ -53,41 +53,41 @@ def create_job(train_obs, train_act, kwargs, seed):
     torch.manual_seed(seed)
 
     # model arguments
-    nb_states = kwargs.pop('nb_states')
-    obs_dim = kwargs.pop('obs_dim')
-    act_dim = kwargs.pop('act_dim')
-    obs_lag = kwargs.pop('obs_lag')
+    nb_states = kwargs.get('nb_states')
+    obs_dim = kwargs.get('obs_dim')
+    act_dim = kwargs.get('act_dim')
+    obs_lag = kwargs.get('obs_lag')
 
-    algo_type = kwargs.pop('algo_type')
-    init_obs_type = kwargs.pop('init_obs_type')
-    trans_type = kwargs.pop('trans_type')
-    obs_type = kwargs.pop('obs_type')
-    ctl_type = kwargs.pop('ctl_type')
+    algo_type = kwargs.get('algo_type')
+    init_obs_type = kwargs.get('init_obs_type')
+    trans_type = kwargs.get('trans_type')
+    obs_type = kwargs.get('obs_type')
+    ctl_type = kwargs.get('ctl_type')
 
     # model priors
-    init_state_prior = kwargs.pop('init_state_prior')
-    init_obs_prior = kwargs.pop('init_obs_prior')
-    trans_prior = kwargs.pop('trans_prior')
-    obs_prior = kwargs.pop('obs_prior')
-    ctl_prior = kwargs.pop('ctl_prior')
+    init_state_prior = kwargs.get('init_state_prior')
+    init_obs_prior = kwargs.get('init_obs_prior')
+    trans_prior = kwargs.get('trans_prior')
+    obs_prior = kwargs.get('obs_prior')
+    ctl_prior = kwargs.get('ctl_prior')
 
     # model kwargs
-    init_state_kwargs = kwargs.pop('init_state_kwargs')
-    init_obs_kwargs = kwargs.pop('init_obs_kwargs')
-    trans_kwargs = kwargs.pop('trans_kwargs')
-    obs_kwargs = kwargs.pop('obs_kwargs')
-    ctl_kwargs = kwargs.pop('ctl_kwargs')
+    init_state_kwargs = kwargs.get('init_state_kwargs')
+    init_obs_kwargs = kwargs.get('init_obs_kwargs')
+    trans_kwargs = kwargs.get('trans_kwargs')
+    obs_kwargs = kwargs.get('obs_kwargs')
+    ctl_kwargs = kwargs.get('ctl_kwargs')
 
     # em arguments
-    nb_iter = kwargs.pop('nb_iter')
-    prec = kwargs.pop('prec')
+    nb_iter = kwargs.get('nb_iter')
+    prec = kwargs.get('prec')
     proc_id = seed
 
-    init_mstep_kwargs = kwargs.pop('init_state_mstep_kwargs')
-    init_mstep_kwargs = kwargs.pop('init_obs_mstep_kwargs')
-    trans_mstep_kwargs = kwargs.pop('trans_mstep_kwargs')
-    obs_mstep_kwargs = kwargs.pop('obs_mstep_kwargs')
-    ctl_mstep_kwargs = kwargs.pop('ctl_mstep_kwargs')
+    init_mstep_kwargs = kwargs.get('init_state_mstep_kwargs')
+    init_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs')
+    trans_mstep_kwargs = kwargs.get('trans_mstep_kwargs')
+    obs_mstep_kwargs = kwargs.get('obs_mstep_kwargs')
+    ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs')
 
     clrarhmm = ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim, act_dim=act_dim,
                                                                   obs_lag=obs_lag, algo_type=algo_type,

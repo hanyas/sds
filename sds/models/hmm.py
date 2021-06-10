@@ -13,7 +13,6 @@ from sds.utils.general import find_permutation
 from sds.cython.hmm_cy import forward_cy, backward_cy
 
 from tqdm import trange
-from pathos.multiprocessing import ProcessPool
 
 to_c = lambda arr: np.copy(arr, 'C') \
     if not arr.flags['C_CONTIGUOUS'] else arr
@@ -231,7 +230,7 @@ class HiddenMarkovModel:
            trans_mstep_kwargs={},
            obs_mstep_kwargs={}, **kwargs):
 
-        proc_id = kwargs.get('proc_id', 0)
+        proc_id = kwargs.pop('proc_id', 0)
 
         if initialize:
             self.initialize(train_obs, train_act)
