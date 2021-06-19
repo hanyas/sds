@@ -10,10 +10,15 @@ ext_modules = []
 
 ext_modules.append(
     Extension('sds.cython.hmm_cy',
-              sources=["sds/cython/hmm_cy.pyx"],
-              language="c++")
+              sources=['sds/cython/hmm_cy.pyx'],
+              language='c++')
 )
 
+ext_modules.append(
+    Extension('sds.cython.clhmm_cy',
+              sources=['sds/cython/clhmm_cy.pyx'],
+              language='c++')
+)
 
 setup(name='sds',
       version='0.0.1',

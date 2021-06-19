@@ -26,6 +26,7 @@ cdef double logsumexp(double[::1] x) nogil:
 cpdef forward_cy(double[::1] loginit,
                  double[:,:,::1] logtrans,
                  double[:,::1] logobs,
+                 double[:,::1] logctl,
                  double[:,::1] alpha,
                  double[::1] norm):
 
@@ -45,7 +46,7 @@ cpdef forward_cy(double[::1] loginit,
         for k in range(K):
             for j in range(K):
                 aux[j] = alpha[t - 1, j] + logtrans[t - 1, j, k]
-            alpha[t, k] = logsumexp(aux) + logobs[t, k]
+            alpha[t, k] = logsumexp(aux) + logobs[t, k] + logctl[t, k]
 
         norm[t] = logsumexp(alpha[t])
         for k in range(K):
@@ -54,6 +55,7 @@ cpdef forward_cy(double[::1] loginit,
 cpdef backward_cy(double[::1] loginit,
                   double[:,:,::1] logtrans,
                   double[:,::1] logobs,
+                  double[:,::1] logctl,
                   double[:,::1] beta,
                   double[::1] scale):
 
@@ -69,5 +71,5 @@ cpdef backward_cy(double[::1] loginit,
         for k in range(K):
             for j in range(K):
                 aux[j] = logtrans[t, k, j] + beta[t + 1, j]\
-                         + logobs[t + 1, j]
+                         + logobs[t + 1, j] + logctl[t + 1, j]
             beta[t, k] = logsumexp(aux) - scale[t]

@@ -8,7 +8,6 @@ from sds.transitions import StationaryTransition
 from sds.observations import GaussianObservation
 
 from sds.utils.decorate import ensure_args_are_viable
-from sds.utils.decorate import init_empty_logact_to_zero
 from sds.utils.general import find_permutation
 from sds.cython.hmm_cy import forward_cy, backward_cy
 
@@ -74,12 +73,10 @@ class HiddenMarkovModel:
         _, norm = self.forward(*loglikhds)
         return np.sum(np.hstack(norm))
 
-    @init_empty_logact_to_zero
-    def forward(self, loginit, logtrans, logobs, logact=None, cython=True):
+    def forward(self, loginit, logtrans, logobs, cython=True):
         if isinstance(loginit, np.ndarray)\
                 and isinstance(logtrans, np.ndarray)\
-                and isinstance(logobs, np.ndarray)\
-                and isinstance(logact, np.ndarray):
+                and isinstance(logobs, np.ndarray):
 
             nb_steps = logobs.shape[0]
             alpha = np.zeros((nb_steps, self.nb_states))
@@ -87,8 +84,7 @@ class HiddenMarkovModel:
 
             if cython:
                 forward_cy(to_c(loginit), to_c(logtrans),
-                           to_c(logobs), to_c(logact),
-                           to_c(alpha), to_c(norm))
+                           to_c(logobs), to_c(alpha), to_c(norm))
             else:
                 for k in range(self.nb_states):
                     alpha[0, k] = loginit[k] + logobs[0, k]
@@ -101,25 +97,22 @@ class HiddenMarkovModel:
                     for k in range(self.nb_states):
                         for j in range(self.nb_states):
                             aux[j] = alpha[t - 1, j] + logtrans[t - 1, j, k]
-                        alpha[t, k] = logsumexp(aux) + logobs[t, k] + logact[t, k]
+                        alpha[t, k] = logsumexp(aux) + logobs[t, k]
 
                     norm[t] = logsumexp(alpha[t], axis=-1, keepdims=True)
                     alpha[t] = alpha[t] - norm[t]
 
             return alpha, norm
         else:
-            def partial(loginit, logtrans, logobs, logact):
-                return self.forward.__wrapped__(self, loginit, logtrans,
-                                                logobs, logact, cython)
-            result = map(partial, loginit, logtrans, logobs, logact)
+            def partial(loginit, logtrans, logobs):
+                return self.forward(loginit, logtrans, logobs, cython)
+            result = map(partial, loginit, logtrans, logobs)
             return list(map(list, zip(*result)))
 
-    @init_empty_logact_to_zero
-    def backward(self, loginit, logtrans, logobs, logact=None, scale=None, cython=True):
+    def backward(self, loginit, logtrans, logobs, scale=None, cython=True):
         if isinstance(loginit, np.ndarray)\
                 and isinstance(logtrans, np.ndarray)\
                 and isinstance(logobs, np.ndarray)\
-                and isinstance(logact, np.ndarray)\
                 and isinstance(scale, np.ndarray):
 
             nb_steps = logobs.shape[0]
@@ -127,8 +120,7 @@ class HiddenMarkovModel:
 
             if cython:
                 backward_cy(to_c(loginit), to_c(logtrans),
-                            to_c(logobs), to_c(logact),
-                            to_c(beta), to_c(scale))
+                            to_c(logobs), to_c(beta), to_c(scale))
             else:
                 for k in range(self.nb_states):
                     beta[nb_steps - 1, k] = 0.0 - scale[nb_steps - 1]
@@ -138,15 +130,14 @@ class HiddenMarkovModel:
                     for k in range(self.nb_states):
                         for j in range(self.nb_states):
                             aux[j] = logtrans[t, k, j] + beta[t + 1, j] \
-                                     + logobs[t + 1, j] + logact[t + 1, j]
+                                     + logobs[t + 1, j]
                         beta[t, k] = logsumexp(aux) - scale[t]
 
             return beta
         else:
-            def partial(loginit, logtrans, logobs, logact, scale):
-                return self.backward.__wrapped__(self, loginit, logtrans,
-                                                 logobs, logact, scale, cython)
-            return list(map(partial, loginit, logtrans, logobs, logact, scale))
+            def partial(loginit, logtrans, logobs, scale):
+                return self.backward(loginit, logtrans, logobs, scale, cython)
+            return list(map(partial, loginit, logtrans, logobs, scale))
 
     def posterior(self, alpha, beta, temperature=1.):
         if isinstance(alpha, np.ndarray) and isinstance(beta, np.ndarray):
@@ -157,24 +148,21 @@ class HiddenMarkovModel:
                 return self.posterior(alpha, beta, temperature)
             return list(map(self.posterior, alpha, beta))
 
-    @init_empty_logact_to_zero
-    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, logact=None, temperature=1.):
+    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, temperature=1.):
         if isinstance(loginit, np.ndarray)\
                 and isinstance(logtrans, np.ndarray)\
                 and isinstance(logobs, np.ndarray)\
-                and isinstance(logact, np.ndarray)\
                 and isinstance(alpha, np.ndarray)\
                 and isinstance(beta, np.ndarray):
 
-            zeta = temperature * (alpha[:-1, :, None] + beta[1:, None, :]) + logtrans\
-                   + logobs[1:][:, None, :] + logact[1:][:, None, :]
+            zeta = temperature * (alpha[:-1, :, None] + beta[1:, None, :])\
+                   + logtrans + logobs[1:][:, None, :]
 
             return np.exp(zeta - logsumexp(zeta, axis=(1, 2), keepdims=True))
         else:
-            def partial(alpha, beta, loginit, logtrans, logobs, logact):
-                return self.joint_posterior.__wrapped__(self, alpha, beta, loginit,
-                                                        logtrans, logobs, logact, temperature)
-            return list(map(partial, alpha, beta, loginit, logtrans, logobs, logact))
+            def partial(alpha, beta, loginit, logtrans, logobs):
+                return self.joint_posterior(alpha, beta, loginit, logtrans, logobs, temperature)
+            return list(map(partial, alpha, beta, loginit, logtrans, logobs))
 
     @ensure_args_are_viable
     def viterbi(self, obs, act=None):
