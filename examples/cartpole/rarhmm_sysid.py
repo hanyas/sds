@@ -98,7 +98,7 @@ if __name__ == "__main__":
     env = gym.make('Cartpole-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped.dt = 0.01
-    env.unwrapped.sigma = 1e-4
+    env.unwrapped.sigma = 1e-8
     env.seed(1337)
 
     nb_train_rollouts, nb_train_steps = 15, 250
@@ -156,7 +156,7 @@ if __name__ == "__main__":
                                            nus=np.array([nu for _ in range(nb_states)]))
 
     # trans_prior
-    trans_prior = {'alpha': 1., 'kappa': 0.5}  # Dirichlet params
+    trans_prior = {'alpha': 1., 'kappa': 0.1}  # Dirichlet params
 
     # model kwargs
     init_state_kwargs, init_obs_kwargs, obs_kwargs = {}, {}, {}
@@ -210,3 +210,6 @@ if __name__ == "__main__":
     for h in hr:
         mse, smse, evar = rarhmm.kstep_error(test_obs, test_act, horizon=h, average=True)
         print(f"MSE: {mse}, SMSE:{smse}, EVAR:{evar}")
+
+    # import torch
+    # torch.save(rarhmm, open("rarhmm_cartpole_cart.pkl", "wb"))
