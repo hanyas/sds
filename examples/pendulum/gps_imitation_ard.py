@@ -136,10 +136,10 @@ if __name__ == "__main__":
     # init_obs_prior
     mu = np.zeros((obs_dim,))
     kappa = 1e-6
-    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
-    nu = (obs_dim + 1) + obs_dim + 1
-    # psi = np.eye(obs_dim)
-    # nu = (obs_dim + 1)
+    # psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
+    # nu = (obs_dim + 1) + obs_dim + 1
+    psi = np.eye(obs_dim)
+    nu = (obs_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedNormalWishart
     init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
@@ -156,10 +156,10 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    psi = 1e2 * np.eye(act_dim) / (act_dim + 1)
-    nu = (act_dim + 1) + act_dim + 1
-    # psi = np.eye(act_dim)
-    # nu = (act_dim + 1)
+    # psi = 1e2 * np.eye(act_dim) / (act_dim + 1)
+    # nu = (act_dim + 1) + act_dim + 1
+    psi = np.eye(act_dim)
+    nu = (act_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     init_ctl_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -177,10 +177,10 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    psi = 1e2 * np.eye(output_dim) / (output_dim + 1)
-    nu = (output_dim + 1) + output_dim + 1
-    # psi = np.eye(output_dim)
-    # nu = (output_dim + 1)
+    # psi = 1e2 * np.eye(output_dim) / (output_dim + 1)
+    # nu = (output_dim + 1) + output_dim + 1
+    psi = np.eye(output_dim)
+    nu = (output_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -196,11 +196,11 @@ if __name__ == "__main__":
     output_dim = act_dim
 
     from sds.distributions.gamma import Gamma
-    likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1,)),
+    likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1,)) + 1e-8,
                                        betas=1e-1 * np.ones((1,)))
 
-    parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)),
-                                      betas=1e2 * np.ones((input_dim,)))
+    parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)) + 1e-8,
+                                      betas=1e3 * np.ones((input_dim,)))
     ctl_prior = {'likelihood_precision_prior': likelihood_precision_prior,
                  'parameter_precision_prior': parameter_precision_prior}
 
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     init_state_kwargs, init_obs_kwargs, init_ctl_kwargs = {}, {}, {'degree': init_ctl_degree}
     obs_kwargs, ctl_kwargs = {}, {'degree': ctl_degree}
     trans_kwargs = {'device': 'cpu',
-                    'hidden_sizes': (32,), 'activation': 'relu',
+                    'hidden_sizes': (32,), 'activation': 'splus',
                     'norm': {'mean': np.array([0., 0., 0., 0.]),
                              'std': np.array([1., 1., 10., 2.5])}}
 
@@ -216,9 +216,9 @@ if __name__ == "__main__":
     init_state_mstep_kwargs = {}
     init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
     init_ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 1024, 'lr': 1e-2}
-    ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 1024, 'lr': 1e-3}
-    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 1024, 'lr': 5e-4, 'l2': 1e-32}
+    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 2048, 'lr': 1e-2}
+    ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'nb_sub_iter':5, 'batch_size': 2048, 'lr': 2e-3}
+    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 2048, 'lr': 5e-4, 'l2': 1e-32}
 
     ensemble = EnsembleAutoRegressiveClosedLoopHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim,
                                                                  act_dim=act_dim, obs_lag=obs_lag, ctl_lag=ctl_lag,
@@ -241,11 +241,7 @@ if __name__ == "__main__":
                 obs_mstep_kwargs=obs_mstep_kwargs,
                 ctl_mstep_kwargs=ctl_mstep_kwargs)
 
-    for m in ensemble.models:
-        m.infer_dyn = True
-        m.infer_ctl = False
-
-    rollouts = rollout_ensemble_policy(env, ensemble, 25, 350, average=True, stoch=True)
+    rollouts = rollout_ensemble_policy(env, ensemble, 15, 350, stoch=True, average=True)
 
     fig, axs = plt.subplots(nrows=3, ncols=1, figsize=(8, 12), constrained_layout=True)
     fig.suptitle('Pendulum Hybrid Imitation: One Example')

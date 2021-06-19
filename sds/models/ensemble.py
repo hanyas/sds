@@ -5,6 +5,7 @@ from sds.models import AutoRegressiveHiddenMarkovModel
 from sds.models import RecurrentAutoRegressiveHiddenMarkovModel
 from sds.models import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
 from sds.models import AutoRegressiveClosedLoopRecurrentHiddenMarkovModel
+from sds.models import HybridController
 
 from sds.utils.decorate import ensure_args_are_viable
 
@@ -350,3 +351,72 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
 
         return train_scores, test_scores
 
+
+class EnsembleHybridController:
+
+    def __init__(self, dynamics, ensemble_size=6, **kwargs):
+
+        self.dynamics = dynamics
+        self.ensemble_size = ensemble_size
+
+        self.models = [HybridController(dynamics, **kwargs)
+                       for _ in range(self.ensemble_size)]
+
+
+    def _parallel_em(self, obs, act, **kwargs):
+
+        def _create_job(model, obs, act,
+                        kwargs, seed):
+
+            nb_iter = kwargs.get('nb_iter', 25)
+            prec = kwargs.get('prec', 1e-4)
+            initialize = kwargs.get('initialize', True)
+            proc_id = seed
+
+            ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
+
+            ll = model.em(obs, act,
+                          nb_iter=nb_iter, prec=prec,
+                          initialize=initialize, proc_id=proc_id,
+                          ctl_mstep_kwargs=ctl_mstep_kwargs)
+
+            return model, ll
+
+        nb_jobs = len(obs)
+        kwargs_list = [kwargs.copy() for _ in range(nb_jobs)]
+        seeds = np.linspace(0, nb_jobs - 1, nb_jobs, dtype=int)
+
+        results = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=10, backend='loky')\
+            (map(delayed(_create_job), self.models, obs, act, kwargs_list, seeds))
+
+        models, lls = list(map(list, zip(*results)))
+        return models, lls
+
+    @ensure_args_are_viable
+    def em(self, obs, act=None,
+           nb_iter=50, prec=1e-4, initialize=True,
+           ctl_mstep_kwargs={}, **kwargs):
+
+        from sds.utils.general import train_test_split
+        train_obs, train_act = train_test_split(obs, act,
+                                                nb_traj_splits=self.ensemble_size,
+                                                split_trajs=False)[:2]
+
+        self.models, lls = self._parallel_em(train_obs, train_act,
+                                             nb_iter=nb_iter, prec=prec,
+                                             initialize=initialize,
+                                             ctl_mstep_kwargs=ctl_mstep_kwargs)
+
+        nb_train = [np.vstack(x).shape[0] for x in train_obs]
+        nb_total = np.vstack(obs).shape[0]
+
+        train_ll, total_ll = [], []
+        for x, u, m in zip(train_obs, train_act, self.models):
+            train_ll.append(m.log_normalizer(x, u))
+            total_ll.append(m.log_normalizer(obs, act))
+
+        train_scores = np.hstack(train_ll) / np.hstack(nb_train)
+        test_scores = (np.hstack(total_ll) - np.hstack(train_ll))\
+                     / (nb_total - np.hstack(nb_train))
+
+        return train_scores, test_scores

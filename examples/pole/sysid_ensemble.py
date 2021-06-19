@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # init_obs_prior
     mu = np.zeros((obs_dim,))
     kappa = 1e-64
-    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
     # psi = np.eye(obs_dim)
     # nu = obs_dim + 1 + 1e-8
@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
     # psi = np.eye(obs_dim)
     # nu = obs_dim + 1 + 1e-8
@@ -113,5 +113,5 @@ if __name__ == "__main__":
         mse, smse, evar = ensemble.kstep_error(test_obs, test_act, horizon=h, average=True)
         print(f"MSE: {mse}, SMSE:{smse}, EVAR:{evar}")
 
-    import torch
-    torch.save(ensemble, open("ensemble_pole.pkl", "wb"))
+    # import torch
+    # torch.save(ensemble, open("ensemble_pole.pkl", "wb"))

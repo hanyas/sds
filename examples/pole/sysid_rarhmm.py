@@ -95,14 +95,15 @@ if __name__ == "__main__":
     torch.manual_seed(1337)
     torch.set_num_threads(1)
 
-    env = gym.make('Pendulum-ID-v1')
+    env = gym.make('Pole-ID-v0')
     env._max_episode_steps = 5000
     env.unwrapped.dt = 0.01
-    env.unwrapped.sigma = 1e-4
+    env.unwrapped.sigma = 1e-8
+    env.unwrapped.uniform = True
     env.seed(1337)
 
-    nb_train_rollouts, nb_train_steps = 25, 250
-    nb_test_rollouts, nb_test_steps = 5, 100
+    nb_train_rollouts, nb_train_steps = 25, 25
+    nb_test_rollouts, nb_test_steps = 5, 25
 
     obs, act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
@@ -112,7 +113,7 @@ if __name__ == "__main__":
                                                   nb_traj_splits=6,
                                                   split_trajs=False)
 
-    nb_states = 5
+    nb_states = 2
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
     obs_lag = 1
@@ -131,6 +132,8 @@ if __name__ == "__main__":
     kappa = 1e-64
     psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = obs_dim + 1 + 1e-8
 
     from sds.distributions.composite import StackedNormalWishart
     init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
@@ -147,6 +150,8 @@ if __name__ == "__main__":
     K = 1e-6 * np.eye(input_dim)
     psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = obs_dim + 1 + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -161,15 +166,13 @@ if __name__ == "__main__":
     # model kwargs
     init_state_kwargs, init_obs_kwargs, obs_kwargs = {}, {}, {}
     trans_kwargs = {'device': 'cpu',
-                    'hidden_sizes': (32,), 'activation': 'splus',
-                    'norm': {'mean': np.array([0., 0., 0., 0.]),
-                             'std': np.array([1., 1., 10., 2.5])}}
+                    'hidden_sizes': (8,), 'activation': 'relu'}
 
     # mstep kwargs
     init_state_mstep_kwargs = {}
     init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 256, 'lr': 1e-2}
-    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 256, 'lr': 5e-4, 'l2': 1e-32}
+    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 32, 'lr': 1e-2}
+    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 32, 'lr': 5e-4, 'l2': 1e-32}
 
     models = parallel_em(train_obs=train_obs, train_act=train_act,
                          nb_states=nb_states, obs_dim=obs_dim,
@@ -207,10 +210,10 @@ if __name__ == "__main__":
     #     rarhmm.plot(obs[i], act[i])
 
     # validate model on test set
-    hr = [1, 5, 10, 15, 20, 25]
+    hr = [1, 5, 10, 15, 20]
     for h in hr:
         mse, smse, evar = rarhmm.kstep_error(test_obs, test_act, horizon=h, average=True)
         print(f"MSE: {mse}, SMSE:{smse}, EVAR:{evar}")
 
-    # import torch
-    # torch.save(rarhmm, open("rarhmm_pendulum_cart.pkl", "wb"))
+    import torch
+    torch.save(rarhmm, open("../../sds/envs/hybrid/models/rarhmm_pole.pkl", "wb"))

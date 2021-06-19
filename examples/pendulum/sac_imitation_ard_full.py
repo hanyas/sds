@@ -52,12 +52,6 @@ def create_job(train_obs, train_act, kwargs, seed):
     npr.seed(seed)
     torch.manual_seed(seed)
 
-    # pretrained models
-    dynamics = kwargs.get('dynamics', None)
-    infer_dyn = kwargs.get('infer_dyn', True)
-    infer_ctl = kwargs.get('infer_ctl', True)
-    initialize = kwargs.get('initialize', True)
-
     # model arguments
     nb_states = kwargs.get('nb_states')
     obs_dim = kwargs.get('obs_dim')
@@ -85,6 +79,7 @@ def create_job(train_obs, train_act, kwargs, seed):
     ctl_kwargs = kwargs.get('ctl_kwargs')
 
     # em arguments
+    initialize = kwargs.get('initialize')
     nb_iter = kwargs.get('nb_iter')
     prec = kwargs.get('prec')
     proc_id = seed
@@ -97,20 +92,12 @@ def create_job(train_obs, train_act, kwargs, seed):
 
     clrarhmm = ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim, act_dim=act_dim,
                                                                   obs_lag=obs_lag, algo_type=algo_type,
-                                                                  init_obs_type=init_obs_type,
-                                                                  trans_type=trans_type, obs_type=obs_type, ctl_type=ctl_type,
-                                                                  init_state_prior=init_state_prior,
-                                                                  init_obs_prior=init_obs_prior,
+                                                                  init_obs_type=init_obs_type, trans_type=trans_type,
+                                                                  obs_type=obs_type, ctl_type=ctl_type,
+                                                                  init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
                                                                   trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=ctl_prior,
-                                                                  init_state_kwargs=init_state_kwargs,
-                                                                  init_obs_kwargs=init_obs_kwargs,
-                                                                  trans_kwargs=trans_kwargs,
-                                                                  obs_kwargs=obs_kwargs,
-                                                                  ctl_kwargs=ctl_kwargs,
-                                                                  infer_dyn=infer_dyn, infer_ctl=infer_ctl)
-
-    if dynamics is not None:
-        clrarhmm.dynamics = dynamics
+                                                                  init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
+                                                                  trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs)
 
     clrarhmm.em(train_obs, train_act, nb_iter=nb_iter,
                 prec=prec, initialize=initialize, proc_id=proc_id,
@@ -267,7 +254,7 @@ if __name__ == "__main__":
                                        betas=1e-1 * np.ones((1,)))
 
     parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)) + 1e-8,
-                                      betas=1e1 * np.ones((input_dim,)))
+                                      betas=1e-1 * np.ones((input_dim,)))
     ctl_prior = {'likelihood_precision_prior': likelihood_precision_prior,
                  'parameter_precision_prior': parameter_precision_prior}
 
@@ -286,16 +273,7 @@ if __name__ == "__main__":
     ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'nb_sub_iter': 5, 'batch_size': 512, 'lr': 2e-3}
     trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 512, 'lr': 5e-4, 'l2': 1e-32}
 
-    try:
-        dynamics = torch.load(open('./rarhmm_pendulum_cart.pkl', 'rb'))
-        initialize, infer_dyn, infer_ctl = False, False, True
-    except:
-        dynamics = None
-        initialize, infer_dyn, infer_ctl = True, True, True
-
-    models = parallel_em(dynamics=dynamics, initialize=initialize,
-                         infer_dyn=infer_dyn, infer_ctl=infer_ctl,
-                         train_obs=train_obs, train_act=train_act,
+    models = parallel_em(train_obs=train_obs, train_act=train_act,
                          nb_states=nb_states, obs_dim=obs_dim,
                          act_dim=act_dim, obs_lag=obs_lag,
                          algo_type=algo_type, init_obs_type=init_obs_type,
@@ -304,7 +282,7 @@ if __name__ == "__main__":
                          trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=ctl_prior,
                          init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs,
-                         nb_iter=100, prec=1e-4,
+                         nb_iter=100, prec=1e-4, initialize=True,
                          init_state_mstep_kwargs=init_state_mstep_kwargs,
                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                          trans_mstep_kwargs=trans_mstep_kwargs,
@@ -326,9 +304,6 @@ if __name__ == "__main__":
 
     scores = np.array([train_scores]) + np.array([test_scores])
     clrarhmm = models[np.argmin(sc.stats.rankdata(-1. * scores))]
-
-    clrarhmm.infer_dyn = True
-    clrarhmm.infer_ctl = False
 
     # ctl = clrarhmm.smoothed_control(obs, act)
     # # state, ctl = clrarhmm.filtered_control(obs, act)
@@ -517,10 +492,10 @@ if __name__ == "__main__":
     success = 0.
     for roll in rollouts:
         angle = np.arctan2(roll['x'][:, 1], roll['x'][:, 0])
-        if np.all(np.fabs(angle[175:]) < np.deg2rad(15)):
+        if np.all(np.fabs(angle[200:]) < np.deg2rad(15)):
             success += 1.
 
     print('Imitation Success Rate: ', success / len(rollouts))
 
-    # import torch
-    # torch.save(clrarhmm, open("clrarhmm_pendulum_cart.pkl", "wb"))
+    import torch
+    torch.save(clrarhmm, open("clrarhmm_pendulum_cart.pkl", "wb"))

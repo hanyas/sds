@@ -130,7 +130,7 @@ if __name__ == "__main__":
     # psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     # nu = (obs_dim + 1) + obs_dim + 1
     psi = np.eye(obs_dim)
-    nu = (obs_dim + 1)
+    nu = (obs_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedNormalWishart
     init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     # psi = 1e2 * np.eye(output_dim) / (output_dim + 1)
     # nu = (output_dim + 1) + output_dim + 1
     psi = np.eye(output_dim)
-    nu = (output_dim + 1)
+    nu = (output_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     # psi = 1e2 * np.eye(act_dim) / (act_dim + 1)
     # nu = (act_dim + 1) + act_dim + 1
     psi = np.eye(act_dim)
-    nu = (act_dim + 1)
+    nu = (act_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedMatrixNormalWishart
     ctl_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -212,11 +212,7 @@ if __name__ == "__main__":
                 obs_mstep_kwargs=obs_mstep_kwargs,
                 ctl_mstep_kwargs=ctl_mstep_kwargs)
 
-    for m in ensemble.models:
-        m.infer_dyn = True
-        m.infer_ctl = False
-
-    rollouts = rollout_ensemble_policy(env, ensemble, 50, 200, average=True, stoch=True)
+    rollouts = rollout_ensemble_policy(env, ensemble, 50, 250, stoch=True, average=True)
 
     # fig, axs = plt.subplots(nrows=3, ncols=1, figsize=(8, 12), constrained_layout=True)
     # fig.suptitle('Pendulum Hybrid Imitation: One Example')
@@ -365,7 +361,7 @@ if __name__ == "__main__":
     success = 0.
     for roll in rollouts:
         angle = np.arctan2(roll['x'][:, 1], roll['x'][:, 0])
-        if np.all(np.fabs(angle[150:]) < np.deg2rad(15)):
+        if np.all(np.fabs(angle[200:]) < np.deg2rad(15)):
             success += 1.
 
     print('Imitation Success Rate: ', success / len(rollouts))

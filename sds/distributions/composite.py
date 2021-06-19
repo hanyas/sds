@@ -1384,8 +1384,9 @@ class MultiOutputLinearGaussianWithAutomaticRelevance:
 
     @lmbda.setter
     def lmbda(self, values):
-        for i, dist in self.dists:
-            dist.lmbda = np.diag(values[i, i])
+        diags = np.diag(values)
+        for i, dist in enumerate(self.dists):
+            dist.lmbda = np.atleast_1d(diags[i])
 
     def predict(self, x):
         return np.hstack([dist.predict(x) for dist in self.dists])
@@ -1456,7 +1457,7 @@ class StackedMultiOutputLinearGaussianWithAutomaticRelevance:
 
     @lmbdas.setter
     def lmbdas(self, values):
-        for k, dist in self.stack:
+        for k, dist in enumerate(self.stack):
             dist.lmbda = values[k]
 
     def predict(self, z, x):

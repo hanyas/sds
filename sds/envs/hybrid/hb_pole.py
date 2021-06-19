@@ -33,8 +33,8 @@ class HybridPoleWithWall(gym.Env):
         self.rarhmm = rarhmm
 
         self.obs = None
-        self.hist_obs = np.empty((0, self.obs_dim))
-        self.hist_act = np.empty((0, self.act_dim))
+        self.xhist = np.empty((0, self.obs_dim))
+        self.uhist = np.empty((0, self.act_dim))
 
         self.np_random = None
 
@@ -42,27 +42,26 @@ class HybridPoleWithWall(gym.Env):
 
     def dynamics(self, xhist, uhist):
         xhist, uhist = np.atleast_2d(xhist, uhist)
-        xn = self.rarhmm.step(xhist, uhist, stoch=False, average=True)
+        _, xn = self.rarhmm.step(xhist, uhist, stoch=False, average=True)
         return xn
 
     def rewrad(self, x, u):
-        return (x - self.g).T @ np.diag(self.gw) @ (x - self.g)\
-               + u.T @ np.diag(self.uw) @ u
+        pass
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def step(self, act):
-        self.hist_act = np.vstack((self.hist_act, act))
-        self.obs = self.dynamics(self.hist_obs, self.hist_act)
-        self.hist_obs = np.vstack((self.hist_obs, self.obs))
+    def step(self, u):
+        self.uhist = np.vstack((self.uhist, u))
+        self.obs = self.dynamics(self.xhist, self.uhist)
+        self.xhist = np.vstack((self.xhist, self.obs))
         return self.obs, None, False, {}
 
     def reset(self):
         pass
 
     # for plotting
-    def fake_step(self, obs, act):
-        nxt_obs = self.dynamics(obs, act)
-        return nxt_obs
+    def fake_step(self, x, u):
+        xn = self.dynamics(x, u)
+        return xn

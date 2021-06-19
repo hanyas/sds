@@ -4,7 +4,7 @@ import numpy.random as npr
 import scipy as sc
 from scipy import stats
 
-from sds.models import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
+from sds.models import HybridController
 from sds.utils.envs import sample_env, rollout_policy
 
 from joblib import Parallel, delayed
@@ -52,61 +52,31 @@ def create_job(train_obs, train_act, kwargs, seed):
     npr.seed(seed)
     torch.manual_seed(seed)
 
-    # model arguments
-    nb_states = kwargs.get('nb_states')
-    obs_dim = kwargs.get('obs_dim')
-    act_dim = kwargs.get('act_dim')
-    obs_lag = kwargs.get('obs_lag')
+    # dnyamics
+    dynamics = kwargs.get('dynamics')
 
-    algo_type = kwargs.get('algo_type')
-    init_obs_type = kwargs.get('init_obs_type')
-    trans_type = kwargs.get('trans_type')
-    obs_type = kwargs.get('obs_type')
-    ctl_type = kwargs.get('ctl_type')
-
-    # model priors
-    init_state_prior = kwargs.get('init_state_prior')
-    init_obs_prior = kwargs.get('init_obs_prior')
-    trans_prior = kwargs.get('trans_prior')
-    obs_prior = kwargs.get('obs_prior')
+    # ctl prior
     ctl_prior = kwargs.get('ctl_prior')
 
-    # model kwargs
-    init_state_kwargs = kwargs.get('init_state_kwargs')
-    init_obs_kwargs = kwargs.get('init_obs_kwargs')
-    trans_kwargs = kwargs.get('trans_kwargs')
-    obs_kwargs = kwargs.get('obs_kwargs')
+    # ctl kwargs
     ctl_kwargs = kwargs.get('ctl_kwargs')
 
     # em arguments
+    initialize = kwargs.get('initialize')
     nb_iter = kwargs.get('nb_iter')
     prec = kwargs.get('prec')
     proc_id = seed
 
-    init_mstep_kwargs = kwargs.get('init_state_mstep_kwargs')
-    init_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs')
-    trans_mstep_kwargs = kwargs.get('trans_mstep_kwargs')
-    obs_mstep_kwargs = kwargs.get('obs_mstep_kwargs')
     ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs')
 
-    clrarhmm = ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim, act_dim=act_dim,
-                                                                  obs_lag=obs_lag, algo_type=algo_type,
-                                                                  init_obs_type=init_obs_type, trans_type=trans_type,
-                                                                  obs_type=obs_type, ctl_type=ctl_type,
-                                                                  init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
-                                                                  trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=ctl_prior,
-                                                                  init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
-                                                                  trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs)
+    hbctl = HybridController(dynamics=dynamics, ctl_type=ctl_type,
+                             ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs)
 
-    clrarhmm.em(train_obs, train_act, nb_iter=nb_iter,
-                prec=prec, initialize=True, proc_id=proc_id,
-                init_state_mstep_kwargs=init_state_mstep_kwargs,
-                init_obs_mstep_kwargs=init_obs_mstep_kwargs,
-                trans_mstep_kwargs=trans_mstep_kwargs,
-                obs_mstep_kwargs=obs_mstep_kwargs,
-                ctl_mstep_kwargs=ctl_mstep_kwargs)
+    hbctl.em(train_obs, train_act, nb_iter=nb_iter,
+             prec=prec, initialize=initialize, proc_id=proc_id,
+             ctl_mstep_kwargs=ctl_mstep_kwargs)
 
-    return clrarhmm
+    return hbctl
 
 
 def parallel_em(train_obs, train_act, **kwargs):
@@ -115,10 +85,10 @@ def parallel_em(train_obs, train_act, **kwargs):
     kwargs_list = [kwargs.copy() for _ in range(nb_jobs)]
     seeds = np.linspace(0, nb_jobs - 1, nb_jobs, dtype=int)
 
-    clrarhmm = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=1, backend='loky')\
-        (map(delayed(create_job), train_obs, train_act, kwargs_list, seeds))
+    hbctl = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=1, backend='loky')\
+            (map(delayed(create_job), train_obs, train_act, kwargs_list, seeds))
 
-    return clrarhmm
+    return hbctl
 
 
 if __name__ == "__main__":
@@ -189,58 +159,12 @@ if __name__ == "__main__":
 
     plt.show()
 
-    nb_states = 5
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
-    obs_lag = 1
 
-    # model types
-    algo_type = 'MAP'
-    init_obs_type = 'full'
-    obs_type = 'full'
-    trans_type = 'neural'
-    ctl_type = 'full'
-
+    # ctl type
+    ctl_type = 'ard'
     ctl_degree = 3
-
-    # init_state_prior
-    init_state_prior = {}
-
-    # init_obs_prior
-    mu = np.zeros((obs_dim,))
-    kappa = 1e-64
-    # psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
-    # nu = (obs_dim + 1) + obs_dim + 1
-    psi = np.eye(obs_dim)
-    nu = (obs_dim + 1) + 1e-8
-
-    from sds.distributions.composite import StackedNormalWishart
-    init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
-                                          mus=np.array([mu for _ in range(nb_states)]),
-                                          kappas=np.array([kappa for _ in range(nb_states)]),
-                                          psis=np.array([psi for _ in range(nb_states)]),
-                                          nus=np.array([nu for _ in range(nb_states)]))
-
-    # trans_prior
-    trans_prior = {'alpha': 1., 'kappa': 0.}  # Dirichlet params
-
-    # obs_prior
-    input_dim = obs_dim * obs_lag + act_dim + 1
-    output_dim = obs_dim
-
-    M = np.zeros((output_dim, input_dim))
-    K = 1e-6 * np.eye(input_dim)
-    # psi = 1e2 * np.eye(output_dim) / (output_dim + 1)
-    # nu = (output_dim + 1) + output_dim + 1
-    psi = np.eye(output_dim)
-    nu = (output_dim + 1) + 1e-8
-
-    from sds.distributions.composite import StackedMatrixNormalWishart
-    obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
-                                           Ms=np.array([M for _ in range(nb_states)]),
-                                           Ks=np.array([K for _ in range(nb_states)]),
-                                           psis=np.array([psi for _ in range(nb_states)]),
-                                           nus=np.array([nu for _ in range(nb_states)]))
 
     # ctl_prior
     from scipy import special
@@ -248,49 +172,29 @@ if __name__ == "__main__":
     input_dim = feat_dim + 1
     output_dim = act_dim
 
-    M = np.zeros((output_dim, input_dim))
-    K = 1e-6 * np.eye(input_dim)
-    # psi = 1e2 * np.eye(act_dim) / (act_dim + 1)
-    # nu = (act_dim + 1) + act_dim + 1
-    psi = np.eye(act_dim)
-    nu = (act_dim + 1) + 1e-8
+    from sds.distributions.gamma import Gamma
+    likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1,)) + 1e-8,
+                                       betas=1e-1 * np.ones((1,)))
 
-    from sds.distributions.composite import StackedMatrixNormalWishart
-    ctl_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
-                                           Ms=np.array([M for _ in range(nb_states)]),
-                                           Ks=np.array([K for _ in range(nb_states)]),
-                                           psis=np.array([psi for _ in range(nb_states)]),
-                                           nus=np.array([nu for _ in range(nb_states)]))
+    parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)) + 1e-8,
+                                      betas=1e1 * np.ones((input_dim,)))
+    ctl_prior = {'likelihood_precision_prior': likelihood_precision_prior,
+                 'parameter_precision_prior': parameter_precision_prior}
 
-    # model kwargs
-    init_state_kwargs, init_obs_kwargs = {}, {}
-    obs_kwargs, ctl_kwargs = {}, {'degree': ctl_degree}
-    trans_kwargs = {'device': 'cpu',
-                    'hidden_sizes': (32,), 'activation': 'splus',
-                    'norm': {'mean': np.array([0., 0., 0., 0.]),
-                             'std': np.array([1., 1., 10., 2.5])}}
+    # ctl kwargs
+    ctl_kwargs = {'degree': ctl_degree}
 
     # mstep kwargs
-    init_state_mstep_kwargs = {}
-    init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 512, 'lr': 1e-2}
-    ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 512, 'lr': 1e-2}
-    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 512, 'lr': 5e-4, 'l2': 1e-32}
+    ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'nb_sub_iter': 5,
+                        'batch_size': 1024, 'lr': 2e-3}
 
-    models = parallel_em(train_obs=train_obs, train_act=train_act,
-                         nb_states=nb_states, obs_dim=obs_dim,
-                         act_dim=act_dim, obs_lag=obs_lag,
-                         algo_type=algo_type, init_obs_type=init_obs_type,
-                         trans_type=trans_type, obs_type=obs_type, ctl_type=ctl_type,
-                         init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
-                         trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=ctl_prior,
-                         init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
-                         trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs,
-                         nb_iter=500, prec=1e-4,
-                         init_state_mstep_kwargs=init_state_mstep_kwargs,
-                         init_obs_mstep_kwargs=init_obs_mstep_kwargs,
-                         trans_mstep_kwargs=trans_mstep_kwargs,
-                         obs_mstep_kwargs=obs_mstep_kwargs,
+    # load dynamics
+    dynamics = torch.load(open('./rarhmm_pendulum_cart.pkl', 'rb'))
+
+    hbctls = parallel_em(dynamics=dynamics,
+                         train_obs=train_obs, train_act=train_act,
+                         ctl_type=ctl_type, ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs,
+                         nb_iter=100, prec=1e-4, initialize=True,
                          ctl_mstep_kwargs=ctl_mstep_kwargs)
 
     # model validation
@@ -298,7 +202,7 @@ if __name__ == "__main__":
     nb_total = np.vstack(obs).shape[0]
 
     train_ll, total_ll = [], []
-    for x, u, m in zip(train_obs, train_act, models):
+    for x, u, m in zip(train_obs, train_act, hbctls):
         train_ll.append(m.log_normalizer(x, u))
         total_ll.append(m.log_normalizer(obs, act))
 
@@ -307,41 +211,9 @@ if __name__ == "__main__":
                   / (nb_total - np.hstack(nb_train))
 
     scores = np.array([train_scores]) + np.array([test_scores])
-    clrarhmm = models[np.argmin(sc.stats.rankdata(-1. * scores))]
+    hbctl = hbctls[np.argmin(sc.stats.rankdata(-1. * scores))]
 
-
-    # ctl = clrarhmm.smoothed_control(obs, act)
-    # # state, ctl = clrarhmm.filtered_control(obs, act)
-    #
-    # fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
-    # fig.suptitle('Demonstration Action Filtering')
-    #
-    # idx = npr.choice(len(obs))
-    #
-    # angle = np.arctan2(obs[idx][:, 1], obs[idx][:, 0])
-    # axs[0].plot(angle)
-    # axs[0].set_ylabel('$\\theta$')
-    # axs[0].set_xlim(0, len(obs[idx]))
-    #
-    # axs[1].plot(obs[idx][:, -1], '-g')
-    # axs[1].set_ylabel("$\\dot{\\theta}$")
-    # axs[1].set_xlim(0, len(obs[idx]))
-    #
-    # axs[2].plot(act[idx])
-    # axs[2].plot(ctl[idx])
-    # axs[2].legend(('Actual', 'Smoothed'))
-    # axs[2].set_ylabel("$u$")
-    # axs[2].set_xlim(0, len(act[idx]))
-    #
-    # # axs[3].imshow(state[idx][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-    # # axs[3].set_xlim(0, len(obs[idx]))
-    # # axs[3].set_xlabel('Time Step')
-    # # axs[3].set_ylabel("$z_{\\mathrm{inferred}}$")
-    # # axs[3].set_yticks([])
-    #
-    # plt.show()
-
-    rollouts = rollout_policy(env, clrarhmm, 50, 250, average=True, stoch=True)
+    rollouts = rollout_policy(env, hbctl, 50, 250, average=True, stoch=True)
 
     # fig, axs = plt.subplots(nrows=4, ncols=1, figsize=(8, 12), constrained_layout=True)
     # fig.suptitle('Pendulum Hybrid Imitation: One Example')
@@ -459,7 +331,7 @@ if __name__ == "__main__":
     for i in range(npts):
         for j in range(npts):
             hist_obs, hist_act = ang2cart(XYh[..., i, j]), np.zeros((hr, act_dim))
-            _, _, u = clrarhmm.action(hist_obs, hist_act)
+            _, _, u = hbctl.action(hist_obs, hist_act)
             XYn[:, i, j] = env.unwrapped.fake_step(XYh[-1, :, i, j], u)
 
     dXY = XYn - XYh[-1, ...]
@@ -501,3 +373,6 @@ if __name__ == "__main__":
             success += 1.
 
     print('Imitation Success Rate: ', success / len(rollouts))
+
+    import torch
+    torch.save(hbctl, open("hbctl_pendulum_cart.pkl", "wb"))

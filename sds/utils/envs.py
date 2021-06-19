@@ -104,7 +104,7 @@ def rollout_policy(env, model, nb_rollouts, nb_steps,
 
 
 def rollout_ensemble_policy(env, ensemble, nb_rollouts, nb_steps,
-                            average=False, stoch=False):
+                            stoch=False, average=False):
 
     rollouts = []
 

@@ -38,9 +38,6 @@ class HybridPendulum(gym.Env):
         self.gw = - np.array([1e0, 1e-1])
 
         # x = [th, thd]
-        self._state_max = np.array([np.inf, 8.0])
-
-        # x = [th, thd]
         self.xmax = np.array([np.inf, np.inf])
         self.state_space = spaces.Box(low=-self.xmax,
                                       high=self.xmax,
@@ -61,8 +58,8 @@ class HybridPendulum(gym.Env):
         self.rarhmm = rarhmm
 
         self.obs = None
-        self.hist_obs = np.empty((0, self.obs_dim))
-        self.hist_act = np.empty((0, self.act_dim))
+        self.xhist = np.empty((0, self.obs_dim))
+        self.uhist = np.empty((0, self.act_dim))
 
         self.np_random = None
 
@@ -82,27 +79,25 @@ class HybridPendulum(gym.Env):
         return xn
 
     def rewrad(self, x, u):
-        _x = cart2ang(x)
-        return (_x - self.g).T @ np.diag(self.gw) @ (_x - self.g)\
-               + u.T @ np.diag(self.uw) @ u
+        pass
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
     def step(self, act):
-        self.hist_act = np.vstack((self.hist_act, act))
-        self.obs = self.dynamics(self.hist_obs, self.hist_act)
-        self.hist_obs = np.vstack((self.hist_obs, self.obs))
+        self.uhist = np.vstack((self.uhist, act))
+        self.obs = self.dynamics(self.xhist, self.uhist)
+        self.xhist = np.vstack((self.xhist, self.obs))
         return self.obs, None, False, {}
 
     def reset(self):
         pass
 
     # for plotting
-    def fake_step(self, obs, act):
-        nxt_obs = self.dynamics(obs, act)
-        return nxt_obs
+    def fake_step(self, x, u):
+        xn = self.dynamics(x, u)
+        return xn
 
 
 class HybridPendulumWithCartesianObservation(HybridPendulum):
@@ -118,7 +113,7 @@ class HybridPendulumWithCartesianObservation(HybridPendulum):
                                             dtype=np.float64)
 
     # for plotting
-    def fake_step(self, obs, act):
-        query = ang2cart(obs)
-        nxt_obs = self.dynamics(query, act)
-        return cart2ang(nxt_obs)
+    def fake_step(self, x, u):
+        query = ang2cart(x)
+        xn = self.dynamics(query, u)
+        return cart2ang(xn)
