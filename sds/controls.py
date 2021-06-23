@@ -3,7 +3,7 @@ import numpy.random as npr
 
 import scipy as sc
 from scipy import stats
-from scipy import special
+from scipy.special import comb
 from scipy.stats import multivariate_normal as mvn
 from scipy.stats import invwishart
 
@@ -18,7 +18,7 @@ from sklearn.preprocessing import PolynomialFeatures
 import copy
 
 
-class LinearGaussianControl:
+class GaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  degree=1, **kwargs):
@@ -28,7 +28,7 @@ class LinearGaussianControl:
         self.act_dim = act_dim
 
         self.degree = degree
-        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
+        self.feat_dim = int(comb(self.degree + self.obs_dim, self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
         # self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
@@ -137,7 +137,7 @@ class LinearGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
-class BayesianLinearGaussianControl:
+class BayesianGaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  prior, degree=1, likelihood=None):
@@ -264,7 +264,7 @@ class BayesianLinearGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
-class BayesianLinearGaussianControlWithAutomaticRelevance:
+class BayesianGaussianControlWithAutomaticRelevance:
 
     def __init__(self, nb_states, obs_dim,
                  act_dim, prior, degree=1):
@@ -275,7 +275,7 @@ class BayesianLinearGaussianControlWithAutomaticRelevance:
 
         self.degree = degree
 
-        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
+        self.feat_dim = int(comb(self.degree + self.obs_dim, self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
         self.input_dim = self.feat_dim + 1
@@ -355,7 +355,7 @@ class BayesianLinearGaussianControlWithAutomaticRelevance:
             return list(map(self.smooth, p, x, u))
 
 
-class AutorRegressiveLinearGaussianControl:
+class AutorRegressiveGaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags=1, degree=1, **kwargs):
@@ -368,7 +368,7 @@ class AutorRegressiveLinearGaussianControl:
         self.nb_lags = nb_lags
 
         self.degree = degree
-        self.feat_dim = int(sc.special.comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
+        self.feat_dim = int(comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
         # self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
@@ -512,7 +512,7 @@ class AutorRegressiveLinearGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
-class BayesianAutorRegressiveLinearGaussianControl:
+class BayesianAutorRegressiveGaussianControl:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, degree=1, likelihood=None):
@@ -525,7 +525,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
         self.nb_lags = nb_lags
 
         self.degree = degree
-        self.feat_dim = int(sc.special.comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
+        self.feat_dim = int(comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
         self.input_dim = self.feat_dim + 1
@@ -659,7 +659,7 @@ class BayesianAutorRegressiveLinearGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
-class BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance:
+class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance:
 
     def __init__(self, nb_states, obs_dim, act_dim,
                  nb_lags, prior, degree=1):
@@ -672,7 +672,7 @@ class BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance:
         self.nb_lags = nb_lags
 
         self.degree = degree
-        self.feat_dim = int(sc.special.comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
+        self.feat_dim = int(comb(self.degree + (self.obs_dim * (self.nb_lags + 1)), self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
         self.input_dim = self.feat_dim + 1

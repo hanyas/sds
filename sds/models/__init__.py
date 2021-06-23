@@ -3,7 +3,7 @@ from .arhmm import AutoRegressiveHiddenMarkovModel
 from .rarhmm import RecurrentAutoRegressiveHiddenMarkovModel
 
 from .clrarhmm import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
-from .clrarhmm import AutoRegressiveClosedLoopRecurrentHiddenMarkovModel
+from .clrarhmm import AutoRegressiveClosedLoopHiddenMarkovModel
 from .clrarhmm import HybridController
 
 from .ensemble import EnsembleHiddenMarkovModel

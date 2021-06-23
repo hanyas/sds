@@ -1342,6 +1342,7 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
             beta = self.likelihood_precision_posterior.rvs()
         self.A, self.lmbda = coef, beta
 
+
 class MultiOutputLinearGaussianWithAutomaticRelevance:
     def __init__(self, input_dim, output_dim,
                  likelihood_precision_prior,

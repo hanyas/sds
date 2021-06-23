@@ -141,7 +141,7 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
             loglikhds = self.log_likelihoods(obs, act)
             alpha, norm = self.forward(*loglikhds)
             beta = self.backward(*loglikhds, scale=norm)
-            gamma = self.posterior(alpha, beta)
+            gamma = self.smoothed_posterior(alpha, beta)
 
             iobs = self.init_observation.smooth(gamma, obs)
             arobs = self.observations.smooth(gamma, obs, act)
@@ -153,7 +153,7 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
 
     def step(self, hist_obs, hist_act, stoch=False, average=False):
         # take last belief state from filter
-        belief = self.filtered_state(hist_obs, hist_act)[-1]
+        belief = self.filtered_posterior(hist_obs, hist_act)[-1]
 
         nxt_state = np.zeros((1, ), dtype=np.int64)
         nxt_obs = np.zeros((self.obs_dim, ))
@@ -235,7 +235,7 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
         nxt_obs = np.zeros((self.obs_lag + horizon, self.obs_dim))
         nxt_state = np.zeros((self.obs_lag + horizon, ), np.int64)
 
-        alpha = self.filtered_state(hist_obs, hist_act)
+        alpha = self.filtered_posterior(hist_obs, hist_act)
 
         if average:
             # empty discrete state when averaging

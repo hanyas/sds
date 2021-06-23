@@ -4,7 +4,7 @@ import numpy.random as npr
 from sds.models import AutoRegressiveHiddenMarkovModel
 from sds.models import RecurrentAutoRegressiveHiddenMarkovModel
 from sds.models import ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel
-from sds.models import AutoRegressiveClosedLoopRecurrentHiddenMarkovModel
+from sds.models import AutoRegressiveClosedLoopHiddenMarkovModel
 from sds.models import HybridController
 
 from sds.utils.decorate import ensure_args_are_viable
@@ -270,8 +270,8 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
 
         self.ensemble_size = ensemble_size
 
-        self.models = [AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(self.nb_states, self.obs_dim, self.act_dim,
-                                                                          self.obs_lag, self.ctl_lag, **kwargs)
+        self.models = [AutoRegressiveClosedLoopHiddenMarkovModel(self.nb_states, self.obs_dim, self.act_dim,
+                                                                 self.obs_lag, self.ctl_lag, **kwargs)
                        for _ in range(self.ensemble_size)]
 
     def _parallel_em(self, obs, act, **kwargs):
@@ -361,7 +361,6 @@ class EnsembleHybridController:
 
         self.models = [HybridController(dynamics, **kwargs)
                        for _ in range(self.ensemble_size)]
-
 
     def _parallel_em(self, obs, act, **kwargs):
 

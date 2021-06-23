@@ -8,13 +8,13 @@ from sds.models import RecurrentAutoRegressiveHiddenMarkovModel
 from sds.initial import InitGaussianControl
 from sds.initial import BayesianInitGaussianControl
 from sds.initial import BayesianInitGaussianControlWithAutomaticRelevance
-from sds.controls import AutorRegressiveLinearGaussianControl
-from sds.controls import BayesianAutorRegressiveLinearGaussianControl
-from sds.controls import BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance
+from sds.controls import AutorRegressiveGaussianControl
+from sds.controls import BayesianAutorRegressiveGaussianControl
+from sds.controls import BayesianAutoRegressiveGaussianControlWithAutomaticRelevance
 
-from sds.controls import LinearGaussianControl
-from sds.controls import BayesianLinearGaussianControl
-from sds.controls import BayesianLinearGaussianControlWithAutomaticRelevance
+from sds.controls import GaussianControl
+from sds.controls import BayesianGaussianControl
+from sds.controls import BayesianGaussianControlWithAutomaticRelevance
 
 from sds.utils.decorate import ensure_args_are_viable
 from sds.cython.clhmm_cy import forward_cy, backward_cy
@@ -59,14 +59,14 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
         self.ctl_kwargs = ctl_kwargs
 
         if self.algo_type == 'ML':
-            self.controls = LinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim, **ctl_kwargs)
+            self.controls = GaussianControl(self.nb_states, self.obs_dim, self.act_dim, **ctl_kwargs)
         else:
             if self.ctl_type == 'full':
-                self.controls = BayesianLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
-                                                              prior=ctl_prior, **ctl_kwargs)
+                self.controls = BayesianGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
+                                                        prior=ctl_prior, **ctl_kwargs)
             elif self.ctl_type == 'ard':
-                self.controls = BayesianLinearGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                    prior=ctl_prior, **ctl_kwargs)
+                self.controls = BayesianGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                              prior=ctl_prior, **ctl_kwargs)
 
     @property
     def params(self):
@@ -145,16 +145,16 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
                 return self.backward(loginit, logtrans, logobs, logact, scale)
             return list(map(partial, loginit, logtrans, logobs, logact, scale))
 
-    def posterior(self, alpha, beta, temperature=1.):
+    def smoothed_posterior(self, alpha, beta, temperature=1.):
         if isinstance(alpha, np.ndarray) and isinstance(beta, np.ndarray):
             return np.exp(temperature * (alpha + beta)
                           - logsumexp(temperature * (alpha + beta), axis=1, keepdims=True))
         else:
             def partial(alpha, beta):
-                return self.posterior(alpha, beta, temperature)
-            return list(map(self.posterior, alpha, beta))
+                return self.smoothed_posterior(alpha, beta, temperature)
+            return list(map(self.smoothed_posterior, alpha, beta))
 
-    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, logact, temperature=1.):
+    def smoothed_joint(self, alpha, beta, loginit, logtrans, logobs, logact, temperature=1.):
         if isinstance(loginit, np.ndarray) \
                 and isinstance(logtrans, np.ndarray) \
                 and isinstance(logobs, np.ndarray) \
@@ -168,16 +168,15 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
             return np.exp(zeta - logsumexp(zeta, axis=(1, 2), keepdims=True))
         else:
             def partial(alpha, beta, loginit, logtrans, logobs, logact):
-                return self.joint_posterior(alpha, beta, loginit, logtrans, logobs, logact, temperature)
+                return self.smoothed_joint(alpha, beta, loginit, logtrans, logobs, logact, temperature)
             return list(map(partial, alpha, beta, loginit, logtrans, logobs, logact))
 
     def estep(self, obs, act, temperature=1.):
         loglikhds = self.log_likelihoods(obs, act)
         alpha, norm = self.forward(*loglikhds)
         beta = self.backward(*loglikhds, scale=norm)
-        gamma = self.posterior(alpha, beta, temperature=temperature)
-        zeta = self.joint_posterior(alpha, beta, *loglikhds,
-                                    temperature=temperature)
+        gamma = self.smoothed_posterior(alpha, beta, temperature=temperature)
+        zeta = self.smoothed_joint(alpha, beta, *loglikhds, temperature=temperature)
         return gamma, zeta
 
     def mstep(self, gamma, zeta, obs, act,
@@ -245,7 +244,7 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
             loglikhds = self.log_likelihoods(obs, act)
             alpha, norm = self.forward(*loglikhds)
             beta = self.backward(*loglikhds, scale=norm)
-            gamma = self.posterior(alpha, beta)
+            gamma = self.smoothed_posterior(alpha, beta)
             return self.controls.smooth(gamma, obs, act)
         else:
             def inner(obs, act):
@@ -276,7 +275,7 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
 
     def action(self, hist_obs, hist_act, stoch=False, average=False):
         obs = hist_obs[-1]
-        belief = self.dynamics.filtered_state(hist_obs, hist_act)[-1]
+        belief = self.dynamics.filtered_posterior(hist_obs, hist_act)[-1]
         state = npr.choice(self.nb_states, p=belief) if stoch else np.argmax(belief)
 
         nxt_act = np.zeros((self.act_dim,))
@@ -291,7 +290,7 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
         return belief, state, nxt_act
 
 
-class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel):
+class AutoRegressiveClosedLoopHiddenMarkovModel(ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel):
 
     def __init__(self, nb_states, obs_dim, act_dim, obs_lag=1, ctl_lag=1,
                  algo_type='MAP', init_obs_type='full', init_ctl_type='full',
@@ -301,13 +300,13 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(ClosedLoopRecurrentAuto
                  init_state_kwargs={}, init_obs_kwargs={}, init_ctl_kwargs={},
                  trans_kwargs={}, obs_kwargs={}, ctl_kwargs={}):
 
-        super(AutoRegressiveClosedLoopRecurrentHiddenMarkovModel, self).__init__(nb_states, obs_dim, act_dim, obs_lag, algo_type,
-                                                                                 init_obs_type=init_obs_type, trans_type=trans_type,
-                                                                                 obs_type=obs_type, ctl_type=None,
-                                                                                 init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
-                                                                                 trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=None,
-                                                                                 init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
-                                                                                 trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs={})
+        super(AutoRegressiveClosedLoopHiddenMarkovModel, self).__init__(nb_states, obs_dim, act_dim, obs_lag, algo_type,
+                                                                        init_obs_type=init_obs_type, trans_type=trans_type,
+                                                                        obs_type=obs_type, ctl_type=None,
+                                                                        init_state_prior=init_state_prior, init_obs_prior=init_obs_prior,
+                                                                        trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=None,
+                                                                        init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
+                                                                        trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs={})
 
         self.init_ctl_type = init_ctl_type
         self.init_ctl_prior = init_ctl_prior
@@ -321,7 +320,7 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(ClosedLoopRecurrentAuto
 
         if self.algo_type == 'ML':
             self.init_control = InitGaussianControl(self.nb_states, self.obs_dim, self.act_dim, self.ctl_lag, **init_ctl_kwargs)
-            self.controls = AutorRegressiveLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim, nb_lags=self.ctl_lag, **ctl_kwargs)
+            self.controls = AutorRegressiveGaussianControl(self.nb_states, self.obs_dim, self.act_dim, nb_lags=self.ctl_lag, **ctl_kwargs)
         else:
             if self.init_ctl_type == 'full':
                 self.init_control = BayesianInitGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
@@ -331,11 +330,11 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(ClosedLoopRecurrentAuto
                                                                                       self.ctl_lag, prior=init_ctl_prior, **init_ctl_kwargs)
 
             if self.ctl_type == 'full':
-                self.controls = BayesianAutorRegressiveLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
-                                                                             self.ctl_lag, prior=ctl_prior,  **ctl_kwargs)
+                self.controls = BayesianAutorRegressiveGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
+                                                                       self.ctl_lag, prior=ctl_prior, **ctl_kwargs)
             elif self.ctl_type == 'ard':
-                self.controls = BayesianAutoRegressiveLinearGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                                  self.ctl_lag, prior=ctl_prior,  **ctl_kwargs)
+                self.controls = BayesianAutoRegressiveGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                                            self.ctl_lag, prior=ctl_prior, **ctl_kwargs)
 
     @property
     def params(self):
@@ -403,7 +402,7 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(ClosedLoopRecurrentAuto
             loglikhds = self.log_likelihoods(obs, act)
             alpha, norm = self.forward(*loglikhds)
             beta = self.backward(*loglikhds, scale=norm)
-            gamma = self.posterior(alpha, beta)
+            gamma = self.smoothed_posterior(alpha, beta)
 
             iact = self.init_control.smooth(gamma, obs, act)
             aract = self.controls.smooth(gamma, obs, act)
@@ -442,7 +441,7 @@ class AutoRegressiveClosedLoopRecurrentHiddenMarkovModel(ClosedLoopRecurrentAuto
             return list(map(list, zip(*result)))
 
     def action(self, hist_obs, hist_act, stoch=False, average=False):
-        belief = self.dynamics.filtered_state(hist_obs, hist_act)[-1]
+        belief = self.dynamics.filtered_posterior(hist_obs, hist_act)[-1]
         state = npr.choice(self.nb_states, p=belief) if stoch else np.argmax(belief)
 
         if len(hist_obs) <= self.ctl_lag:
@@ -487,14 +486,14 @@ class HybridController:
         self.ctl_kwargs = ctl_kwargs
 
         if self.algo_type == 'ML':
-            self.controls = LinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim, **ctl_kwargs)
+            self.controls = GaussianControl(self.nb_states, self.obs_dim, self.act_dim, **ctl_kwargs)
         else:
             if self.ctl_type == 'full':
-                self.controls = BayesianLinearGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
-                                                              prior=ctl_prior, **ctl_kwargs)
+                self.controls = BayesianGaussianControl(self.nb_states, self.obs_dim, self.act_dim,
+                                                        prior=ctl_prior, **ctl_kwargs)
             elif self.ctl_type == 'ard':
-                self.controls = BayesianLinearGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
-                                                                                    prior=ctl_prior, **ctl_kwargs)
+                self.controls = BayesianGaussianControlWithAutomaticRelevance(self.nb_states, self.obs_dim, self.act_dim,
+                                                                              prior=ctl_prior, **ctl_kwargs)
 
     @property
     def params(self):
@@ -527,7 +526,6 @@ class HybridController:
         loglikhds = self.log_likelihoods(obs, act)
         _, norm = self.forward(*loglikhds)
         return np.sum(np.hstack(norm))
-
 
     def forward(self, loginit, logtrans, logobs, logact):
         if isinstance(loginit, np.ndarray) \
@@ -570,16 +568,16 @@ class HybridController:
                 return self.backward(loginit, logtrans, logobs, logact, scale)
             return list(map(partial, loginit, logtrans, logobs, logact, scale))
 
-    def posterior(self, alpha, beta, temperature=1.):
+    def smoothed_posterior(self, alpha, beta, temperature=1.):
         if isinstance(alpha, np.ndarray) and isinstance(beta, np.ndarray):
             return np.exp(temperature * (alpha + beta)
                           - logsumexp(temperature * (alpha + beta), axis=1, keepdims=True))
         else:
             def partial(alpha, beta):
-                return self.posterior(alpha, beta, temperature)
-            return list(map(self.posterior, alpha, beta))
+                return self.smoothed_posterior(alpha, beta, temperature)
+            return list(map(self.smoothed_posterior, alpha, beta))
 
-    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, logact, temperature=1.):
+    def smoothed_joint(self, alpha, beta, loginit, logtrans, logobs, logact, temperature=1.):
         if isinstance(loginit, np.ndarray) \
                 and isinstance(logtrans, np.ndarray) \
                 and isinstance(logobs, np.ndarray) \
@@ -593,27 +591,26 @@ class HybridController:
             return np.exp(zeta - logsumexp(zeta, axis=(1, 2), keepdims=True))
         else:
             def partial(alpha, beta, loginit, logtrans, logobs, logact):
-                return self.joint_posterior(alpha, beta, loginit, logtrans, logobs, logact, temperature)
+                return self.smoothed_joint(alpha, beta, loginit, logtrans, logobs, logact, temperature)
             return list(map(partial, alpha, beta, loginit, logtrans, logobs, logact))
 
     def estep(self, obs, act, temperature=1.):
         loglikhds = self.log_likelihoods(obs, act)
         alpha, norm = self.forward(*loglikhds)
         beta = self.backward(*loglikhds, scale=norm)
-        gamma = self.posterior(alpha, beta, temperature=temperature)
-        zeta = self.joint_posterior(alpha, beta, *loglikhds,
-                                    temperature=temperature)
+        gamma = self.smoothed_posterior(alpha, beta, temperature=temperature)
+        zeta = self.smoothed_joint(alpha, beta, *loglikhds, temperature=temperature)
         return gamma, zeta
 
     def mstep(self, gamma, obs, act,
               ctl_mstep_kwargs, **kwargs):
 
-            self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
+        self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
 
     def weighted_mstep(self, gamma, obs, act, weights,
                        ctl_mstep_kwargs, **kwargs):
 
-            self.controls.weighted_mstep(gamma, obs, act, weights, **ctl_mstep_kwargs)
+        self.controls.weighted_mstep(gamma, obs, act, weights, **ctl_mstep_kwargs)
 
     @ensure_args_are_viable
     def em(self, train_obs, train_act,
@@ -652,7 +649,7 @@ class HybridController:
 
     def action(self, hist_obs, hist_act, stoch=False, average=False):
         obs = hist_obs[-1]
-        belief = self.dynamics.filtered_state(hist_obs, hist_act)[-1]
+        belief = self.dynamics.filtered_posterior(hist_obs, hist_act)[-1]
         state = npr.choice(self.nb_states, p=belief) if stoch else np.argmax(belief)
 
         nxt_act = np.zeros((self.act_dim,))
