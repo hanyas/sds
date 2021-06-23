@@ -12,6 +12,7 @@ from sds.utils.general import linear_regression, one_hot, arstack
 from sds.utils.decorate import ensure_args_are_viable
 
 from sds.distributions.lingauss import StackedLinearGaussiansWithPrecision
+from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
 
 from sklearn.preprocessing import PolynomialFeatures
 
@@ -264,10 +265,10 @@ class BayesianGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
-class BayesianGaussianControlWithAutomaticRelevance:
+class BayesianGaussianControlWithAutomaticRelevance\
+            (StackedMultiOutputLinearGaussianWithAutomaticRelevance):
 
-    def __init__(self, nb_states, obs_dim,
-                 act_dim, prior, degree=1):
+    def __init__(self, nb_states, obs_dim, act_dim, prior, degree=1):
 
         self.nb_states = nb_states
         self.obs_dim = obs_dim
@@ -284,24 +285,15 @@ class BayesianGaussianControlWithAutomaticRelevance:
         likelihood_precision_prior = prior['likelihood_precision_prior']
         parameter_precision_prior = prior['parameter_precision_prior']
 
-        from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
-        self.object = StackedMultiOutputLinearGaussianWithAutomaticRelevance(self.nb_states,
-                                                                             self.input_dim,
-                                                                             self.output_dim,
-                                                                             likelihood_precision_prior,
-                                                                             parameter_precision_prior)
-
-    @property
-    def params(self):
-        return self.object.params
-
-    @params.setter
-    def params(self, values):
-        self.object.params = values
+        super().__init__(self.nb_states,
+                         self.input_dim,
+                         self.output_dim,
+                         likelihood_precision_prior,
+                         parameter_precision_prior)
 
     def permute(self, perm):
-        self.object.As = self.object.As[perm]
-        self.object.lmbdas = self.object.lmbdas[perm]
+        self.As = self.As[perm]
+        self.lmbdas = self.lmbdas[perm]
 
     def initialize(self, x, u, **kwargs):
         pass
@@ -313,19 +305,19 @@ class BayesianGaussianControlWithAutomaticRelevance:
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        u = self.object.mean(z, feat)
+        u = super().mean(z, feat)
         return np.atleast_1d(u)
 
     def sample(self, z, x):
         feat = self.featurize(x)
-        u = self.object.rvs(z, feat)
+        u = self.rvs(z, feat)
         return np.atleast_1d(u)
 
     @ensure_args_are_viable
     def log_likelihood(self, x, u):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
             f = self.featurize(x)
-            return self.object.log_likelihood(f, u)
+            return super().log_likelihood(f, u)
         else:
             def inner(x, u):
                 return self.log_likelihood.__wrapped__(self, x, u)
@@ -334,16 +326,15 @@ class BayesianGaussianControlWithAutomaticRelevance:
     def mstep(self, p, x, u, **kwargs):
         f = [self.featurize(_x) for _x in x]
         fs, us, ps = list(map(np.vstack, (f, u, p)))
-        self.object.em(fs, us, ps, **kwargs)
+        self.em(fs, us, ps, **kwargs)
 
     def weighted_mstep(self, p, x, u, w, **kwargs):
         assert isinstance(w, list)
-
         wp = [_w * _p for _w, _p in zip(w,p)]
 
         f = [self.featurize(_x) for _x in x]
         fs, us, wps = list(map(np.vstack, (f, u, wp)))
-        self.object.em(fs, us, wps, **kwargs)
+        self.em(fs, us, wps, **kwargs)
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
@@ -659,10 +650,10 @@ class BayesianAutorRegressiveGaussianControl:
             return list(map(self.smooth, p, x, u))
 
 
-class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance:
+class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance\
+            (StackedMultiOutputLinearGaussianWithAutomaticRelevance):
 
-    def __init__(self, nb_states, obs_dim, act_dim,
-                 nb_lags, prior, degree=1):
+    def __init__(self, nb_states, obs_dim, act_dim, nb_lags, prior, degree=1):
 
         assert nb_lags > 0
 
@@ -681,24 +672,15 @@ class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance:
         likelihood_precision_prior = prior['likelihood_precision_prior']
         parameter_precision_prior = prior['parameter_precision_prior']
 
-        from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
-        self.object = StackedMultiOutputLinearGaussianWithAutomaticRelevance(self.nb_states,
-                                                                             self.input_dim,
-                                                                             self.output_dim,
-                                                                             likelihood_precision_prior,
-                                                                             parameter_precision_prior)
-
-    @property
-    def params(self):
-        return self.object.params
-
-    @params.setter
-    def params(self, values):
-        self.object.params = values
+        super().__init__(self.nb_states,
+                         self.input_dim,
+                         self.output_dim,
+                         likelihood_precision_prior,
+                         parameter_precision_prior)
 
     def permute(self, perm):
-        self.object.As = self.object.As[perm]
-        self.object.lmbdas = self.object.lmbdas[perm]
+        self.As = self.As[perm]
+        self.lmbdas = self.lmbdas[perm]
 
     def initialize(self, x, u, **kwargs):
         pass
@@ -711,13 +693,13 @@ class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance:
     def mean(self, z, x, ar=False):
         xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
         fr = self.featurize(xr)
-        u = self.object.mean(z, fr)
+        u = super().mean(z, fr)
         return np.atleast_1d(u)
 
     def sample(self, z, x, ar=False):
         xr = np.squeeze(arstack(x, self.nb_lags + 1), axis=0) if ar else x
         fr = self.featurize(xr)
-        u = self.object.rvs(z, fr)
+        u = self.rvs(z, fr)
         return np.atleast_1d(u)
 
     @ensure_args_are_viable
@@ -726,7 +708,7 @@ class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance:
             xr = arstack(x, self.nb_lags + 1)
             ur = u[self.nb_lags:]
             fr = self.featurize(xr)
-            return self.object.log_likelihood(fr, ur)
+            return super().log_likelihood(fr, ur)
         else:
             def inner(x, u):
                 return self.log_likelihood.__wrapped__(self, x, u)
@@ -741,7 +723,7 @@ class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance:
         fr = [self.featurize(_xr) for _xr in xr]
 
         fr, ur, wr = list(map(np.vstack, (fr, ur, wr)))
-        self.object.em(fr, ur, wr, **kwargs)
+        self.em(fr, ur, wr, **kwargs)
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):

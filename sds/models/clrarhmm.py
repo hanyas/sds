@@ -186,13 +186,13 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
               obs_mstep_kwargs,
               ctl_mstep_kwargs, **kwargs):
 
-            self.dynamics.mstep(gamma, zeta, obs, act,
-                                init_state_mstep_kwargs,
-                                trans_mstep_kwargs,
-                                obs_mstep_kwargs,
-                                init_obs_mstep_kwargs)
+        self.dynamics.mstep(gamma, zeta, obs, act,
+                            init_state_mstep_kwargs,
+                            trans_mstep_kwargs,
+                            obs_mstep_kwargs,
+                            init_obs_mstep_kwargs)
 
-            self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
+        self.controls.mstep(gamma, obs, act, **ctl_mstep_kwargs)
 
     @ensure_args_are_viable
     def em(self, train_obs, train_act=None,
