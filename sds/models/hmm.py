@@ -10,6 +10,7 @@ from sds.observations import GaussianObservation
 from sds.utils.decorate import ensure_args_are_viable
 from sds.utils.general import find_permutation
 from sds.cython.hmm_cy import forward_cy, backward_cy
+from sds.cython.hmm_cy import backward_sample_cy
 
 from tqdm import trange
 
@@ -139,16 +140,16 @@ class HiddenMarkovModel:
                 return self.backward(loginit, logtrans, logobs, scale, cython)
             return list(map(partial, loginit, logtrans, logobs, scale))
 
-    def posterior(self, alpha, beta, temperature=1.):
+    def smoothed_posterior(self, alpha, beta, temperature=1.):
         if isinstance(alpha, np.ndarray) and isinstance(beta, np.ndarray):
             return np.exp(temperature * (alpha + beta)
                           - logsumexp(temperature * (alpha + beta), axis=1, keepdims=True))
         else:
             def partial(alpha, beta):
-                return self.posterior(alpha, beta, temperature)
-            return list(map(self.posterior, alpha, beta))
+                return self.smoothed_posterior(alpha, beta, temperature)
+            return list(map(self.smoothed_posterior, alpha, beta))
 
-    def joint_posterior(self, alpha, beta, loginit, logtrans, logobs, temperature=1.):
+    def smoothed_joint(self, alpha, beta, loginit, logtrans, logobs, temperature=1.):
         if isinstance(loginit, np.ndarray)\
                 and isinstance(logtrans, np.ndarray)\
                 and isinstance(logobs, np.ndarray)\
@@ -161,27 +162,63 @@ class HiddenMarkovModel:
             return np.exp(zeta - logsumexp(zeta, axis=(1, 2), keepdims=True))
         else:
             def partial(alpha, beta, loginit, logtrans, logobs):
-                return self.joint_posterior(alpha, beta, loginit, logtrans, logobs, temperature)
+                return self.smoothed_joint(alpha, beta, loginit, logtrans, logobs, temperature)
             return list(map(partial, alpha, beta, loginit, logtrans, logobs))
+
+    @ensure_args_are_viable
+    def sampled_posterior(self, obs, act=None, cython=True):
+        if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
+            loglikhds = self.log_likelihoods(obs, act)
+            alpha, norm = self.forward(*loglikhds)
+
+            loginit, logtrans, logobs = loglikhds
+
+            nb_steps = logobs.shape[0]
+            states = -1 * np.ones((nb_steps, ), np.int64)
+
+            if cython:
+                backward_sample_cy(to_c(logtrans), to_c(logobs),
+                                   to_c(alpha), to_c(states))
+            else:
+                T = logobs.shape[0]
+                K = logobs.shape[1]
+
+                states[-1] = np.random.choice(K, size=1, p=np.exp(alpha[-1]))
+
+                logdist = np.zeros(K)
+                for t in range(T - 2, -1, -1):
+                    j = states[t + 1]
+                    for k in range(K):
+                        logdist[k] = logobs[t + 1, j] + logtrans[t, k, j] \
+                                     + alpha[t, k] - alpha[t + 1, j]
+
+                    logdist -= logsumexp(logdist)
+                    states[t] = np.random.choice(K, size=1, p=np.exp(logdist))
+
+            return states
+        else:
+            def partial(obs, act):
+                return self.sampled_posterior.__wrapped__(self, obs, act, cython)
+            return list(map(partial, obs, act))
 
     @ensure_args_are_viable
     def viterbi(self, obs, act=None):
         if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
 
-            loginit, logtrans, logobs = self.log_likelihoods(obs, act)[0:3]
+            loginit, logtrans, logobs = self.log_likelihoods(obs, act)
 
             nb_steps = logobs.shape[0]
 
             delta = np.zeros((nb_steps, self.nb_states))
             args = np.zeros((nb_steps, self.nb_states), np.int64)
-            z = np.zeros((nb_steps, ), np.int64)
+            z = -1 * np.ones((nb_steps, ), np.int64)
 
             for t in range(nb_steps - 2, -1, -1):
-                aux = logtrans[t] + delta[t + 1] + logobs[t + 1]
+                aux = logobs[t + 1] + logtrans[t] + delta[t + 1]
                 delta[t] = np.max(aux, axis=1)
                 args[t + 1] = np.argmax(aux, axis=1)
 
-            z[0] = np.argmax(loginit + delta[0] + logobs[0], axis=0)
+            z[0] = np.argmax(logobs[0] + loginit + delta[0], axis=0)
             for t in range(1, nb_steps):
                 z[t] = args[t, z[t - 1]]
 
@@ -196,9 +233,8 @@ class HiddenMarkovModel:
         loglikhds = self.log_likelihoods(obs, act)
         alpha, norm = self.forward(*loglikhds)
         beta = self.backward(*loglikhds, scale=norm)
-        gamma = self.posterior(alpha, beta, temperature=temperature)
-        zeta = self.joint_posterior(alpha, beta, *loglikhds,
-                                    temperature=temperature)
+        gamma = self.smoothed_posterior(alpha, beta, temperature=temperature)
+        zeta = self.smoothed_joint(alpha, beta, *loglikhds, temperature=temperature)
         return gamma, zeta
 
     def mstep(self, gamma, zeta,
@@ -363,7 +399,7 @@ class HiddenMarkovModel:
             loglikhds = self.log_likelihoods(obs, act)
             alpha, norm = self.forward(*loglikhds)
             beta = self.backward(*loglikhds, scale=norm)
-            gamma = self.posterior(alpha, beta)
+            gamma = self.smoothed_posterior(alpha, beta)
             return self.observations.smooth(gamma, obs, act)
         else:
             def inner(obs, act):
@@ -371,7 +407,7 @@ class HiddenMarkovModel:
             return list(map(inner, obs, act))
 
     @ensure_args_are_viable
-    def filtered_state(self, obs, act=None):
+    def filtered_posterior(self, obs, act=None):
         if isinstance(obs, np.ndarray) and isinstance(act, np.ndarray):
             # pad action for filtering
             if len(obs) != len(act):
@@ -382,7 +418,7 @@ class HiddenMarkovModel:
             return np.exp(alpha - logsumexp(alpha, axis=1, keepdims=True))
         else:
             def inner(obs, act):
-                return self.filtered_state.__wrapped__(self, obs, act)
+                return self.filtered_posterior.__wrapped__(self, obs, act)
             return list(map(inner, obs, act))
 
     def sample(self, horizon, act=None, seed=None):
@@ -405,7 +441,7 @@ class HiddenMarkovModel:
         else:
             seeds = [i for i in range(len(horizon))]
             act = [None] * len(horizon) if act is None else act
-            res = list(map(self.sample, horizon, act, seed))
+            res = list(map(self.sample, horizon, act, seeds))
             return list(map(list, zip(*res)))
 
     def plot(self, obs, act=None, true_state=None, plot_mean=True, title=None):

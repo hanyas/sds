@@ -1,6 +1,11 @@
 import numpy as np
 cimport numpy as np
 
+import numpy.random as npr
+cimport numpy.random as npr
+
+cimport cython
+
 from libc.math cimport log, exp, fmax, INFINITY
 
 
@@ -23,6 +28,7 @@ cdef double logsumexp(double[::1] x) nogil:
     return m + log(out)
 
 
+@cython.boundscheck(False)
 cpdef forward_cy(double[::1] loginit,
                  double[:,:,::1] logtrans,
                  double[:,::1] logobs,
@@ -51,6 +57,7 @@ cpdef forward_cy(double[::1] loginit,
         for k in range(K):
             alpha[t, k] = alpha[t, k] - norm[t]
 
+@cython.boundscheck(False)
 cpdef backward_cy(double[::1] loginit,
                   double[:,:,::1] logtrans,
                   double[:,::1] logobs,
@@ -71,3 +78,29 @@ cpdef backward_cy(double[::1] loginit,
                 aux[j] = logtrans[t, k, j] + beta[t + 1, j]\
                          + logobs[t + 1, j]
             beta[t, k] = logsumexp(aux) - scale[t]
+
+@cython.boundscheck(False)
+cpdef backward_sample_cy(double[:,:,::1] logtrans,
+                         double[:,::1] logobs,
+                         double[:,::1] alpha,
+                         long[::1] states):
+
+    cdef int T, K, t, k, j
+    T = logobs.shape[0]
+    K = logobs.shape[1]
+
+    states[-1] = npr.choice(K, size=1, p=np.exp(alpha[-1]))
+
+    cdef double[::1] logdist = np.zeros(K)
+    cdef double[::1] dist = np.zeros(K)
+
+    for t in range(T - 2, -1, -1):
+        for k in range(K):
+            j = states[t + 1]
+            logdist[k] = logobs[t + 1, j] + logtrans[t, k, j]\
+                         + alpha[t, k] - alpha[t + 1, j]
+
+        for k in range(K):
+            dist[k] = logdist[k] - logsumexp(logdist)
+
+        states[t] = npr.choice(K, size=1, p=np.exp(dist))
