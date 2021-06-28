@@ -15,6 +15,9 @@ from sds.distributions.gaussian import StackedGaussiansWithPrecision
 from sds.distributions.gaussian import StackedGaussiansWithDiagonalPrecision
 from sds.distributions.lingauss import StackedLinearGaussiansWithPrecision
 
+from sds.distributions.gaussian import GaussianWithPrecision
+from sds.distributions.gaussian import GaussianWithDiagonalPrecision
+
 from sklearn.preprocessing import PolynomialFeatures
 
 import copy
@@ -716,3 +719,167 @@ class BayesianInitGaussianControlWithAutomaticRelevance:
             return np.einsum('nk,nkl->nl', p0, mu)
         else:
             return list(map(self.smooth, p, x, u))
+
+
+class _BayesianInitGaussianLatentBase:
+
+    def __init__(self, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+
+        assert nb_lags > 0
+
+        self.ltn_dim = ltn_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.prior = prior
+        self.posterior = copy.deepcopy(prior)
+        self.likelihood = likelihood
+
+    @property
+    def params(self):
+        return self.likelihood.params
+
+    @params.setter
+    def params(self, values):
+        self.likelihood.params = values
+
+    def initialize(self, x, **kwargs):
+        pass
+
+    def mstep(self, stats, **kwargs):
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.mode()
+
+        # x, n, xxT, n = stats
+        #
+        # mu = x / n
+        # sigma = xxT / n - np.outer(mu, mu)
+        #
+        # from sds.utils.linalg import symmetrize
+        # # numerical stabilization
+        # _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.ltn_dim)
+        # assert np.allclose(_sigma, _sigma.T)
+        # assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
+        #
+        # self.likelihood.params = mu, np.linalg.inv(sigma)
+
+
+class SingleBayesianInitGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64
+    # psi = 1e8 * np.eye(ltn_dim) / (ltn_dim + 1)
+    # nu = (ltn_dim + 1) + ltn_dim + 1
+    #
+    # from sds.distributions.composite import NormalWishart
+    # prior = NormalWishart(ltn_dim,
+    #                       mu=mu, kappa=kappa,
+    #                       psi=psi, nu=nu)
+
+    def __init__(self, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(SingleBayesianInitGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                               nb_lags, prior, likelihood)
+
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mu, lmbda = self.prior.rvs()
+            self.likelihood = GaussianWithPrecision(dim=self.ltn_dim,
+                                                    mu=mu, lmbda=lmbda)
+
+
+class SingleBayesianInitDiagonalGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64 * np.ones((ltn_dim,))
+    # alpha = ((ltn_dim + 1) + ltn_dim + 1) / 2. * np.ones((ltn_dim,))
+    # beta = 1. / (2. * 1e8 * np.ones((ltn_dim,)) / (ltn_dim + 1))
+    #
+    # from sds.distributions.composite import NormalGamma
+    # prior = NormalGamma(ltn_dim,
+    #                     mu=mu, kappa=kappa,
+    #                     alphas=alpha, betas=beta)
+
+    def __init__(self, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(SingleBayesianInitDiagonalGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                                       nb_lags, prior, likelihood)
+
+        # Diagonal Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mu, lmbda_diag = self.prior.rvs()
+            self.likelihood = GaussianWithDiagonalPrecision(dim=self.ltn_dim,
+                                                            mu=mu, lmbda_diag=lmbda_diag)
+
+
+class BayesianInitGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64
+    # psi = 1e8 * np.eye(ltn_dim) / (ltn_dim + 1)
+    # nu = (ltn_dim + 1) + ltn_dim + 1
+    #
+    # from sds.distributions.composite import StackedNormalWishart
+    # prior = StackedNormalWishart(nb_states, ltn_dim,
+    #                              mus=np.array([mu for _ in range(nb_states)]),
+    #                              kappas=np.array([kappa for _ in range(nb_states)]),
+    #                              psis=np.array([psi for _ in range(nb_states)]),
+    #                              nus=np.array([nu for _ in range(nb_states)]))
+
+    def __init__(self, nb_states, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(BayesianInitGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                         nb_lags, prior, likelihood)
+
+        self.nb_states = nb_states
+
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbdas = self.prior.rvs()
+            self.likelihood = StackedGaussiansWithPrecision(size=self.nb_states,
+                                                            dim=self.ltn_dim,
+                                                            mus=mus, lmbdas=lmbdas)
+
+    def permute(self, perm):
+        pass
+
+
+class BayesianInitDiagonalGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64 * np.ones((ltn_dim,))
+    # alpha = ((ltn_dim + 1) + ltn_dim + 1) / 2. * np.ones((ltn_dim,))
+    # beta = 1. / (2. * 1e8 * np.ones((ltn_dim,)) / (ltn_dim + 1))
+    #
+    # from sds.distributions.composite import StackedNormalGamma
+    # prior = StackedNormalGamma(nb_states, ltn_dim,
+    #                            mus=np.array([mu for _ in range(nb_states)]),
+    #                            kappas=np.array([kappa for _ in range(nb_states)]),
+    #                            alphas=np.array([alpha for _ in range(nb_states)]),
+    #                            betas=np.array([beta for _ in range(nb_states)]))
+
+    def __init__(self, nb_states, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(BayesianInitDiagonalGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                                 nb_lags, prior, likelihood)
+
+        self.nb_states = nb_states
+
+        # Diagonal Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbdas_diag = self.prior.rvs()
+            self.likelihood = StackedGaussiansWithDiagonalPrecision(size=self.nb_states,
+                                                                    dim=self.ltn_dim,
+                                                                    mus=mus, lmbdas_diag=lmbdas_diag)
+
+    def permute(self, perm):
+        pass

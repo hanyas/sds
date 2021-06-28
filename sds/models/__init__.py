@@ -10,3 +10,5 @@ from .ensemble import EnsembleHiddenMarkovModel
 from .ensemble import EnsembleClosedLoopHiddenMarkovModel
 from .ensemble import EnsembleAutoRegressiveClosedLoopHiddenMarkovModel
 from .ensemble import EnsembleHybridController
+
+from .lds import LinearGaussianDynamics

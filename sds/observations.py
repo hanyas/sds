@@ -486,8 +486,8 @@ class BayesianAutoRegressiveGaussianObservation(_BayesianAutoRegressiveObservati
 
     # M = np.zeros((output_dim, input_dim))
     # K = 1e-6 * np.eye(input_dim)
-    # psi = 1e8 * np.eye(obs_dim) / (obs_dim + 1)
-    # nu = (obs_dim + 1) + obs_dim + 1
+    # psi = 1e8 * np.eye(output_dim) / (output_dim + 1)
+    # nu = (output_dim + 1) + output_dim + 1
     #
     # from sds.distributions.composite import StackedMatrixNormalWishart
     # prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -500,6 +500,7 @@ class BayesianAutoRegressiveGaussianObservation(_BayesianAutoRegressiveObservati
                  nb_lags, prior, likelihood=None):
         super(BayesianAutoRegressiveGaussianObservation, self).__init__(nb_states, obs_dim, act_dim,
                                                                         nb_lags, prior, likelihood)
+
         # Linear-Gaussian likelihood
         if likelihood is not None:
             self.likelihood = likelihood
@@ -519,8 +520,8 @@ class BayesianAutoRegressiveTiedGaussianObservation(_BayesianAutoRegressiveObser
 
     # M = np.zeros((output_dim, input_dim))
     # K = 1e-64 * np.eye(input_dim)
-    # psi = 1e16 * np.eye(obs_dim) / (obs_dim + 1)
-    # nu = (obs_dim + 1) + obs_dim + 1
+    # psi = 1e16 * np.eye(output_dim) / (output_dim + 1)
+    # nu = (output_dim + 1) + output_dim + 1
     #
     # from sds.distributions.composite import TiedMatrixNormalWishart
     # prior = TiedMatrixNormalWishart(nb_states, input_dim, output_dim,
@@ -551,8 +552,8 @@ class BayesianAutoRegressiveDiagonalGaussianObservation(_BayesianAutoRegressiveO
 
     # M = np.zeros((output_dim, input_dim))
     # K = 1e-64 * np.eye(input_dim)
-    # alpha = ((obs_dim + 1) + obs_dim + 1) / 2. * np.ones((obs_dim,))
-    # beta = 1. / (2. * 1e16 * np.ones((obs_dim,)) / (obs_dim + 1))
+    # alpha = ((obs_dim + 1) + obs_dim + 1) / 2. * np.ones((output_dim,))
+    # beta = 1. / (2. * 1e16 * np.ones((output_dim,)) / (output_dim + 1))
     #
     # from sds.distributions.composite import StackedMatrixNormalGamma
     # prior = StackedMatrixNormalGamma(nb_states, input_dim, output_dim,
@@ -586,8 +587,8 @@ class BayesianAutoRegressiveTiedDiagonalGaussianObservation(_BayesianAutoRegress
 
     # M = np.zeros((output_dim, input_dim))
     # K = 1e-64 * np.eye(input_dim)
-    # alpha = ((obs_dim + 1) + obs_dim + 1) / 2. * np.ones((obs_dim,))
-    # beta = 1. / (2. * 1e8 * np.ones((obs_dim,)) / (obs_dim + 1))
+    # alpha = ((obs_dim + 1) + obs_dim + 1) / 2. * np.ones((output_dim,))
+    # beta = 1. / (2. * 1e8 * np.ones((output_dim,)) / (output_dim + 1))
     #
     # from sds.distributions.composite import TiedMatrixNormalGamma
     # prior = TiedMatrixNormalGamma(nb_states, input_dim, output_dim,
