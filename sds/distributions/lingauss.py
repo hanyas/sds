@@ -172,11 +172,11 @@ class LinearGaussianWithPrecision:
         sigma = (yyT - self.A.dot(yxT.T)) / n
 
         # numerical stabilization
-        _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
-        assert np.allclose(_sigma, _sigma.T)
-        assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
+        sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
+        assert np.allclose(sigma, sigma.T)
+        assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
-        self.lmbda = np.linalg.inv(_sigma)
+        self.lmbda = np.linalg.inv(sigma)
 
 
 class StackedLinearGaussiansWithPrecision:
@@ -347,11 +347,11 @@ class StackedLinearGaussiansWithPrecision:
             sigma = (yyTk[k] - As[k].dot(yxTk[k].T)) / nk[k]
 
             # numerical stabilization
-            _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
-            assert np.allclose(_sigma, _sigma.T)
-            assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
+            sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
+            assert np.allclose(sigma, sigma.T)
+            assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
-            lmbdas[k] = np.linalg.inv(_sigma)
+            lmbdas[k] = np.linalg.inv(sigma)
 
         self.As = As
         self.lmbdas = lmbdas
@@ -533,12 +533,12 @@ class TiedLinearGaussiansWithPrecision:
         sigma /= n
 
         # numerical stabilization
-        _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
-        assert np.allclose(_sigma, _sigma.T)
-        assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
+        sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
+        assert np.allclose(sigma, sigma.T)
+        assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
         self.As = As
-        self.lmbda = np.linalg.inv(_sigma)
+        self.lmbda = np.linalg.inv(sigma)
 
 
 class LinearGaussianWithDiagonalPrecision:
@@ -607,6 +607,10 @@ class LinearGaussianWithDiagonalPrecision:
     @property
     def sigma_diag(self):
         return 1. / self.lmbda_diag
+
+    @property
+    def sigma(self):
+        return np.diag(self.sigma_diag)
 
     def predict(self, x):
         if self.affine:
@@ -771,6 +775,10 @@ class StackedLinearGaussiansWithDiagonalPrecision:
     @property
     def sigmas_diag(self):
         return np.array([dist.sigma_diag for dist in self.dists])
+
+    @property
+    def sigmas(self):
+        return np.array([dist.sigma for dist in self.dists])
 
     def predict(self, x):
         if self.affine:

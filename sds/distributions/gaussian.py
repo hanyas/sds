@@ -155,7 +155,7 @@ class GaussianWithPrecision:
         sigma = xxT / n - np.outer(self.mu, self.mu)
 
         # numerical stabilization
-        sigma = symmetrize(sigma) + 1e-8 * np.eye(self.dim)
+        sigma = symmetrize(sigma) + 1e-16 * np.eye(self.dim)
         assert np.allclose(sigma, sigma.T)
         assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
@@ -314,7 +314,7 @@ class StackedGaussiansWithPrecision:
             sigma = xxTk[k] / nk[k] - np.outer(mus[k], mus[k])
 
             # numerical stabilization
-            sigma = symmetrize(sigma) + 1e-8 * np.eye(self.dim)
+            sigma = symmetrize(sigma) + 1e-16 * np.eye(self.dim)
             assert np.allclose(sigma, sigma.T)
             assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
@@ -484,7 +484,7 @@ class TiedGaussiansWithPrecision:
         sigma /= n
 
         # numerical stabilization
-        sigma = symmetrize(sigma) + 1e-8 * np.eye(self.dim)
+        sigma = symmetrize(sigma) + 1e-16 * np.eye(self.dim)
         assert np.allclose(sigma, sigma.T)
         assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
@@ -565,6 +565,10 @@ class GaussianWithDiagonalPrecision:
     @property
     def sigma_diag(self):
         return 1. / self.lmbda_diag
+
+    @property
+    def sigma(self):
+        return np.diag(self.sigma_diag)
 
     def mean(self):
         return self.mu
@@ -791,7 +795,7 @@ class StackedGaussiansWithDiagonalPrecision:
         lmbdas_diag = np.zeros((self.size, self.dim))
         for k in range(self.size):
             mus[k] = xk[k] / ndk[k]
-            lmbdas_diag[k] = 1. / (xxk[k] / ndk[k] - mus[k]**2 + 1e-8)
+            lmbdas_diag[k] = 1. / (xxk[k] / ndk[k] - mus[k]**2 + 1e-16)
 
         self.mus = mus
         self.lmbdas_diag = lmbdas_diag
@@ -967,7 +971,7 @@ class TiedGaussiansWithDiagonalPrecision:
         sigma_diag /= nd
 
         self.mus = mus
-        self.lmbda_diag = 1. / (sigma_diag + 1e-8)
+        self.lmbda_diag = 1. / (sigma_diag + 1e-16)
 
 
 class GaussianWithKnownMeanAndDiagonalPrecision(GaussianWithDiagonalPrecision):
