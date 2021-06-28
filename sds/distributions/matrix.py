@@ -374,18 +374,13 @@ class MatrixNormalWithDiagonalPrecision:
 
     def log_likelihood(self, x):
         # apply vector operator with Fortran convention
-        xr = np.reshape(x, (-1, self.drow * self.dcol), order='F')
+        xr = np.reshape(x, (self.drow * self.dcol, ), order='F')
         mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
 
-        # Gaussian likelihood on vector dist.
-        bads = np.isnan(np.atleast_2d(xr)).any(axis=1)
-        xr = np.nan_to_num(xr, copy=False).reshape((-1, self.drow * self.dcol))
+        loglik = np.einsum('d,dl,l->', mu, self.lmbda, xr)\
+                 - 0.5 * np.einsum('d,dl,l->', xr, self.lmbda, xr)
 
-        log_lik = np.einsum('d,dl,nl->n', mu, self.lmbda, xr)\
-                  - 0.5 * np.einsum('nd,dl,nl->n', xr, self.lmbda, xr)
-
-        log_lik[bads] = 0
-        return - self.log_partition() + self.log_base() + log_lik
+        return - self.log_partition() + self.log_base() + loglik
 
 
 class StackedMatrixNormalWithDiagonalPrecision:

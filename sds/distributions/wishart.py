@@ -101,4 +101,6 @@ class Wishart:
                + self.nu * np.sum(np.log(np.diag(self.psi_chol)))
 
     def log_likelihood(self, x):
-        raise NotImplementedError
+        loglik = 0.5 * (self.nu - self.dim - 1) * np.linalg.slogdet(x)[1]\
+                 - 0.5 * np.trace(np.linalg.solve(self.psi, x))
+        return - self.log_partition() + self.log_base() + loglik
