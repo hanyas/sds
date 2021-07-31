@@ -249,12 +249,12 @@ class HiddenMarkovModel:
 
     @ensure_args_are_viable
     def em(self, train_obs, train_act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            init_state_mstep_kwargs={},
            trans_mstep_kwargs={},
            obs_mstep_kwargs={}, **kwargs):
 
-        proc_id = kwargs.pop('proc_id', 0)
+        process_id = kwargs.pop('process_id', 0)
 
         if initialize:
             self.initialize(train_obs, train_act)
@@ -264,8 +264,8 @@ class HiddenMarkovModel:
         train_lls.append(train_ll)
         last_train_ll = train_ll
 
-        pbar = trange(nb_iter, position=proc_id)
-        pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
         for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
@@ -279,9 +279,9 @@ class HiddenMarkovModel:
             train_ll = self.log_normalizer(train_obs, train_act)
             train_lls.append(train_ll)
 
-            pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+            pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
-            if abs(train_ll - last_train_ll) < prec:
+            if abs(train_ll - last_train_ll) < tol:
                 break
             else:
                 last_train_ll = train_ll
@@ -291,20 +291,20 @@ class HiddenMarkovModel:
     @ensure_args_are_viable
     def annealed_em(self, train_obs, train_act=None,
                     nb_iter=50, nb_sub_iter=50,
-                    prec=1e-4, discount=0.99,
+                    tol=1e-4, discount=0.99,
                     init_state_mstep_kwargs={},
                     trans_mstep_kwargs={},
                     obs_mstep_kwargs={}, **kwargs):
 
-        proc_id = kwargs.get('proc_id', 0)
+        process_id = kwargs.get('process_id', 0)
 
         train_lls = []
         train_ll = self.log_normalizer(train_obs, train_act)
         train_lls.append(train_ll)
         last_train_ll = train_ll
 
-        pbar = trange(nb_iter, position=proc_id)
-        pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
         for i in pbar:
             temperature = 1. - np.power(discount, i)
@@ -320,9 +320,9 @@ class HiddenMarkovModel:
             train_ll = self.log_normalizer(train_obs, train_act)
             train_lls.append(train_ll)
 
-            pbar.set_description("#{}, ll: {:.5f}, tmp: {:.3f}".format(proc_id, train_lls[-1], temperature))
+            pbar.set_description("#{}, ll: {:.5f}, tmp: {:.3f}".format(process_id, train_lls[-1], temperature))
 
-            if abs(train_ll - last_train_ll) < prec:
+            if abs(train_ll - last_train_ll) < tol:
                 break
             else:
                 last_train_ll = train_ll
@@ -331,14 +331,14 @@ class HiddenMarkovModel:
 
     @ensure_args_are_viable
     def earlystop_em(self, train_obs, train_act=None,
-                     nb_iter=50, prec=1e-4, initialize=True,
+                     nb_iter=50, tol=1e-4, initialize=True,
                      init_state_mstep_kwargs={}, trans_mstep_kwargs={},
                      obs_mstep_kwargs={}, test_obs=None, test_act=None,
                      **kwargs):
 
         assert test_obs is not None and test_act is not None
 
-        proc_id = kwargs.get('proc_id', 0)
+        process_id = kwargs.get('process_id', 0)
 
         if initialize:
             self.initialize(train_obs, train_act)
@@ -362,9 +362,9 @@ class HiddenMarkovModel:
         score = (all_ll - train_ll) / (nb_all - nb_train)
         last_score = score
 
-        pbar = trange(nb_iter, position=proc_id)
+        pbar = trange(nb_iter, position=process_id)
         pbar.set_description("#{}, train_ll: {:.5f}, test_ll: {:.5f}, "
-                             "score: {:.5f}".format(proc_id, train_ll, test_ll, score))
+                             "score: {:.5f}".format(process_id, train_ll, test_ll, score))
 
         for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
@@ -384,9 +384,9 @@ class HiddenMarkovModel:
             score = (all_ll - train_ll) / (nb_all - nb_train)
 
             pbar.set_description("#{}, train_ll: {:.5f}, test_ll: {:.5f}, "
-                                 "score: {:.5f}".format(proc_id, train_ll, test_ll, score))
+                                 "score: {:.5f}".format(process_id, train_ll, test_ll, score))
 
-            if abs(score - last_score) < prec:
+            if abs(score - last_score) < tol:
                 break
             else:
                 last_score = score

@@ -102,7 +102,7 @@ if __name__ == "__main__":
                                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     ensemble.em(train_obs, train_act,
-                nb_iter=500, prec=1e-4, initialize=True,
+                nb_iter=500, tol=1e-4, initialize=True,
                 init_state_mstep_kwargs=init_state_mstep_kwargs,
                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                 trans_mstep_kwargs=trans_mstep_kwargs,

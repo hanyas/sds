@@ -92,7 +92,7 @@ if __name__ == "__main__":
                                                       trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     rarhmm.em(obs, act,
-              nb_iter=100, prec=1e-4,
+              nb_iter=100, tol=1e-4,
               initialize=True,
               init_state_mstep_kwargs=init_state_mstep_kwargs,
               init_obs_mstep_kwargs=init_obs_mstep_kwargs,

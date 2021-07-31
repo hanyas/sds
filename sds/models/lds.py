@@ -188,12 +188,12 @@ class LinearGaussianDynamics:
         # self.emission.mstep(ems_stats, **ems_mstep_kwargs)
 
     def em(self, train_ems, train_act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            init_ltn_mstep_kwarg={},
            ltn_mstep_kwarg={},
            ems_mstep_kwarg={}, **kwargs):
 
-        proc_id = kwargs.pop('proc_id', 0)
+        process_id = kwargs.pop('process_id', 0)
 
         if initialize:
             self.initialize(train_ems, train_act)
@@ -208,8 +208,8 @@ class LinearGaussianDynamics:
         train_lls.append(train_ll)
         last_train_ll = train_ll
 
-        pbar = trange(nb_iter, position=proc_id)
-        pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
         for _ in pbar:
             self.mstep(stats,
@@ -226,9 +226,9 @@ class LinearGaussianDynamics:
 
             train_lls.append(train_ll)
 
-            pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+            pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
-            if abs(train_ll - last_train_ll) < prec:
+            if abs(train_ll - last_train_ll) < tol:
                 break
             else:
                 last_train_ll = train_ll

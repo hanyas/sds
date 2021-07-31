@@ -44,8 +44,8 @@ def create_job(train_obs, train_act, kwargs, seed):
 
     # em arguments
     nb_iter = kwargs.pop('nb_iter')
-    prec = kwargs.pop('prec')
-    proc_id = seed
+    tol = kwargs.pop('tol')
+    process_id = seed
 
     init_mstep_kwargs = kwargs.pop('init_state_mstep_kwargs')
     init_mstep_kwargs = kwargs.pop('init_obs_mstep_kwargs')
@@ -62,8 +62,8 @@ def create_job(train_obs, train_act, kwargs, seed):
                                                       trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     rarhmm.em(train_obs, train_act,
-              nb_iter=nb_iter, prec=prec,
-              initialize=True, proc_id=proc_id,
+              nb_iter=nb_iter, tol=tol,
+              initialize=True, process_id=process_id,
               init_state_mstep_kwargs=init_state_mstep_kwargs,
               init_obs_mstep_kwargs=init_obs_mstep_kwargs,
               trans_mstep_kwargs=trans_mstep_kwargs,
@@ -179,7 +179,7 @@ if __name__ == "__main__":
                          trans_prior=trans_prior, obs_prior=obs_prior,
                          init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs,
-                         nb_iter=50, prec=1e-4,
+                         nb_iter=50, tol=1e-4,
                          init_state_mstep_kwargs=init_state_mstep_kwargs,
                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                          trans_mstep_kwargs=trans_mstep_kwargs,

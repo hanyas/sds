@@ -196,14 +196,14 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
 
     @ensure_args_are_viable
     def em(self, train_obs, train_act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            init_state_mstep_kwargs={},
            init_obs_mstep_kwargs={},
            trans_mstep_kwargs={},
            obs_mstep_kwargs={},
            ctl_mstep_kwargs={}, **kwargs):
 
-        proc_id = kwargs.pop('proc_id', 0)
+        process_id = kwargs.pop('process_id', 0)
 
         if initialize:
             self.initialize(train_obs, train_act)
@@ -213,8 +213,8 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
         train_lls.append(train_ll)
         last_train_ll = train_ll
 
-        pbar = trange(nb_iter, position=proc_id)
-        pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
         for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
@@ -229,9 +229,9 @@ class ClosedLoopRecurrentAutoRegressiveHiddenMarkovModel:
             train_ll = self.log_normalizer(train_obs, train_act)
             train_lls.append(train_ll)
 
-            pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+            pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
-            if abs(train_ll - last_train_ll) < prec:
+            if abs(train_ll - last_train_ll) < tol:
                 break
             else:
                 last_train_ll = train_ll
@@ -614,10 +614,10 @@ class HybridController:
 
     @ensure_args_are_viable
     def em(self, train_obs, train_act,
-           nb_iter=50, prec=1e-4, initialize=False,
+           nb_iter=50, tol=1e-4, initialize=False,
            ctl_mstep_kwargs={}, **kwargs):
 
-        proc_id = kwargs.pop('proc_id', 0)
+        process_id = kwargs.pop('process_id', 0)
 
         if initialize:
             self.initialize(train_obs, train_act)
@@ -627,8 +627,8 @@ class HybridController:
         train_lls.append(train_ll)
         last_train_ll = train_ll
 
-        pbar = trange(nb_iter, position=proc_id)
-        pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+        pbar = trange(nb_iter, position=process_id)
+        pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
         for _ in pbar:
             gamma, zeta = self.estep(train_obs, train_act)
@@ -638,9 +638,9 @@ class HybridController:
             train_ll = self.log_normalizer(train_obs, train_act)
             train_lls.append(train_ll)
 
-            pbar.set_description("#{}, ll: {:.5f}".format(proc_id, train_lls[-1]))
+            pbar.set_description("#{}, ll: {:.5f}".format(process_id, train_lls[-1]))
 
-            if abs(train_ll - last_train_ll) < prec:
+            if abs(train_ll - last_train_ll) < tol:
                 break
             else:
                 last_train_ll = train_ll

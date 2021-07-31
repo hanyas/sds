@@ -110,5 +110,5 @@ lds = LinearGaussianDynamics(ems_dim=ems_dim, act_dim=act_dim,
 # lds.latent.params = np.column_stack([A, c]), np.linalg.inv(Q)
 lds.emission.params = np.column_stack([H, g]), np.linalg.inv(R)
 
-lls = lds.em(Y, nb_iter=250, prec=0.)
+lls = lds.em(Y, nb_iter=250, tol=0.)
 print("ll monotonic?", np.all(np.diff(lls) >= 0.))

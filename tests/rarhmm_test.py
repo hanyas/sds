@@ -24,7 +24,7 @@ true_ll = true_rarhmm.log_probability(x)
 
 our_rarhmm = Ours(nb_states=3, obs_dim=2, trans_type='recurrent')
 our_rarhmm.initialize(x)
-our_ll = our_rarhmm.em(x, nb_iter=100, prec=1e-12)
+our_ll = our_rarhmm.em(x, nb_iter=100, tol=1e-12)
 
 their_rarhmm = Theirs(3, 2, observations="ar", transitions="recurrent")
 their_ll = their_rarhmm.fit(x, method="em", num_em_iters=100)

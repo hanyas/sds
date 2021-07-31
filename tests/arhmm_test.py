@@ -25,7 +25,7 @@ true_ll = true_arhmm.log_probability(x)
 
 our_arhmm = Ours(nb_states=3, obs_dim=2)
 our_arhmm.initialize(x)
-our_ll = our_arhmm.em(x, nb_iter=1000, prec=0., verbose=True)
+our_ll = our_arhmm.em(x, nb_iter=1000, tol=0., verbose=True)
 
 their_arhmm = Theirs(3, 2, observations="ar")
 their_ll = their_arhmm.fit(x, method="em", num_em_iters=1000, initialize=True)

@@ -84,7 +84,7 @@ std_rarhmm = RecurrentAutoRegressiveHiddenMarkovModel(nb_states=4, obs_dim=2,
                                                       trans_kwargs=trans_kwargs)
 
 std_lls = std_rarhmm.em(x, nb_iter=5,
-                        prec=0., initialize=True,
+                        tol=0., initialize=True,
                         trans_mstep_kwargs=trans_mstep_kwargs)
 
 print("true_ll=", true_ll, "std_ll=", std_lls[-1])

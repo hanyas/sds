@@ -25,7 +25,7 @@ true_ll = true_hmm.log_probability(x)
 
 our_hmm = Ours(nb_states=5, obs_dim=2)
 our_hmm.initialize(x)
-our_ll = our_hmm.em(x, nb_iter=1000, prec=0., verbose=True)
+our_ll = our_hmm.em(x, nb_iter=1000, tol=0., verbose=True)
 
 their_hmm = Theirs(5, 2, observations="gaussian")
 their_ll = their_hmm.fit(x, method="em", num_em_iters=1000, initialize=True)

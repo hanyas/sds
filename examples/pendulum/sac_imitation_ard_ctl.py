@@ -64,8 +64,8 @@ def create_job(train_obs, train_act, kwargs, seed):
     # em arguments
     initialize = kwargs.get('initialize')
     nb_iter = kwargs.get('nb_iter')
-    prec = kwargs.get('prec')
-    proc_id = seed
+    tol = kwargs.get('tol')
+    process_id = seed
 
     ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs')
 
@@ -73,7 +73,7 @@ def create_job(train_obs, train_act, kwargs, seed):
                              ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs)
 
     hbctl.em(train_obs, train_act, nb_iter=nb_iter,
-             prec=prec, initialize=initialize, proc_id=proc_id,
+             tol=tol, initialize=initialize, process_id=process_id,
              ctl_mstep_kwargs=ctl_mstep_kwargs)
 
     return hbctl
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     hbctls = parallel_em(dynamics=dynamics,
                          train_obs=train_obs, train_act=train_act,
                          ctl_type=ctl_type, ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs,
-                         nb_iter=100, prec=1e-4, initialize=True,
+                         nb_iter=100, tol=1e-4, initialize=True,
                          ctl_mstep_kwargs=ctl_mstep_kwargs)
 
     # model validation

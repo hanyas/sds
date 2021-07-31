@@ -41,9 +41,9 @@ class EnsembleHiddenMarkovModel:
                         kwargs, seed):
 
             nb_iter = kwargs.get('nb_iter', 25)
-            prec = kwargs.get('prec', 1e-4)
+            tol = kwargs.get('tol', 1e-4)
             initialize = kwargs.get('initialize', True)
-            proc_id = seed
+            process_id = seed
 
             init_state_mstep_kwargs = kwargs.get('init_state_mstep_kwargs', {})
             init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
@@ -51,8 +51,8 @@ class EnsembleHiddenMarkovModel:
             obs_mstep_kwargs = kwargs.get('obs_mstep_kwargs', {})
 
             ll = model.em(obs, act,
-                          nb_iter=nb_iter, prec=prec,
-                          initialize=initialize, proc_id=proc_id,
+                          nb_iter=nb_iter, tol=tol,
+                          initialize=initialize, process_id=process_id,
                           init_state_mstep_kwargs=init_state_mstep_kwargs,
                           init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                           trans_mstep_kwargs=trans_mstep_kwargs,
@@ -72,7 +72,7 @@ class EnsembleHiddenMarkovModel:
 
     @ensure_args_are_viable
     def em(self, obs, act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            init_state_mstep_kwargs={},
            init_obs_mstep_kwargs={},
            trans_mstep_kwargs={},
@@ -84,7 +84,7 @@ class EnsembleHiddenMarkovModel:
                                                 split_trajs=False)[:2]
 
         self.models, lls = self._parallel_em(train_obs, train_act,
-                                             nb_iter=nb_iter, prec=prec, initialize=initialize,
+                                             nb_iter=nb_iter, tol=tol, initialize=initialize,
                                              init_state_mstep_kwargs=init_state_mstep_kwargs,
                                              init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                                              trans_mstep_kwargs=trans_mstep_kwargs,
@@ -189,9 +189,9 @@ class EnsembleClosedLoopHiddenMarkovModel:
                         kwargs, seed):
 
             nb_iter = kwargs.get('nb_iter', 25)
-            prec = kwargs.get('prec', 1e-4)
+            tol = kwargs.get('tol', 1e-4)
             initialize = kwargs.get('initialize', True)
-            proc_id = seed
+            process_id = seed
 
             init_state_mstep_kwargs = kwargs.get('init_state_mstep_kwargs', {})
             init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
@@ -200,8 +200,8 @@ class EnsembleClosedLoopHiddenMarkovModel:
             ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
 
             ll = model.em(obs, act,
-                          nb_iter=nb_iter, prec=prec,
-                          initialize=initialize, proc_id=proc_id,
+                          nb_iter=nb_iter, tol=tol,
+                          initialize=initialize, process_id=process_id,
                           init_state_mstep_kwargs=init_state_mstep_kwargs,
                           init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                           trans_mstep_kwargs=trans_mstep_kwargs,
@@ -222,7 +222,7 @@ class EnsembleClosedLoopHiddenMarkovModel:
 
     @ensure_args_are_viable
     def em(self, obs, act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            init_state_mstep_kwargs={},
            init_obs_mstep_kwargs={},
            trans_mstep_kwargs={},
@@ -235,7 +235,7 @@ class EnsembleClosedLoopHiddenMarkovModel:
                                                 split_trajs=False)[:2]
 
         self.models, lls = self._parallel_em(train_obs, train_act,
-                                             nb_iter=nb_iter, prec=prec, initialize=initialize,
+                                             nb_iter=nb_iter, tol=tol, initialize=initialize,
                                              init_state_mstep_kwargs=init_state_mstep_kwargs,
                                              init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                                              trans_mstep_kwargs=trans_mstep_kwargs,
@@ -280,9 +280,9 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
                         kwargs, seed):
 
             nb_iter = kwargs.get('nb_iter', 25)
-            prec = kwargs.get('prec', 1e-4)
+            tol = kwargs.get('tol', 1e-4)
             initialize = kwargs.get('initialize', True)
-            proc_id = seed
+            process_id = seed
 
             init_state_mstep_kwargs = kwargs.get('init_state_mstep_kwargs', {})
             init_obs_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs', {})
@@ -292,8 +292,8 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
             ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
 
             ll = model.em(obs, act,
-                          nb_iter=nb_iter, prec=prec,
-                          initialize=initialize, proc_id=proc_id,
+                          nb_iter=nb_iter, tol=tol,
+                          initialize=initialize, process_id=process_id,
                           init_state_mstep_kwargs=init_state_mstep_kwargs,
                           init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                           init_ctl_mstep_kwargs=init_ctl_mstep_kwargs,
@@ -315,7 +315,7 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
 
     @ensure_args_are_viable
     def em(self, obs, act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            init_state_mstep_kwargs={},
            init_obs_mstep_kwargs={},
            init_ctl_mstep_kwargs={},
@@ -329,7 +329,7 @@ class EnsembleAutoRegressiveClosedLoopHiddenMarkovModel:
                                                 split_trajs=False)[:2]
 
         self.models, lls = self._parallel_em(train_obs, train_act,
-                                             nb_iter=nb_iter, prec=prec, initialize=initialize,
+                                             nb_iter=nb_iter, tol=tol, initialize=initialize,
                                              init_state_mstep_kwargs=init_state_mstep_kwargs,
                                              init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                                              init_ctl_mstep_kwargs=init_ctl_mstep_kwargs,
@@ -368,15 +368,15 @@ class EnsembleHybridController:
                         kwargs, seed):
 
             nb_iter = kwargs.get('nb_iter', 25)
-            prec = kwargs.get('prec', 1e-4)
+            tol = kwargs.get('tol', 1e-4)
             initialize = kwargs.get('initialize', True)
-            proc_id = seed
+            process_id = seed
 
             ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})
 
             ll = model.em(obs, act,
-                          nb_iter=nb_iter, prec=prec,
-                          initialize=initialize, proc_id=proc_id,
+                          nb_iter=nb_iter, tol=tol,
+                          initialize=initialize, process_id=process_id,
                           ctl_mstep_kwargs=ctl_mstep_kwargs)
 
             return model, ll
@@ -393,7 +393,7 @@ class EnsembleHybridController:
 
     @ensure_args_are_viable
     def em(self, obs, act=None,
-           nb_iter=50, prec=1e-4, initialize=True,
+           nb_iter=50, tol=1e-4, initialize=True,
            ctl_mstep_kwargs={}, **kwargs):
 
         from sds.utils.general import train_test_split
@@ -402,7 +402,7 @@ class EnsembleHybridController:
                                                 split_trajs=False)[:2]
 
         self.models, lls = self._parallel_em(train_obs, train_act,
-                                             nb_iter=nb_iter, prec=prec,
+                                             nb_iter=nb_iter, tol=tol,
                                              initialize=initialize,
                                              ctl_mstep_kwargs=ctl_mstep_kwargs)
 

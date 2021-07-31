@@ -81,8 +81,8 @@ def create_job(train_obs, train_act, kwargs, seed):
     # em arguments
     initialize = kwargs.get('initialize')
     nb_iter = kwargs.get('nb_iter')
-    prec = kwargs.get('prec')
-    proc_id = seed
+    tol = kwargs.get('tol')
+    process_id = seed
 
     init_mstep_kwargs = kwargs.get('init_state_mstep_kwargs')
     init_mstep_kwargs = kwargs.get('init_obs_mstep_kwargs')
@@ -100,7 +100,7 @@ def create_job(train_obs, train_act, kwargs, seed):
                                                                   trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs)
 
     clrarhmm.em(train_obs, train_act, nb_iter=nb_iter,
-                prec=prec, initialize=initialize, proc_id=proc_id,
+                tol=tol, initialize=initialize, process_id=process_id,
                 init_state_mstep_kwargs=init_state_mstep_kwargs,
                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                 trans_mstep_kwargs=trans_mstep_kwargs,
@@ -282,7 +282,7 @@ if __name__ == "__main__":
                          trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=ctl_prior,
                          init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs,
-                         nb_iter=100, prec=1e-4, initialize=True,
+                         nb_iter=100, tol=1e-4, initialize=True,
                          init_state_mstep_kwargs=init_state_mstep_kwargs,
                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                          trans_mstep_kwargs=trans_mstep_kwargs,
