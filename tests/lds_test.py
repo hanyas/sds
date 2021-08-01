@@ -72,7 +72,7 @@ def kalman_filter(m0, S0,  # prior
     dy = y.shape[1]
     dx = m0.shape[0]
 
-    loglik = 0.
+    log_lik = 0.
 
     mf = np.zeros((T, dx))
     Sf = np.zeros((T, dx, dx))
@@ -84,8 +84,8 @@ def kalman_filter(m0, S0,  # prior
         # symmetrize
         Sp = 0.5 * (Sp + Sp.T)
 
-        # loglik
-        loglik += gaussian_logpdf(y[t], H @ mp + g,
+        # log_lik
+        log_lik += gaussian_logpdf(y[t], H @ mp + g,
                                   H @ Sp @ H.T + R)
 
         # condition
@@ -99,7 +99,7 @@ def kalman_filter(m0, S0,  # prior
         mp = A @ mf[t] + c
         Sp = A @ Sf[t] @ A.T + Q
 
-    return mf, Sf, loglik
+    return mf, Sf, log_lik
 
 
 # RTS-Smoother

@@ -67,26 +67,26 @@ class LinearGaussianDynamics:
             mu, lmbda = self.init_latent.likelihood.params
             pred_mean, pred_cov = mu, np.linalg.inv(lmbda)
 
-            loglik = 0.
+            log_lik = 0.
             for t in range(nb_steps):
-                loglik += self.emission.expected_log_liklihood(pred_mean, pred_cov, ems[t])  # loglik
+                log_lik += self.emission.expected_log_liklihood(pred_mean, pred_cov, ems[t])  # log_lik
                 filt_mean[t], filt_covar[t] = self.emission.condition(pred_mean, pred_cov, ems[t])    # condition
                 pred_mean, pred_cov = self.latent.propagate(filt_mean[t], filt_covar[t], act[t])  # predict
 
-            return filt_mean, filt_covar, loglik
+            return filt_mean, filt_covar, log_lik
         else:
             def inner(ems, act):
                 return self.kalman_filter.__wrapped__(self, ems, act)
             result = map(inner, ems, act)
-            filt_mean, filt_covar, loglik = list(map(list, zip(*result)))
-            return filt_mean, filt_covar, np.sum(np.hstack(loglik))
+            filt_mean, filt_covar, log_lik = list(map(list, zip(*result)))
+            return filt_mean, filt_covar, np.sum(np.hstack(log_lik))
 
     @ensure_args_are_viable
     def kalman_smoother(self, ems, act=None):
         if isinstance(ems, np.ndarray) \
                 and isinstance(act, np.ndarray):
 
-            filt_mean, filt_covar, loglik = self.kalman_filter(ems, act)
+            filt_mean, filt_covar, log_lik = self.kalman_filter(ems, act)
 
             nb_steps = ems.shape[0]
             smooth_mean = np.zeros((nb_steps, self.ltn_dim))
@@ -100,20 +100,20 @@ class LinearGaussianDynamics:
                     self.latent.smooth(smooth_mean[t + 1], smooth_covar[t + 1],
                                        filt_mean[t], filt_covar[t], act[t])
 
-            return smooth_mean, smooth_covar, gain, loglik
+            return smooth_mean, smooth_covar, gain, log_lik
         else:
             def inner(ems, act):
                 return self.kalman_smoother.__wrapped__(self, ems, act)
             result = map(inner, ems, act)
-            smooth_mean, smooth_covar, gain, loglik = list(map(list, zip(*result)))
-            return smooth_mean, smooth_covar, gain, np.sum(np.hstack(loglik))
+            smooth_mean, smooth_covar, gain, log_lik = list(map(list, zip(*result)))
+            return smooth_mean, smooth_covar, gain, np.sum(np.hstack(log_lik))
 
     @ensure_args_are_viable
     def estep(self, ems, act=None):
         if isinstance(ems, np.ndarray) \
                 and isinstance(act, np.ndarray):
 
-            smooth_mean, smooth_covar, gain, loglik =\
+            smooth_mean, smooth_covar, gain, log_lik =\
                 self.kalman_smoother(ems, act)
 
             nb_steps = ems.shape[0]
@@ -165,16 +165,16 @@ class LinearGaussianDynamics:
                                np.sum(yyT, axis=0),
                                yyT.shape[0]])
 
-            return init_ltn_stats, ltn_stats, ems_stats, loglik
+            return init_ltn_stats, ltn_stats, ems_stats, log_lik
         else:
             def inner(ems, act):
                 return self.estep.__wrapped__(self, ems, act)
             result = map(inner, ems, act)
-            init_ltn_stats, ltn_stats, ems_stats, loglik = list(map(list, zip(*result)))
+            init_ltn_stats, ltn_stats, ems_stats, log_lik = list(map(list, zip(*result)))
             stats = tuple([reduce(add, init_ltn_stats),
                            reduce(add, ltn_stats),
                            reduce(add, ems_stats)])
-            return stats, np.sum(np.hstack(loglik))
+            return stats, np.sum(np.hstack(log_lik))
 
     def mstep(self, stats, ems, act,
               init_ltn_mstep_kwarg,

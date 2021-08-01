@@ -85,10 +85,10 @@ class GaussianObservation:
     @ensure_args_are_viable
     def log_likelihood(self, x, u=None):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
-            loglik = np.zeros((x.shape[0], self.nb_states))
+            log_lik = np.zeros((x.shape[0], self.nb_states))
             for k in range(self.nb_states):
-                loglik[:, k] = lg_mvn(x, self.mean(k), self.sigma[k])
-            return loglik
+                log_lik[:, k] = lg_mvn(x, self.mean(k), self.sigma[k])
+            return log_lik
         else:
             def inner(x, u):
                 return self.log_likelihood.__wrapped__(self, x, u)
@@ -222,11 +222,11 @@ class AutoRegressiveGaussianObservation:
             ur = u[self.nb_lags - 1:-1]
             xn = x[self.nb_lags:]
 
-            loglik = np.zeros((xr.shape[0], self.nb_states))
+            log_lik = np.zeros((xr.shape[0], self.nb_states))
             for k in range(self.nb_states):
                 mu = self.mean(k, xr, ur)
-                loglik[:, k] = lg_mvn(xn, mu, self.sigma[k])
-            return loglik
+                log_lik[:, k] = lg_mvn(xn, mu, self.sigma[k])
+            return log_lik
         else:
             def inner(x, u):
                 return self.log_likelihood.__wrapped__(self, x, u)

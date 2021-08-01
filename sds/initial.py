@@ -116,10 +116,10 @@ class InitGaussianObservation:
     def log_likelihood(self, x):
         if isinstance(x, np.ndarray):
             x0 = x[:self.nb_lags]
-            loglik = np.zeros((x0.shape[0], self.nb_states))
+            log_lik = np.zeros((x0.shape[0], self.nb_states))
             for k in range(self.nb_states):
-                loglik[:, k] = lg_mvn(x0, self.mean(k), self.sigma[k])
-            return loglik
+                log_lik[:, k] = lg_mvn(x0, self.mean(k), self.sigma[k])
+            return log_lik
         else:
             return list(map(self.log_likelihood, x))
 
@@ -241,10 +241,10 @@ class InitGaussianControl:
         if isinstance(x, np.ndarray):
             x0 = x[:self.nb_lags]
             u0 = u[:self.nb_lags]
-            loglik = np.zeros((u0.shape[0], self.nb_states))
+            log_lik = np.zeros((u0.shape[0], self.nb_states))
             for k in range(self.nb_states):
-                loglik[:, k] = lg_mvn(u0, self.mean(k, x0), self.sigma[k])
-            return loglik
+                log_lik[:, k] = lg_mvn(u0, self.mean(k, x0), self.sigma[k])
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, u))
 

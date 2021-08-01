@@ -100,10 +100,10 @@ class GaussianControl:
     @ensure_args_are_viable
     def log_likelihood(self, x, u):
         if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
-            loglik = np.zeros((x.shape[0], self.nb_states))
+            log_lik = np.zeros((x.shape[0], self.nb_states))
             for k in range(self.nb_states):
-                loglik[:, k] = lg_mvn(u, self.mean(k, x), self.sigma[k])
-            return loglik
+                log_lik[:, k] = lg_mvn(u, self.mean(k, x), self.sigma[k])
+            return log_lik
         else:
             def inner(x, u):
                 return self.log_likelihood.__wrapped__(self, x, u)
@@ -455,10 +455,10 @@ class AutorRegressiveGaussianControl:
             xr = arstack(x, self.nb_lags + 1)
             ur = u[self.nb_lags:]
 
-            loglik = np.zeros((ur.shape[0], self.nb_states))
+            log_lik = np.zeros((ur.shape[0], self.nb_states))
             for k in range(self.nb_states):
-                loglik[:, k] = lg_mvn(ur, self.mean(k, xr), self.sigma[k])
-            return loglik
+                log_lik[:, k] = lg_mvn(ur, self.mean(k, xr), self.sigma[k])
+            return log_lik
         else:
             def inner(x, u):
                 return self.log_likelihood.__wrapped__(self, x, u)

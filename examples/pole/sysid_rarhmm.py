@@ -135,12 +135,12 @@ if __name__ == "__main__":
     # psi = np.eye(obs_dim)
     # nu = obs_dim + 1 + 1e-8
 
-    from sds.distributions.composite import StackedNormalWishart
-    init_obs_prior = StackedNormalWishart(nb_states, obs_dim,
-                                          mus=np.array([mu for _ in range(nb_states)]),
-                                          kappas=np.array([kappa for _ in range(nb_states)]),
-                                          psis=np.array([psi for _ in range(nb_states)]),
-                                          nus=np.array([nu for _ in range(nb_states)]))
+    from sds.distributions.composite import StackedNormalWisharts
+    init_obs_prior = StackedNormalWisharts(nb_states, obs_dim,
+                                           mus=np.array([mu for _ in range(nb_states)]),
+                                           kappas=np.array([kappa for _ in range(nb_states)]),
+                                           psis=np.array([psi for _ in range(nb_states)]),
+                                           nus=np.array([nu for _ in range(nb_states)]))
 
     # obs_prior
     input_dim = obs_dim * obs_lag + act_dim + 1
@@ -153,12 +153,12 @@ if __name__ == "__main__":
     # psi = np.eye(obs_dim)
     # nu = obs_dim + 1 + 1e-8
 
-    from sds.distributions.composite import StackedMatrixNormalWishart
-    obs_prior = StackedMatrixNormalWishart(nb_states, input_dim, output_dim,
-                                           Ms=np.array([M for _ in range(nb_states)]),
-                                           Ks=np.array([K for _ in range(nb_states)]),
-                                           psis=np.array([psi for _ in range(nb_states)]),
-                                           nus=np.array([nu for _ in range(nb_states)]))
+    from sds.distributions.composite import StackedMatrixNormalWisharts
+    obs_prior = StackedMatrixNormalWisharts(nb_states, input_dim, output_dim,
+                                            Ms=np.array([M for _ in range(nb_states)]),
+                                            Ks=np.array([K for _ in range(nb_states)]),
+                                            psis=np.array([psi for _ in range(nb_states)]),
+                                            nus=np.array([nu for _ in range(nb_states)]))
 
     # trans_prior
     trans_prior = {'alpha': 1., 'kappa': 0.}  # Dirichlet params

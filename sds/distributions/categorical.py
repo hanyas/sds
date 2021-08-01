@@ -40,11 +40,7 @@ class Categorical:
 
     def weighted_statistics(self, data, weights):
         if isinstance(weights, np.ndarray):
-            assert weights.ndim in (1, 2)
-            if data is None or weights.ndim == 2:
-                return np.sum(np.atleast_2d(weights), axis=0)
-            else:
-                return np.bincount(data, weights, minlength=self.dim)
+            return np.sum(np.atleast_2d(weights), axis=1)
         else:
             data = data if data else [None] * len(weights)
             return sum(list(map(self.weighted_statistics, data, weights)))
@@ -53,12 +49,14 @@ class Categorical:
         raise NotImplementedError
 
     def log_likelihood(self, x):
-        bads = np.isnan(x)
-        loglik = np.zeros_like(x, dtype=np.double)
+        log_lik = np.zeros_like(x, dtype=np.double)
+
         err = np.seterr(invalid='ignore', divide='ignore')
-        loglik[~bads] = np.log(self.pi)[list(x[~bads])]  # log(0) can happen, no warning
+        bads = np.isnan(x)
+        log_lik[~bads] = np.log(self.pi)[list(x[~bads])]  # log(0) can happen, no warning
         np.seterr(**err)
-        return loglik
+
+        return log_lik
 
     # Max likelihood
     def max_likelihood(self, data, weights=None):

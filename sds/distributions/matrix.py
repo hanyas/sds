@@ -33,16 +33,8 @@ class MatrixNormalWithPrecision:
 
     @property
     def nb_params(self):
-        num = self.dcol * self.drow
+        num = self.column_dim * self.row_dim
         return num + num * (num + 1) / 2
-
-    @property
-    def dcol(self):
-        return self.column_dim
-
-    @property
-    def drow(self):
-        return self.row_dim
 
     @property
     def V(self):
@@ -107,29 +99,29 @@ class MatrixNormalWithPrecision:
         return self.M
 
     def rvs(self):
-        aux = npr.normal(size=self.drow * self.dcol).dot(self.lmbda_chol_inv.T)
-        return self.M + np.reshape(aux, (self.drow, self.dcol), order='F')
+        aux = npr.normal(size=self.row_dim * self.column_dim).dot(self.lmbda_chol_inv.T)
+        return self.M + np.reshape(aux, (self.row_dim, self.column_dim), order='F')
 
     @property
     def base(self):
-        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
+        return np.power(2. * np.pi, - self.row_dim * self.column_dim / 2.)
 
     def log_base(self):
         return np.log(self.base)
 
     def log_partition(self):
-        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        mu = np.reshape(self.M, (self.row_dim * self.column_dim), order='F')
         return 0.5 * np.einsum('d,dl,l->', mu, self.lmbda, mu)\
                - np.sum(np.log(np.diag(self.lmbda_chol)))
 
     def log_likelihood(self, x):
         # apply vector operator with Fortran convention
-        xr = np.reshape(x, (-1, self.drow * self.dcol), order='F')
-        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        xr = np.reshape(x, (-1, self.row_dim * self.column_dim), order='F')
+        mu = np.reshape(self.M, (self.row_dim * self.column_dim), order='F')
 
         # Gaussian likelihood on vector dist.
         bads = np.isnan(np.atleast_2d(xr)).any(axis=1)
-        xr = np.nan_to_num(xr, copy=False).reshape((-1, self.drow * self.dcol))
+        xr = np.nan_to_num(xr, copy=False).reshape((-1, self.row_dim * self.column_dim))
 
         log_lik = np.einsum('d,dl,nl->n', mu, self.lmbda, xr)\
                   - 0.5 * np.einsum('nd,dl,nl->n', xr, self.lmbda, xr)
@@ -165,16 +157,8 @@ class StackedMatrixNormalWithPrecision:
 
     @property
     def nb_params(self):
-        num = self.dcol * self.drow
+        num = self.column_dim * self.row_dim
         return self.size * (num + num * (num + 1) / 2)
-
-    @property
-    def dcol(self):
-        return self.column_dim
-
-    @property
-    def drow(self):
-        return self.row_dim
 
     @property
     def Ms(self):
@@ -279,16 +263,8 @@ class MatrixNormalWithDiagonalPrecision:
 
     @property
     def nb_params(self):
-        return self.dcol * self.drow\
-               + self.dcol * self.drow
-
-    @property
-    def dcol(self):
-        return self.column_dim
-
-    @property
-    def drow(self):
-        return self.row_dim
+        return self.column_dim * self.row_dim\
+               + self.column_dim * self.row_dim
 
     @property
     def V_diag(self):
@@ -357,30 +333,30 @@ class MatrixNormalWithDiagonalPrecision:
         return self.M
 
     def rvs(self):
-        aux = npr.normal(size=self.drow * self.dcol).dot(self.lmbda_chol_inv.T)
-        return self.M + np.reshape(aux, (self.drow, self.dcol), order='F')
+        aux = npr.normal(size=self.row_dim * self.column_dim).dot(self.lmbda_chol_inv.T)
+        return self.M + np.reshape(aux, (self.row_dim, self.column_dim), order='F')
 
     @property
     def base(self):
-        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
+        return np.power(2. * np.pi, - self.row_dim * self.column_dim / 2.)
 
     def log_base(self):
         return np.log(self.base)
 
     def log_partition(self):
-        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        mu = np.reshape(self.M, (self.row_dim * self.column_dim), order='F')
         return 0.5 * np.einsum('d,dl,l->', mu, self.lmbda, mu)\
                - np.sum(np.log(np.diag(self.lmbda_chol)))
 
     def log_likelihood(self, x):
         # apply vector operator with Fortran convention
-        xr = np.reshape(x, (self.drow * self.dcol, ), order='F')
-        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        xr = np.reshape(x, (self.row_dim * self.column_dim, ), order='F')
+        mu = np.reshape(self.M, (self.row_dim * self.column_dim), order='F')
 
-        loglik = np.einsum('d,dl,l->', mu, self.lmbda, xr)\
+        log_lik = np.einsum('d,dl,l->', mu, self.lmbda, xr)\
                  - 0.5 * np.einsum('d,dl,l->', xr, self.lmbda, xr)
 
-        return - self.log_partition() + self.log_base() + loglik
+        return - self.log_partition() + self.log_base() + log_lik
 
 
 class StackedMatrixNormalWithDiagonalPrecision:
@@ -410,16 +386,8 @@ class StackedMatrixNormalWithDiagonalPrecision:
 
     @property
     def nb_params(self):
-        return self.size * (self.dcol * self.drow
-                            + self.dcol * self.drow)
-
-    @property
-    def dcol(self):
-        return self.column_dim
-
-    @property
-    def drow(self):
-        return self.row_dim
+        return self.size * (self.column_dim * self.row_dim
+                            + self.column_dim * self.row_dim)
 
     @property
     def Ms(self):
