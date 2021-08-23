@@ -39,21 +39,6 @@ class _SingleBayesianLinearGaussianEmissionBase:
         self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
 
-        # yxT, xxT, yyT, n = stats
-        #
-        # A = np.linalg.solve(xxT, yxT.T).T
-        # sigma = (yyT - A.dot(yxT.T)) / n
-        #
-        # from sds.utils.linalg import symmetrize
-        # # numerical stabilization
-        # _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.output_dim)
-        # assert np.allclose(_sigma, _sigma.T)
-        # assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
-        #
-        # lmbda = np.linalg.inv(_sigma)
-        #
-        # self.likelihood.params = A, lmbda
-
     # Kalman conditioning
     def condition(self, mean, covar, obs):
         m, S, y = mean, covar, obs

@@ -99,6 +99,7 @@ class StickyTransition(StationaryTransition):
 
 
 class AugmentedTransition:
+
     def __init__(self, nb_states, obs_dim, act_dim,
                  prior=None, norm=None, device='cpu', **kwargs):
 
@@ -163,6 +164,7 @@ class AugmentedTransition:
 
 
 class ParametricAugmentedTransition(AugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim,
                  prior=None, norm=None, device='cpu', **kwargs):
         super(ParametricAugmentedTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -173,6 +175,7 @@ class ParametricAugmentedTransition(AugmentedTransition):
 
 
 class ParametricAugmentationRegressor(nn.Module):
+
     def __init__(self, nb_states, obs_dim, act_dim,
                  prior, norm, device, **kwargs):
         super(ParametricAugmentationRegressor, self).__init__()
@@ -261,6 +264,7 @@ class ParametricAugmentationRegressor(nn.Module):
 
 
 class SharedPolyOnlyTransition(ParametricAugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None,
                  degree=1, norm=None, device='cpu', **kwargs):
         super(SharedPolyOnlyTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -273,6 +277,7 @@ class SharedPolyOnlyTransition(ParametricAugmentedTransition):
 
 
 class SharedPolyOnlyRegressor(ParametricAugmentationRegressor):
+
     def __init__(self, nb_states, obs_dim, act_dim,
                  prior, degree, norm, device, **kwargs):
         super(SharedPolyOnlyRegressor, self).__init__(nb_states, obs_dim, act_dim,
@@ -316,6 +321,7 @@ class SharedPolyOnlyRegressor(ParametricAugmentationRegressor):
 
 
 class SharedNeuralOnlyTransition(ParametricAugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None, hidden_sizes=(16, ),
                  activation='relu', norm=None, device='cpu', **kwargs):
         super(SharedNeuralOnlyTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -331,6 +337,7 @@ class SharedNeuralOnlyTransition(ParametricAugmentedTransition):
 
 
 class SharedNeuralOnlyRegressor(ParametricAugmentationRegressor):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior,
                  sizes, activation, norm, device, **kwargs):
         super(SharedNeuralOnlyRegressor, self).__init__(nb_states, obs_dim, act_dim,
@@ -377,6 +384,7 @@ class SharedNeuralOnlyRegressor(ParametricAugmentationRegressor):
 
 
 class SharedPolyTransition(ParametricAugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None,
                  degree=1, norm=None, device='cpu', **kwargs):
         super(SharedPolyTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -389,6 +397,7 @@ class SharedPolyTransition(ParametricAugmentedTransition):
 
 
 class SharedPolyRegressor(ParametricAugmentationRegressor):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior,
                  degree, norm, device, **kwargs):
         super(SharedPolyRegressor, self).__init__(nb_states, obs_dim, act_dim,
@@ -440,6 +449,7 @@ class SharedPolyRegressor(ParametricAugmentationRegressor):
 
 
 class SharedNeuralTransition(ParametricAugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None, hidden_sizes=(16,),
                  activation='relu', norm=None, device='cpu', **kwargs):
         super(SharedNeuralTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -455,6 +465,7 @@ class SharedNeuralTransition(ParametricAugmentedTransition):
 
 
 class SharedNeuralRegressor(ParametricAugmentationRegressor):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior,
                  sizes, activation, norm, device, **kwargs):
         super(SharedNeuralRegressor, self).__init__(nb_states, obs_dim, act_dim,
@@ -508,6 +519,7 @@ class SharedNeuralRegressor(ParametricAugmentationRegressor):
 
 
 class SharedNeuralEnsembleTransition(ParametricAugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None, ensemble_size=5,
                  hidden_sizes=(16,), activation='relu', norm=None, device='cpu', **kwargs):
         super(SharedNeuralEnsembleTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -625,6 +637,7 @@ class SharedNeuralEnsembleRegressor(ParametricAugmentationRegressor):
 
 
 class StackedNeuralTransition(ParametricAugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None, hidden_sizes=(16,),
                  activation='relu', norm=None, device='cpu', **kwargs):
         super(StackedNeuralTransition, self).__init__(nb_states, obs_dim, act_dim,
@@ -717,6 +730,7 @@ class StackedNeuralRegressor(ParametricAugmentationRegressor):
 
 # Not sure yet how to implement this one
 class NonParametricAugmentedTransition(AugmentedTransition):
+
     def __init__(self, nb_states, obs_dim, act_dim, prior=None,
                  norm=None, device='cpu', **kwargs):
         super(NonParametricAugmentedTransition, self).__init__(nb_states, obs_dim, act_dim,

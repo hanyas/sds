@@ -19,6 +19,7 @@ from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAuto
 from sds.distributions.lingauss import TiedLinearGaussiansWithPrecision
 from sds.distributions.lingauss import TiedLinearGaussiansWithDiagonalPrecision
 
+from functools import partial
 from copy import deepcopy
 
 
@@ -63,16 +64,16 @@ class GaussianObservation:
     def initialize(self, x, u=None, **kwargs):
         kmeans = kwargs.get('kmeans', True)
 
-        t = [_x.shape[0] for _x in x]
+        t = list(map(len, x))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(x))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
         self.mstep(z, x, u)
 
     def mean(self, z, x=None, u=None):
@@ -177,16 +178,16 @@ class AutoRegressiveGaussianObservation:
             xn.append(_x[self.nb_lags:])
         xu = list(map(np.hstack, zip(xr, ur)))
 
-        t = [_xu.shape[0] for _xu in xu]
+        t = list(map(len, xu))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(xu))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         mu0 = kwargs.get('mu0', 0.)
         sigma0 = kwargs.get('sigma0', 1e64)
@@ -312,16 +313,16 @@ class BayesianGaussianObservation:
     def initialize(self, x, u=None, **kwargs):
         kmeans = kwargs.get('kmeans', True)
 
-        t = [_x.shape[0] for _x in x]
+        t = list(map(len, x))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(x))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         stats = self.likelihood.weighted_statistics(x, z)
         self.posterior.nat_param = self.prior.nat_param + stats
@@ -388,16 +389,16 @@ class _BayesianAutoRegressiveObservationBase:
             xn.append(_x[self.nb_lags:])
         xu = list(map(np.hstack, zip(xr, ur)))
 
-        t = [_xu.shape[0] for _xu in xu]
+        t = list(map(len, xu))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(xu))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         stats = self.likelihood.weighted_statistics(xu, xn, z)
         self.posterior.nat_param = self.prior.nat_param + stats
@@ -440,33 +441,14 @@ class _BayesianAutoRegressiveObservationBase:
             w.append(_w[self.nb_lags:])
         xu = list(map(np.hstack, zip(xr, ur)))
 
-        method = kwargs.get('method', 'direct')
-        if method == 'direct':
-            stats = self.likelihood.weighted_statistics(xu, xn, w)
-            self.posterior.nat_param = self.prior.nat_param + stats
-        elif method == 'sgd':
-            from sds.utils.general import batches
-
-            lr = kwargs.get('lr', 1e-3)
-            nb_iter = kwargs.get('nb_iter', 100)
-            batch_size = kwargs.get('batch_size', 64)
-
-            xu, xn, w = list(map(np.vstack, (xu, xn, w)))
-
-            set_size = len(xu)
-            prob = float(batch_size / set_size)
-            for _ in range(nb_iter):
-                for batch in batches(batch_size, set_size):
-                    stats = self.likelihood.weighted_statistics(xu[batch], xn[batch], w[batch])
-                    self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
-                                               + lr * (self.prior.nat_param + 1. / prob * stats)
-        else:
-            raise NotImplementedError
-
-        self.prior.nat_param = (1. - 1e-1) * self.prior.nat_param\
-                               + 1e-1 * self.posterior.nat_param
-
+        stats = self.likelihood.weighted_statistics(xu, xn, w)
+        self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
+
+        self.empirical_bayes(**kwargs)
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        raise NotImplementedError
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
@@ -515,6 +497,10 @@ class BayesianAutoRegressiveGaussianObservation(_BayesianAutoRegressiveObservati
         self.likelihood.As = self.likelihood.As[perm]
         self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
 
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        grad = self.prior.log_likelihood_grad(self.likelihood.params)
+        self.prior.params = [p + r * g for p, g, r in zip(self.prior.params, grad, lr)]
+
 
 class BayesianAutoRegressiveTiedGaussianObservation(_BayesianAutoRegressiveObservationBase):
 
@@ -538,14 +524,18 @@ class BayesianAutoRegressiveTiedGaussianObservation(_BayesianAutoRegressiveObser
         if likelihood is not None:
             self.likelihood = likelihood
         else:
-            As, lmbda = self.prior.rvs()
+            As, lmbdas = self.prior.rvs()
             self.likelihood = TiedLinearGaussiansWithPrecision(size=self.nb_states,
                                                                column_dim=self.input_dim,
                                                                row_dim=self.output_dim,
-                                                               As=As, lmbda=lmbda, affine=True)
+                                                               As=As, lmbdas=lmbdas, affine=True)
 
     def permute(self, perm):
         self.likelihood.As = self.likelihood.As[perm]
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        grad = self.prior.log_likelihood_grad(self.likelihood.params)
+        self.prior.params = [p + r * g for p, g, r in zip(self.prior.params, grad, lr)]
 
 
 class BayesianAutoRegressiveDiagonalGaussianObservation(_BayesianAutoRegressiveObservationBase):
@@ -575,12 +565,15 @@ class BayesianAutoRegressiveDiagonalGaussianObservation(_BayesianAutoRegressiveO
             self.likelihood = StackedLinearGaussiansWithDiagonalPrecision(size=self.nb_states,
                                                                           column_dim=self.input_dim,
                                                                           row_dim=self.output_dim,
-                                                                          As=As, lmbdas_diag=lmbdas_diag,
+                                                                          As=As, lmbdas_diags=lmbdas_diag,
                                                                           affine=True)
 
     def permute(self, perm):
         self.likelihood.As = self.likelihood.As[perm]
         self.likelihood.lmbdas_diag = self.likelihood.lmbdas_diag[perm]
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        pass
 
 
 class BayesianAutoRegressiveTiedDiagonalGaussianObservation(_BayesianAutoRegressiveObservationBase):
@@ -605,15 +598,18 @@ class BayesianAutoRegressiveTiedDiagonalGaussianObservation(_BayesianAutoRegress
         if likelihood is not None:
             self.likelihood = likelihood
         else:
-            As, lmbda_diag = self.prior.rvs()
+            As, lmbdas_diags = self.prior.rvs()
             self.likelihood = TiedLinearGaussiansWithDiagonalPrecision(size=self.nb_states,
                                                                        column_dim=self.input_dim,
                                                                        row_dim=self.output_dim,
-                                                                       As=As, lmbda_diag=lmbda_diag,
+                                                                       As=As, lmbdas_diags=lmbdas_diags,
                                                                        affine=True)
 
     def permute(self, perm):
         self.likelihood.As = self.likelihood.As[perm]
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        pass
 
 
 class BayesianAutoRegressiveGaussianObservationWithAutomaticRelevance\
@@ -654,16 +650,16 @@ class BayesianAutoRegressiveGaussianObservationWithAutomaticRelevance\
             xn.append(_x[self.nb_lags:])
         xu = list(map(np.hstack, zip(xr, ur)))
 
-        t = [_xu.shape[0] for _xu in xu]
+        t = list(map(len, xu))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(xu))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         xu, xn, z = list(map(np.vstack, (xu, xn, z)))
         self.em(xu, xn, z, method='direct',

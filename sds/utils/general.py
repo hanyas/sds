@@ -54,7 +54,7 @@ def batches(batchsize, datasize):
     yield from iter(lambda: list(islice(idx_iter, batchsize)), [])
 
 
-def one_hot(z, K):
+def one_hot(K, z):
     z = np.atleast_1d(z).astype(int)
     assert np.all(z >= 0) and np.all(z < K)
     shp = z.shape

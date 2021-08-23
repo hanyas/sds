@@ -16,6 +16,8 @@ from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAuto
 
 from sklearn.preprocessing import PolynomialFeatures
 
+from functools import partial
+from operator import mul
 import copy
 
 
@@ -70,17 +72,17 @@ class GaussianControl:
     def initialize(self, x, u, **kwargs):
         kmeans = kwargs.get('kmeans', True)
 
-        f = [self.featurize(_x) for _x in x]
-        t = [_x.shape[0] for _x in x]
+        f = list(map(self.featurize, x))
+        t = list(map(len, x))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(f))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
         self.mstep(z, x, u)
 
     def featurize(self, x):
@@ -127,6 +129,11 @@ class GaussianControl:
             _sigma[k, ...] = sigma
 
         self.sigma = _sigma
+
+    def weighted_mstep(self, p, x, u, w, **kwargs):
+        assert isinstance(w, list)
+        wp = list(map(mul, w, p))
+        self.mstep(wp, x, u, **kwargs)
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
@@ -183,17 +190,17 @@ class BayesianGaussianControl:
     def initialize(self, x, u, **kwargs):
         kmeans = kwargs.get('kmeans', False)
 
-        f = [self.featurize(_x) for _x in x]
-        t = [_x.shape[0] for _x in x]
+        f = list(map(self.featurize, x))
+        t = list(map(len, x))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(f))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         stats = self.likelihood.weighted_statistics(f, u, z)
         self.posterior.nat_param = self.prior.nat_param + stats
@@ -225,35 +232,16 @@ class BayesianGaussianControl:
             return list(map(inner, x, u))
 
     def mstep(self, p, x, u, **kwargs):
-        f = [self.featurize(_x) for _x in x]
+        f = list(map(self.featurize, x))
 
-        method = kwargs.get('method', 'direct')
-        if method == 'direct':
-            stats = self.likelihood.weighted_statistics(f, u, p)
-            self.posterior.nat_param = self.prior.nat_param + stats
-        elif method == 'sgd':
-            from sds.utils.general import batches
-
-            lr = kwargs.get('lr', 1e-3)
-            nb_iter = kwargs.get('nb_iter', 100)
-            batch_size = kwargs.get('batch_size', 64)
-
-            f, u, p = list(map(np.vstack, (f, u, p)))
-
-            set_size = len(f)
-            prob = float(batch_size / set_size)
-            for _ in range(nb_iter):
-                for batch in batches(batch_size, set_size):
-                    stats = self.likelihood.weighted_statistics(f[batch], u[batch], p[batch])
-                    self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
-                                               + lr * (self.prior.nat_param + 1. / prob * stats)
-        else:
-            raise NotImplementedError
-
-        self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
-                               + 1e-3 * self.posterior.nat_param
-
+        stats = self.likelihood.weighted_statistics(f, u, p)
+        self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
+
+    def weighted_mstep(self, p, x, u, w, **kwargs):
+        assert isinstance(w, list)
+        wp = list(map(mul, w, p))
+        self.mstep(wp, x, u, **kwargs)
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
@@ -324,17 +312,14 @@ class BayesianGaussianControlWithAutomaticRelevance\
             return list(map(inner, x, u))
 
     def mstep(self, p, x, u, **kwargs):
-        f = [self.featurize(_x) for _x in x]
+        f = list(map(self.featurize, x))
         fs, us, ps = list(map(np.vstack, (f, u, p)))
         self.em(fs, us, ps, **kwargs)
 
     def weighted_mstep(self, p, x, u, w, **kwargs):
         assert isinstance(w, list)
-        wp = [_w * _p for _w, _p in zip(w,p)]
-
-        f = [self.featurize(_x) for _x in x]
-        fs, us, wps = list(map(np.vstack, (f, u, wp)))
-        self.em(fs, us, wps, **kwargs)
+        wp = list(map(mul, w, p))
+        self.mstep(wp, x, u, **kwargs)
 
     def smooth(self, p, x, u):
         if all(isinstance(i, np.ndarray) for i in [p, x, u]):
@@ -404,18 +389,18 @@ class AutorRegressiveGaussianControl:
         for _x, _u in zip(x, u):
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
-        fr = [self.featurize(_xr) for _xr in xr]
+        fr = list(map(self.featurize, xr))
 
-        t = [_fr.shape[0] for _fr in fr]
+        t = list(map(len, fr))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(fr))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         mu0 = kwargs.get('mu0', 0.)
         sigma0 = kwargs.get('sigma0', 1e64)
@@ -475,7 +460,7 @@ class AutorRegressiveGaussianControl:
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
             wr.append(_w[self.nb_lags:])
-        fr = [self.featurize(_xr) for _xr in xr]
+        fr = list(map(self.featurize, xr))
 
         _sigma = np.zeros((self.nb_states, self.act_dim, self.act_dim))
         for k in range(self.nb_states):
@@ -554,18 +539,18 @@ class BayesianAutorRegressiveGaussianControl:
         for _x, _u in zip(x, u):
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
-        fr = [self.featurize(_xr) for _xr in xr]
+        fr = list(map(self.featurize, xr))
 
-        t = [_fr.shape[0] for _fr in fr]
+        t = list(map(len, fr))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(fr))
             z = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z = list(map(partial(npr.choice, self.nb_states), t))
 
-        z = [one_hot(_z, self.nb_states) for _z in z]
+        z = list(map(partial(one_hot, self.nb_states), z))
 
         stats = self.likelihood.weighted_statistics(fr, ur, z)
         self.posterior.nat_param = self.prior.nat_param + stats
@@ -606,34 +591,10 @@ class BayesianAutorRegressiveGaussianControl:
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
             wr.append(_w[self.nb_lags:])
-        fr = [self.featurize(_xr) for _xr in xr]
+        fr = list(map(self.featurize, xr))
 
-        method = kwargs.get('method', 'direct')
-        if method == 'direct':
-            stats = self.likelihood.weighted_statistics(fr, ur, wr)
-            self.posterior.nat_param = self.prior.nat_param + stats
-        elif method == 'sgd':
-            from sds.utils.general import batches
-
-            lr = kwargs.get('lr', 1e-3)
-            nb_iter = kwargs.get('nb_iter', 100)
-            batch_size = kwargs.get('batch_size', 64)
-
-            fr, ur, w = list(map(np.vstack, (fr, ur, wr)))
-
-            set_size = len(fr)
-            prob = float(batch_size / set_size)
-            for _ in range(nb_iter):
-                for batch in batches(batch_size, set_size):
-                    stats = self.likelihood.weighted_statistics(fr[batch], ur[batch], w[batch])
-                    self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
-                                               + lr * (self.prior.nat_param + 1. / prob * stats)
-        else:
-            raise NotImplementedError
-
-        # self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
-        #                        + 1e-3 * self.posterior.nat_param
-
+        stats = self.likelihood.weighted_statistics(fr, ur, wr)
+        self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
 
     def smooth(self, p, x, u):
@@ -720,7 +681,7 @@ class BayesianAutoRegressiveGaussianControlWithAutomaticRelevance\
             xr.append(arstack(_x, self.nb_lags + 1))
             ur.append(_u[self.nb_lags:])
             wr.append(_w[self.nb_lags:])
-        fr = [self.featurize(_xr) for _xr in xr]
+        fr = list(map(self.featurize, xr))
 
         fr, ur, wr = list(map(np.vstack, (fr, ur, wr)))
         self.em(fr, ur, wr, **kwargs)

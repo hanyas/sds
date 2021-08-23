@@ -3,6 +3,9 @@ import numpy.random as npr
 
 from sds.models import HiddenMarkovModel
 
+from sds.initial import InitCategoricalState
+from sds.initial import BayesianInitCategoricalState
+
 from sds.initial import InitGaussianObservation
 from sds.initial import BayesianInitGaussianObservation
 from sds.initial import BayesianInitDiagonalGaussianObservation
@@ -47,11 +50,14 @@ class AutoRegressiveHiddenMarkovModel(HiddenMarkovModel):
         self.obs_kwargs = obs_kwargs
 
         if algo_type == 'ML':
+            self.init_state = InitCategoricalState(self.nb_states, **init_state_kwargs)
             self.init_observation = InitGaussianObservation(self.nb_states, self.obs_dim,
                                                             self.act_dim, self.obs_lag, **init_obs_kwargs)
             self.observations = AutoRegressiveGaussianObservation(self.nb_states, self.obs_dim,
                                                                   self.act_dim, self.obs_lag, **obs_kwargs)
         else:
+            self.init_state = BayesianInitCategoricalState(self.nb_states, self.init_state_prior, **init_state_kwargs)
+
             if init_obs_type == 'full':
                 self.init_observation = BayesianInitGaussianObservation(self.nb_states, self.obs_dim, self.act_dim,
                                                                         self.obs_lag, prior=init_obs_prior,

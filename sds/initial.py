@@ -20,6 +20,9 @@ from sds.distributions.gaussian import GaussianWithDiagonalPrecision
 
 from sklearn.preprocessing import PolynomialFeatures
 
+from functools import partial
+from operator import mul
+
 import copy
 
 
@@ -259,7 +262,7 @@ class InitGaussianControl:
             x0.append(_x[:self.nb_lags])
             u0.append(_u[:self.nb_lags])
             p0.append(_p[:self.nb_lags])
-        f0 = [self.featurize(_x0) for _x0 in x0]
+        f0 = list(map(self.featurize, x0))
 
         _sigma = np.zeros((self.nb_states, self.act_dim, self.act_dim))
         for k in range(self.nb_states):
@@ -328,9 +331,19 @@ class BayesianInitCategoricalState:
         return np.log(self.likelihood.pi)
 
     def mstep(self, p, **kwargs):
-        stats = self.likelihood.weighted_statistics(None, p)
+        p0 = [_p[0, :] for _p in p]
+        stats = self.likelihood.weighted_statistics(None, p0)
         self.posterior.nat_param = self.prior.nat_param + stats
-        self.likelihood.params = self.posterior.mode()
+        try:
+            self.likelihood.params = self.posterior.mode()
+        except AssertionError:
+            self.likelihood.params = self.posterior.mean()
+
+        self.empirical_bayes(**kwargs)
+
+    def empirical_bayes(self, lr=1e-3):
+        grad = self.prior.log_likelihood_grad(self.likelihood.params)
+        self.prior.params = self.prior.params + lr * grad
 
 
 class _BayesianInitGaussianObservationBase:
@@ -364,16 +377,16 @@ class _BayesianInitGaussianObservationBase:
         kmeans = kwargs.get('kmeans', True)
 
         x0 = [_x[:self.nb_lags] for _x in x]
-        t = [_x0.shape[0] for _x0 in x0]
+        t = list(map(len, x0))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(x0))
             z0 = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z0 = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z0 = list(map(partial(npr.choice, self.nb_states), t))
 
-        z0 = [one_hot(_z, self.nb_states) for _z in z0]
+        z0 = list(map(partial(one_hot, self.nb_states), z0))
 
         stats = self.likelihood.weighted_statistics(x0, z0)
         self.posterior.nat_param = self.prior.nat_param + stats
@@ -400,24 +413,14 @@ class _BayesianInitGaussianObservationBase:
             x0.append(_x[:self.nb_lags])
             p0.append(_p[:self.nb_lags])
 
-        method = kwargs.get('method', 'direct')
-        if method == 'direct':
-            stats = self.likelihood.weighted_statistics(x0, p0)
-            self.posterior.nat_param = self.prior.nat_param + stats
-        elif method == 'sgd':
-            lr = kwargs.get('lr', 1e-2)
-            nb_iter = kwargs.get('nb_iter', 1)
-
-            x0, p0 = list(map(np.vstack, (x0, p0)))
-            for _ in range(nb_iter):
-                stats = self.likelihood.weighted_statistics(x0, p0)
-                self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
-                                           + lr * (self.prior.nat_param + stats)
-
-        self.prior.nat_param = (1. - 1e-1) * self.prior.nat_param\
-                               + 1e-1 * self.posterior.nat_param
-
+        stats = self.likelihood.weighted_statistics(x0, p0)
+        self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
+
+        self.empirical_bayes(**kwargs)
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        raise NotImplementedError
 
     def smooth(self, p, x):
         if all(isinstance(i, np.ndarray) for i in [p, x]):
@@ -459,6 +462,10 @@ class BayesianInitGaussianObservation(_BayesianInitGaussianObservationBase):
         self.likelihood.mus = self.likelihood.mus[perm]
         self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
 
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        grad = self.prior.log_likelihood_grad(self.likelihood.params)
+        self.prior.params = [p + r * g for p, g, r in zip(self.prior.params, grad, lr)]
+
 
 class BayesianInitDiagonalGaussianObservation(_BayesianInitGaussianObservationBase):
 
@@ -491,6 +498,9 @@ class BayesianInitDiagonalGaussianObservation(_BayesianInitGaussianObservationBa
     def permute(self, perm):
         self.likelihood.mus = self.likelihood.mus[perm]
         self.likelihood.lmbdas_diag = self.likelihood.lmbdas_diag[perm]
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        pass
 
 
 class BayesianInitGaussianControl:
@@ -544,18 +554,18 @@ class BayesianInitGaussianControl:
         for _x, _u in zip(x, u):
             x0.append(_x[:self.nb_lags])
             u0.append(_u[:self.nb_lags])
-        f0 = [self.featurize(_x0) for _x0 in x0]
+        f0 = list(map(self.featurize, x0))
 
-        t = [_f0.shape[0] for _f0 in f0]
+        t = list(map(len, f0))
         if kmeans:
             from sklearn.cluster import KMeans
             km = KMeans(self.nb_states)
             km.fit(np.vstack(f0))
             z0 = np.split(km.labels_, np.cumsum(t)[:-1])
         else:
-            z0 = [npr.choice(self.nb_states, size=_t) for _t in t]
+            z0 = list(map(partial(npr.choice, self.nb_states), t))
 
-        z0 = [one_hot(_z, self.nb_states) for _z in z0]
+        z0 = list(map(partial(one_hot, self.nb_states), z0))
 
         stats = self.likelihood.weighted_statistics(f0, u0, z0)
         self.posterior.nat_param = self.prior.nat_param + stats
@@ -591,25 +601,10 @@ class BayesianInitGaussianControl:
             x0.append(_x[:self.nb_lags])
             u0.append(_u[:self.nb_lags])
             p0.append(_p[:self.nb_lags])
-        f0 = [self.featurize(_x0) for _x0 in x0]
+        f0 = list(map(self.featurize, x0))
 
-        method = kwargs.get('method', 'direct')
-        if method == 'direct':
-            stats = self.likelihood.weighted_statistics(f0, u0, p0)
-            self.posterior.nat_param = self.prior.nat_param + stats
-        elif method == 'sgd':
-            lr = kwargs.get('lr', 1e-2)
-            nb_iter = kwargs.get('nb_iter', 1)
-
-            f0, u0, p0 = list(map(np.vstack, (f0, u0, p0)))
-            for _ in range(nb_iter):
-                stats = self.likelihood.weighted_statistics(f0, u0, p0)
-                self.posterior.nat_param = (1. - lr) * self.posterior.nat_param\
-                                           + lr * (self.prior.nat_param + stats)
-
-        # self.prior.nat_param = (1. - 1e-3) * self.prior.nat_param\
-        #                        + 1e-3 * self.posterior.nat_param
-
+        stats = self.likelihood.weighted_statistics(f0, u0, p0)
+        self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
 
     def smooth(self, p, x, u):
@@ -702,7 +697,7 @@ class BayesianInitGaussianControlWithAutomaticRelevance:
             x0.append(_x[:self.nb_lags])
             u0.append(_u[:self.nb_lags])
             p0.append(_p[:self.nb_lags])
-        f0 = [self.featurize(_x0) for _x0 in x0]
+        f0 = list(map(self.featurize, x0))
 
         f0, u0, p0 = list(map(np.vstack, (f0, u0, p0)))
         self.object.em(f0, u0, p0, **kwargs)
@@ -750,19 +745,6 @@ class _BayesianInitGaussianLatentBase:
     def mstep(self, stats, **kwargs):
         self.posterior.nat_param = self.prior.nat_param + stats
         self.likelihood.params = self.posterior.mode()
-
-        # x, n, xxT, n = stats
-        #
-        # mu = x / n
-        # sigma = xxT / n - np.outer(mu, mu)
-        #
-        # from sds.utils.linalg import symmetrize
-        # # numerical stabilization
-        # _sigma = symmetrize(sigma) + 1e-16 * np.eye(self.ltn_dim)
-        # assert np.allclose(_sigma, _sigma.T)
-        # assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
-        #
-        # self.likelihood.params = mu, np.linalg.inv(sigma)
 
 
 class SingleBayesianInitGaussianLatent(_BayesianInitGaussianLatentBase):
