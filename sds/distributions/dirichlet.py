@@ -2,6 +2,7 @@ import numpy as np
 import numpy.random as npr
 
 from scipy.special import gammaln
+from scipy.special import digamma
 
 
 class Dirichlet:
@@ -79,3 +80,6 @@ class Dirichlet:
     def log_likelihood(self, x):
         log_lik = np.sum((self.alphas - 1.) * np.log(x))
         return - self.log_partition() + self.log_base() + log_lik
+
+    def log_likelihood_grad(self, x):
+        return digamma(np.sum(self.alphas)) - digamma(self.alphas) + np.log(x)

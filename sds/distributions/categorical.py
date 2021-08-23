@@ -40,7 +40,7 @@ class Categorical:
 
     def weighted_statistics(self, data, weights):
         if isinstance(weights, np.ndarray):
-            return np.sum(np.atleast_2d(weights), axis=1)
+            return np.sum(np.atleast_2d(weights), axis=0)
         else:
             data = data if data else [None] * len(weights)
             return sum(list(map(self.weighted_statistics, data, weights)))

@@ -154,12 +154,12 @@ class LinearGaussianWithPrecision:
             y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
-            loglik = np.einsum('nd,dl,nl->n', mu, self.lmbda, y, optimize=True) \
-                     - 0.5 * np.einsum('nd,dl,nl->n', y, self.lmbda, y, optimize=True)
+            log_lik = np.einsum('nd,dl,nl->n', mu, self.lmbda, y, optimize=True)\
+                      - 0.5 * np.einsum('nd,dl,nl->n', y, self.lmbda, y, optimize=True)
 
-            loglik[bads] = 0.
-            loglik += - self.log_partition(x) + self.log_base()
-            return loglik
+            log_lik[bads] = 0.
+            log_lik += - self.log_partition(x) + self.log_base()
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, y))
 
@@ -180,6 +180,7 @@ class LinearGaussianWithPrecision:
 
 
 class StackedLinearGaussiansWithPrecision:
+
     def __init__(self, size, column_dim, row_dim,
                  As=None, lmbdas=None, affine=True):
 
@@ -326,19 +327,18 @@ class StackedLinearGaussiansWithPrecision:
             y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
-            loglik = np.einsum('nkd,kdl,nl->nk', mu, self.lmbdas, y, optimize=True)\
-                     - 0.5 * np.einsum('nd,kdl,nl->nk', y, self.lmbdas, y, optimize=True)
+            log_lik = np.einsum('nkd,kdl,nl->nk', mu, self.lmbdas, y, optimize=True)\
+                      - 0.5 * np.einsum('nd,kdl,nl->nk', y, self.lmbdas, y, optimize=True)
 
-            loglik[bads] = 0.
-            loglik += - self.log_partition(x) + self.log_base()
-            return loglik
+            log_lik[bads] = 0.
+            log_lik += - self.log_partition(x) + self.log_base()
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, y))
 
     # Max likelihood
-    def max_likelihood(self, x, y, weights=None):
-        yxTk, xxTk, yyTk, nk = self.statistics(x, y) if weights is None\
-            else self.weighted_statistics(x, y, weights)
+    def max_likelihood(self, x, y, weights):
+        yxTk, xxTk, yyTk, nk = self.weighted_statistics(x, y, weights)
 
         As = np.zeros((self.size, self.column_dim, self.row_dim))
         lmbdas = np.zeros((self.size, self.output_dim, self.output_dim))
@@ -357,171 +357,17 @@ class StackedLinearGaussiansWithPrecision:
         self.lmbdas = lmbdas
 
 
-class TiedLinearGaussiansWithPrecision:
+class TiedLinearGaussiansWithPrecision(StackedLinearGaussiansWithPrecision):
+
     def __init__(self, size, column_dim, row_dim,
-                 As=None, lmbda=None, affine=True):
+                 As=None, lmbdas=None, affine=True):
 
-        self.size = size
-        self.column_dim = column_dim
-        self.row_dim = row_dim
-
-        self.affine = affine
-
-        self._lmbda = lmbda
-        self._lmbda_chol = None
-        self._lmbda_chol_inv = None
-
-        As = [None] * self.size if As is None else As
-        self.dists = [LinearGaussianWithPrecision(column_dim, row_dim,
-                                                  As[k], lmbda, affine=affine)
-                      for k in range(self.size)]
-
-    @property
-    def params(self):
-        return self.As, self.lmbda
-
-    @params.setter
-    def params(self, values):
-        self.As, self.lmbda = values
-
-    @property
-    def input_dim(self):
-        return self.column_dim - 1 if self.affine\
-               else self.column_dim
-
-    @property
-    def output_dim(self):
-        return self.row_dim
-
-    @property
-    def As(self):
-        return np.array([dist.A for dist in self.dists])
-
-    @As.setter
-    def As(self, value):
-        for k, dist in enumerate(self.dists):
-            dist.A = value[k]
-
-    @property
-    def lmbda(self):
-        return self._lmbda
-
-    @lmbda.setter
-    def lmbda(self, value):
-        self._lmbda = value
-        self._lmbda_chol = None
-        self._lmbda_chol_inv = None
-
-        for k, dist in enumerate(self.dists):
-            dist.lmbda = value
-
-    @property
-    def lmbda_chol(self):
-        if self._lmbda_chol is None:
-            self._lmbda_chol = sc.linalg.cholesky(self.lmbda, lower=False)
-        return self._lmbda_chol
-
-    @property
-    def lmbda_chol_inv(self):
-        if self._lmbda_chol_inv is None:
-            self._lmbda_chol_inv = sc.linalg.inv(self.lmbda_chol)
-        return self._lmbda_chol_inv
-
-    @property
-    def sigma(self):
-        return self.lmbda_chol_inv @ self.lmbda_chol_inv.T
-
-    def predict(self, x):
-        if self.affine:
-            As, bs = self.As[:, :, :-1], self.As[:, :, -1]
-            y = np.einsum('kdl,...l->...kd', As, x, optimize=True) + bs[None, ...]
-        else:
-            y = np.einsum('kdl,...l->...kd', self.As, x, optimize=True)
-
-        return y
-
-    def mean(self, x):
-        return self.predict(x)
-
-    def mode(self, x):
-        return self.predict(x)
-
-    def rvs(self, x):
-        return np.array([dist.rvs(x) for dist in self.dists])
-
-    @property
-    def base(self):
-        return np.array([dist.base for dist in self.dists])
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def statistics(self, x, y):
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            idx = np.logical_and(~np.isnan(x).any(axis=1),
-                                 ~np.isnan(y).any(axis=1))
-            x, y = x[idx], y[idx]
-
-            if self.affine:
-                x = np.hstack((x, np.ones((x.shape[0], 1))))
-
-            yxT = np.einsum('nd,nl->dl', y, x, optimize=True)
-            xxT = np.einsum('nd,nl->dl', x, x, optimize=True)
-
-            yxTk = np.array([yxT for _ in range(self.size)])
-            xxTk = np.array([xxT for _ in range(self.size)])
-            yyT = np.einsum('nd,nl->dl', y, y, optimize=True)
-            n = y.shape[0]
-
-            return Stats([yxTk, xxTk, yyT, n])
-        else:
-            stats = list(map(self.statistics, x, y))
-            return reduce(add, stats)
-
-    def weighted_statistics(self, x, y, weights):
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            idx = np.logical_and(~np.isnan(x).any(axis=1),
-                                 ~np.isnan(y).any(axis=1))
-            x, y, weights = x[idx], y[idx], weights[idx]
-
-            if self.affine:
-                x = np.hstack((x, np.ones((x.shape[0], 1))))
-
-            yxTk = np.einsum('nd,nk,nl->kdl', y, weights, x, optimize=True)
-            xxTk = np.einsum('nd,nk,nl->kdl', x, weights, x, optimize=True)
-            yyT = np.einsum('nd,nl->dl', y, y, optimize=True)
-            n = np.sum(weights)
-
-            return Stats([yxTk, xxTk, yyT, n])
-        else:
-            stats = list(map(self.weighted_statistics, x, y, weights))
-            return reduce(add, stats)
-
-    def log_partition(self, x):
-        return np.array([dist.log_partition(x) for dist in self.dists]).T
-
-    def log_likelihood(self, x, y):
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
-                                  np.isnan(np.atleast_2d(y)).any(axis=1))
-
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
-
-            mu = self.mean(x)
-            loglik = np.einsum('nkd,dl,nl->nk', mu, self.lmbda, y, optimize=True)\
-                     - 0.5 * np.einsum('nd,dl,nl->n', y, self.lmbda, y, optimize=True)[:, None]
-
-            loglik[bads] = 0.
-            loglik += - self.log_partition(x) + self.log_base()
-            return loglik
-        else:
-            return list(map(self.log_likelihood, x, y))
+        super(TiedLinearGaussiansWithPrecision, self).__init__(size, column_dim, row_dim,
+                                                               As, lmbdas, affine)
 
     # Max likelihood
-    def max_likelihood(self, x, y, weights=None):
-        yxTk, xxTk, yyT, n = self.statistics(x, y) if weights is None\
-            else self.weighted_statistics(x, y, weights)
+    def max_likelihood(self, x, y, weights):
+        yxTk, xxTk, yyT, n = self.weighted_statistics(x, y, weights)
 
         As = np.zeros((self.size, self.column_dim, self.row_dim))
         sigma = np.zeros((self.output_dim, self.output_dim))
@@ -538,7 +384,8 @@ class TiedLinearGaussiansWithPrecision:
         assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
         self.As = As
-        self.lmbda = np.linalg.inv(sigma)
+        lmbda = np.linalg.inv(sigma)
+        self.lmbdas = np.array(self.size * [lmbda])
 
 
 class LinearGaussianWithDiagonalPrecision:
@@ -689,12 +536,12 @@ class LinearGaussianWithDiagonalPrecision:
             y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
-            loglik = np.einsum('nd,dl,nl->n', mu, self.lmbda, y, optimize=True) \
-                     - 0.5 * np.einsum('nd,dl,nl->n', y, self.lmbda, y, optimize=True)
+            log_lik = np.einsum('nd,dl,nl->n', mu, self.lmbda, y, optimize=True) \
+                      - 0.5 * np.einsum('nd,dl,nl->n', y, self.lmbda, y, optimize=True)
 
-            loglik[bads] = 0.
-            loglik += - self.log_partition(x) + self.log_base()
-            return loglik
+            log_lik[bads] = 0.
+            log_lik += - self.log_partition(x) + self.log_base()
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, y))
 
@@ -709,8 +556,9 @@ class LinearGaussianWithDiagonalPrecision:
 
 
 class StackedLinearGaussiansWithDiagonalPrecision:
+
     def __init__(self, size, column_dim, row_dim,
-                 As=None, lmbdas_diag=None, affine=True):
+                 As=None, lmbdas_diags=None, affine=True):
 
         self.size = size
         self.column_dim = column_dim
@@ -719,19 +567,19 @@ class StackedLinearGaussiansWithDiagonalPrecision:
         self.affine = affine
 
         As = [None] * self.size if As is None else As
-        lmbdas_diag = [None] * self.size if lmbdas_diag is None else lmbdas_diag
+        lmbdas_diags = [None] * self.size if lmbdas_diags is None else lmbdas_diags
         self.dists = [LinearGaussianWithDiagonalPrecision(column_dim, row_dim,
-                                                          As[k], lmbdas_diag[k],
+                                                          As[k], lmbdas_diags[k],
                                                           affine=affine)
                       for k in range(self.size)]
 
     @property
     def params(self):
-        return self.As, self.lmbdas_diag
+        return self.As, self.lmbdas_diags
 
     @params.setter
     def params(self, values):
-        self.As, self.lmbdas_diag = values
+        self.As, self.lmbdas_diags = values
 
     @property
     def input_dim(self):
@@ -752,11 +600,11 @@ class StackedLinearGaussiansWithDiagonalPrecision:
             dist.A = value[k]
 
     @property
-    def lmbdas_diag(self):
+    def lmbdas_diags(self):
         return np.array([dist.lmbda_diag for dist in self.dists])
 
-    @lmbdas_diag.setter
-    def lmbdas_diag(self, value):
+    @lmbdas_diags.setter
+    def lmbdas_diags(self, value):
         for k, dist in enumerate(self.dists):
             dist.lmbda_diag = value[k]
 
@@ -841,7 +689,7 @@ class StackedLinearGaussiansWithDiagonalPrecision:
             xxTk = np.einsum('nd,nk,nl->kdl', x, weights, x, optimize=True)
             yxTk = np.einsum('nd,nk,nl->kdl', y, weights, x, optimize=True)
             yyk = np.einsum('nd,nk,nd->kd', y, weights, y, optimize=True)
-            ndk = np.broadcast_to(np.sum(weights, axis=0)[:, None],
+            ndk = np.broadcast_to(np.sum(weights, axis=0, keepdims=True),
                                   (self.size, self.output_dim))
 
             return Stats([yxTk, xxTk, ndk, yyk])
@@ -861,19 +709,18 @@ class StackedLinearGaussiansWithDiagonalPrecision:
             y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
 
             mu = self.mean(x)
-            loglik = np.einsum('nkd,kdl,nl->nk', mu, self.lmbdas, y, optimize=True)\
-                     - 0.5 * np.einsum('nd,kdl,nl->nk', y, self.lmbdas, y, optimize=True)
+            log_lik = np.einsum('nkd,kdl,nl->nk', mu, self.lmbdas, y, optimize=True)\
+                      - 0.5 * np.einsum('nd,kdl,nl->nk', y, self.lmbdas, y, optimize=True)
 
-            loglik[bads] = 0.
-            loglik += - self.log_partition(x) + self.log_base()
-            return loglik
+            log_lik[bads] = 0.
+            log_lik += - self.log_partition(x) + self.log_base()
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, y))
 
     # Max likelihood
-    def max_likelihood(self, x, y, weights=None):
-        yxTk, xxTk, ndk, yyk = self.statistics(x, y) if weights is None\
-            else self.weighted_statistics(x, y, weights)
+    def max_likelihood(self, x, y, weights):
+        yxTk, xxTk, ndk, yyk = self.weighted_statistics(x, y, weights)
 
         As = np.zeros((self.size, self.column_dim, self.row_dim))
         lmbdas = np.zeros((self.size, self.output_dim))
@@ -883,180 +730,20 @@ class StackedLinearGaussiansWithDiagonalPrecision:
             lmbdas[k] = 1. / sigmas
 
         self.As = As
-        self.lmbdas_diag = lmbdas
+        self.lmbdas_diags = lmbdas
 
 
-class TiedLinearGaussiansWithDiagonalPrecision:
+class TiedLinearGaussiansWithDiagonalPrecision(StackedLinearGaussiansWithDiagonalPrecision):
+
     def __init__(self, size, column_dim, row_dim,
-                 As=None, lmbda_diag=None, affine=True):
+                 As=None, lmbdas_diags=None, affine=True):
 
-        self.size = size
-        self.column_dim = column_dim
-        self.row_dim = row_dim
-
-        self.affine = affine
-
-        self._lmbda_diag = lmbda_diag
-        self._lmbda_chol = None
-        self._lmbda_chol_inv = None
-
-        As = [None] * self.size if As is None else As
-        self.dists = [LinearGaussianWithDiagonalPrecision(column_dim, row_dim,
-                                                          As[k], lmbda_diag,
-                                                          affine=affine)
-                      for k in range(self.size)]
-
-    @property
-    def params(self):
-        return self.As, self.lmbda_diag
-
-    @params.setter
-    def params(self, values):
-        self.As, self.lmbda_diag = values
-
-    @property
-    def input_dim(self):
-        return self.column_dim - 1 if self.affine\
-               else self.column_dim
-
-    @property
-    def output_dim(self):
-        return self.row_dim
-
-    @property
-    def As(self):
-        return np.array([dist.A for dist in self.dists])
-
-    @As.setter
-    def As(self, value):
-        for k, dist in enumerate(self.dists):
-            dist.A = value[k]
-
-    @property
-    def lmbda_diag(self):
-        return self._lmbda_diag
-
-    @lmbda_diag.setter
-    def lmbda_diag(self, value):
-        self._lmbda_diag = value
-        self._lmbda_chol = None
-        self._lmbda_chol_inv = None
-
-        for k, dist in enumerate(self.dists):
-            dist.lmbda_diag = value
-
-    @property
-    def lmbda(self):
-        assert self._lmbda_diag is not None
-        return np.diag(self._lmbda_diag)
-
-    @property
-    def lmbda_chol(self):
-        if self._lmbda_chol is None:
-            self._lmbda_chol = np.diag(np.sqrt(self.lmbda_diag))
-        return self._lmbda_chol
-
-    @property
-    def lmbda_chol_inv(self):
-        if self._lmbda_chol_inv is None:
-            self._lmbda_chol_inv = np.diag(1. / np.sqrt(self.lmbda_diag))
-        return self._lmbda_chol_inv
-
-    @property
-    def sigma_diag(self):
-        return 1. / self.lmbda_diag
-
-    def predict(self, x):
-        if self.affine:
-            As, bs = self.As[:, :, :-1], self.As[:, :, -1]
-            y = np.einsum('kdl,...l->...kd', As, x, optimize=True) + bs[None, ...]
-        else:
-            y = np.einsum('kdl,...l->...kd', self.As, x, optimize=True)
-
-        return y
-
-    def mean(self, x):
-        return self.predict(x)
-
-    def mode(self, x):
-        return self.predict(x)
-
-    def rvs(self, x):
-        return np.array([dist.rvs(x) for dist in self.dists])
-
-    @property
-    def base(self):
-        return np.array([dist.base for dist in self.dists])
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def statistics(self, x, y):
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            idx = np.logical_and(~np.isnan(x).any(axis=1),
-                                 ~np.isnan(y).any(axis=1))
-            x, y = x[idx], y[idx]
-
-            if self.affine:
-                x = np.hstack((x, np.ones((x.shape[0], 1))))
-
-            xxT = np.einsum('nd,nl->dl', x, x, optimize=True)
-            yxT = np.einsum('nd,nl->dl', y, x, optimize=True)
-
-            xxTk = np.array([xxT for _ in range(self.size)])
-            yxTk = np.array([yxT for _ in range(self.size)])
-            yy = np.einsum('nd,nd->d', y, y, optimize=True)
-            nd = np.broadcast_to(y.shape[0], (self.output_dim, ))
-
-            return Stats([yxTk, xxTk, nd, yy])
-        else:
-            stats = list(map(self.statistics, x, y))
-            return reduce(add, stats)
-
-    def weighted_statistics(self, x, y, weights):
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            idx = np.logical_and(~np.isnan(x).any(axis=1),
-                                 ~np.isnan(y).any(axis=1))
-            x, y, weights = x[idx], y[idx], weights[idx]
-
-            if self.affine:
-                x = np.hstack((x, np.ones((x.shape[0], 1))))
-
-            xxTk = np.einsum('nd,nk,nl->kdl', x, weights, x, optimize=True)
-            yxTk = np.einsum('nd,nk,nl->kdl', y, weights, x, optimize=True)
-            yy = np.einsum('nd,nd->d', y, y, optimize=True)
-            nd = np.broadcast_to(np.sum(weights), (self.output_dim, ))
-
-            return Stats([yxTk, xxTk, nd, yy])
-        else:
-            stats = list(map(self.weighted_statistics, x, y, weights))
-            return reduce(add, stats)
-
-    def log_partition(self, x):
-        return np.array([dist.log_partition(x) for dist in self.dists]).T
-
-    def log_likelihood(self, x, y):
-        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
-                                  np.isnan(np.atleast_2d(y)).any(axis=1))
-
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.input_dim))
-            y = np.nan_to_num(y, copy=False).reshape((-1, self.output_dim))
-
-            mu = self.mean(x)
-            loglik = np.einsum('nkd,dl,nl->nk', mu, self.lmbda, y, optimize=True)\
-                     - 0.5 * np.einsum('nd,dl,nl->n', y, self.lmbda, y, optimize=True)[:, None]
-
-            loglik[bads] = 0.
-            loglik += - self.log_partition(x) + self.log_base()
-            return loglik
-        else:
-            return list(map(self.log_likelihood, x, y))
+        super(TiedLinearGaussiansWithDiagonalPrecision, self).__init__(size, column_dim, row_dim,
+                                                                       As, lmbdas_diags, affine)
 
     # Max likelihood
-    def max_likelihood(self, x, y, weights=None):
-        yxTk, xxTk, nd, yy = self.statistics(x, y) if weights is None\
-            else self.weighted_statistics(x, y, weights)
+    def max_likelihood(self, x, y, weights):
+        yxTk, xxTk, nd, yy = self.weighted_statistics(x, y, weights)
 
         As = np.zeros((self.size, self.column_dim, self.row_dim))
         sigma_diag = np.zeros((self.output_dim, ))
@@ -1068,7 +755,8 @@ class TiedLinearGaussiansWithDiagonalPrecision:
         sigma_diag /= nd
 
         self.As = As
-        self.lmbda_diag = 1. / sigma_diag
+        lmbda_diag = 1. / sigma_diag
+        self.lmbdas_diags = np.array(self.size * [lmbda_diag])
 
 
 class _SingleOutputLinearGaussianBase:

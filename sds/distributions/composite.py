@@ -1,18 +1,17 @@
+from abc import ABC
+
 import numpy as np
 import numpy.random as npr
 
 import scipy as sc
 from scipy import linalg
+from scipy.special import digamma
 
 from sds.distributions.gaussian import GaussianWithPrecision
-from sds.distributions.gaussian import StackedGaussiansWithPrecision
 from sds.distributions.gaussian import GaussianWithDiagonalPrecision
-from sds.distributions.gaussian import StackedGaussiansWithDiagonalPrecision
 
 from sds.distributions.matrix import MatrixNormalWithPrecision
-from sds.distributions.matrix import StackedMatrixNormalWithPrecision
 from sds.distributions.matrix import MatrixNormalWithDiagonalPrecision
-from sds.distributions.matrix import StackedMatrixNormalWithDiagonalPrecision
 
 from sds.distributions.lingauss import LinearGaussianWithPrecision
 
@@ -42,13 +41,15 @@ class NormalWishart:
 
     @property
     def params(self):
-        return self.gaussian.mu, self.kappa,\
-               self.wishart.psi, self.wishart.nu
+        return self.gaussian.mu, self.kappa, self.wishart.psi, self.wishart.nu
 
     @params.setter
     def params(self, values):
-        self.gaussian.mu, self.kappa,\
-        self.wishart.psi, self.wishart.nu = values
+        self.gaussian.mu, self.kappa, self.wishart.psi, self.wishart.nu = values
+
+    @property
+    def nb_params(self):
+        raise NotImplementedError
 
     @property
     def nat_param(self):
@@ -64,6 +65,7 @@ class NormalWishart:
         #          -0.5 * lmbda @ (mu @ mu.T),
         #          -0.5 * lmbda,
         #          0.5 * logdet(lmbda)]
+        #
         # nats = [kappa * m,
         #         kappa,
         #         psi^-1 + kappa * (m @ m.T),
@@ -87,7 +89,9 @@ class NormalWishart:
         return self.gaussian.mean(), self.wishart.mean()
 
     def mode(self):
-        return self.gaussian.mode(), self.wishart.mode()
+        mu = self.gaussian.mode()
+        lmbda = (self.wishart.nu - self.dim) * self.wishart.psi
+        return mu, lmbda
 
     def rvs(self):
         lmbda = self.wishart.rvs()
@@ -113,8 +117,18 @@ class NormalWishart:
                                      lmbda=self.kappa * lmbda).log_likelihood(mu) \
                + self.wishart.log_likelihood(lmbda)
 
+    def log_likelihood_grad(self, x):
+        mu, lmbda = x
+        a = lmbda @ (mu - self.gaussian.mu)
+        b = 0.5 * (self.dim / self.kappa - (mu - self.gaussian.mu).T @ lmbda @ (mu - self.gaussian.mu))
+        c = 0.5 * ((np.linalg.inv(self.wishart.psi) @ lmbda @ np.linalg.inv(self.wishart.psi)).T
+                   - self.wishart.nu * np.linalg.inv(self.wishart.psi).T)
+        d = 0.5 * (np.linalg.slogdet(lmbda)[1] - self.dim * np.log(2.)
+                   - np.linalg.slogdet(self.wishart.psi)[1] - digamma(self.wishart.nu / 2.))
+        return a, b, c, d
 
-class StackedNormalWishart:
+
+class StackedNormalWisharts:
 
     def __init__(self, size, dim,
                  mus=None, kappas=None,
@@ -148,16 +162,16 @@ class StackedNormalWishart:
         self.params = self.nat_to_std(natparam)
 
     def std_to_nat(self, params):
-        list_params = list(zip(*params))
-        list_natparams = [dist.std_to_nat(par) for dist, par in zip(self.dists, list_params)]
-        stacked_natparams = Stats(map(partial(np.stack, axis=0), zip(*list_natparams)))
-        return stacked_natparams
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
     def nat_to_std(self, natparam):
-        list_natparams = list(zip(*natparam))
-        list_params = [dist.nat_to_std(par) for dist, par in zip(self.dists, list_natparams)]
-        stacked_params = tuple(map(partial(np.stack, axis=0), zip(*list_params)))
-        return stacked_params
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
 
     @property
     def mus(self):
@@ -218,91 +232,41 @@ class StackedNormalWishart:
         return np.array([dist.log_partition() for dist in self.dists])
 
     def log_likelihood(self, x):
-        raise NotImplementedError
+        return np.sum([dist.log_likelihood(_x)
+                       for dist, _x in zip(self.dists, list(zip(*x)))])
+
+    def log_likelihood_grad(self, x):
+        grad_list = [dist.log_likelihood_grad(_x)
+                     for dist, _x in zip(self.dists, list(zip(*x)))]
+        grad_stack = tuple(map(partial(np.stack, axis=0), zip(*grad_list)))
+        return grad_stack
 
 
-class TiedNormalWishart:
+class TiedNormalWisharts(StackedNormalWisharts):
 
-    def __init__(self, size, dim,
+    def __init_(self, size, dim,
                  mus=None, kappas=None,
-                 psi=None, nu=None):
+                 psis=None, nus=None):
 
-        self.size = size
-        self.dim = dim
+        super(TiedNormalWisharts, self).__init__(size, dim,
+                                                 mus, kappas,
+                                                 psis, nus)
 
-        self.gaussians = StackedGaussiansWithPrecision(size=size, dim=dim, mus=mus)
-        self.wishart = Wishart(dim=dim, psi=psi, nu=nu)
-        self.kappas = kappas
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
-    @property
-    def params(self):
-        return self.gaussians.mus, self.kappas,\
-               self.wishart.psi, self.wishart.nu
-
-    @params.setter
-    def params(self, values):
-        self.gaussians.mus, self.kappas,\
-        self.wishart.psi, self.wishart.nu = values
-
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        # stats = [mu.T @ lmbda,
-        #          -0.5 * lmbda @ (mu @ mu.T),
-        #          -0.5 * lmbda,
-        #          0.5 * logdet(lmbda)]
-        # nats = [kappa * m,
-        #         kappa,
-        #         psi^-1 + kappa * (m @ m.T),
-        #         nu - d]
-
-        a = np.einsum('k,kd->kd', params[1], params[0])
-        b = params[1]
-        c = np.linalg.inv(params[2]) + np.einsum('k,kd,kl->dl', params[1], params[0], params[0])
-        d = params[3] - params[2].shape[0]
-        return Stats([a, b, c, d])
-
-    @staticmethod
-    def nat_to_std(natparam):
+    def nat_to_std(self, natparam):
         mus = np.einsum('k,kd->kd', 1. / natparam[1], natparam[0])
         kappas = natparam[1]
-        psi = np.linalg.inv(natparam[2] - np.einsum('k,kd,kl->dl', kappas, mus, mus))
-        nu = natparam[3] + natparam[2].shape[0]
-        return mus, kappas, psi, nu
+        psi = np.linalg.inv(np.mean(natparam[2] - np.einsum('k,kd,kl->kdl', kappas, mus, mus), axis=0))
+        nu = np.mean(natparam[3] + self.dim)
 
-    def mean(self):
-        return self.gaussians.mean(), self.wishart.mean()
-
-    def mode(self):
-        return self.gaussians.mode(), self.wishart.mode()
-
-    def rvs(self):
-        lmbda = self.wishart.rvs()
-        self.gaussians.lmbdas = np.einsum('k,dl->kdl', self.kappas, lmbda)
-        mu = self.gaussians.rvs()
-        return mu, lmbda
-
-    @property
-    def base(self):
-        return self.gaussians.base * self.wishart.base
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def log_partition(self):
-        _, kappas, psi, nu = self.params
-        return - 0.5 * self.dim * np.sum(np.log(kappas))\
-               + Wishart(dim=self.dim, psi=psi, nu=nu).log_partition()
-
-    def log_likelihood(self, x):
-        raise NotImplementedError
+        psis = np.array(self.size * [psi])
+        nus = np.array(self.size * [nu])
+        return mus, kappas, psis, nus
 
 
 class NormalGamma:
@@ -318,13 +282,11 @@ class NormalGamma:
 
     @property
     def params(self):
-        return self.gaussian.mu, self.kappas,\
-               self.gamma.alphas, self.gamma.betas
+        return self.gaussian.mu, self.kappas, self.gamma.alphas, self.gamma.betas
 
     @params.setter
     def params(self, values):
-        self.gaussian.mu, self.kappas,\
-        self.gamma.alphas, self.gamma.betas = values
+        self.gaussian.mu, self.kappas, self.gamma.alphas, self.gamma.betas = values
 
     @property
     def nat_param(self):
@@ -340,10 +302,11 @@ class NormalGamma:
         #          -0.5 * lmbda_diag * mu * mu,
         #          0.5 * log(lmbda_diag),
         #          -0.5 * lmbda_diag]
+        #
         # nats = [kappa * m,
         #         kappa,
-        #         2 * alpha - 1,
-        #         2 * beta + kappa * m * m]
+        #         2. * alpha - 1.,
+        #         2. * beta + kappa * m * m]
 
         a = params[1] * params[0]
         b = params[1]
@@ -363,7 +326,9 @@ class NormalGamma:
         return self.gaussian.mean(), self.gamma.mean()
 
     def mode(self):
-        return self.gaussian.mode(), self.gamma.mode()
+        mu = self.gaussian.mode()
+        lmbda_diag = (self.gamma.alphas - 1. / 2.) / self.gamma.betas
+        return mu, lmbda_diag
 
     def rvs(self):
         lmbda_diag = self.gamma.rvs()
@@ -390,7 +355,7 @@ class NormalGamma:
                + self.gamma.log_likelihood(lmbda_diag)
 
 
-class StackedNormalGamma:
+class StackedNormalGammas:
 
     def __init__(self, size, dim,
                  mus=None, kappas=None,
@@ -425,16 +390,16 @@ class StackedNormalGamma:
         self.params = self.nat_to_std(natparam)
 
     def std_to_nat(self, params):
-        list_params = list(zip(*params))
-        list_natparams = [dist.std_to_nat(par) for dist, par in zip(self.dists, list_params)]
-        stacked_natparams = Stats(map(partial(np.stack, axis=0), zip(*list_natparams)))
-        return stacked_natparams
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
     def nat_to_std(self, natparam):
-        list_natparams = list(zip(*natparam))
-        list_params = [dist.nat_to_std(par) for dist, par in zip(self.dists, list_natparams)]
-        stacked_params = tuple(map(partial(np.stack, axis=0), zip(*list_params)))
-        return stacked_params
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
 
     @property
     def mus(self):
@@ -495,91 +460,35 @@ class StackedNormalGamma:
         return np.array([dist.log_partition() for dist in self.dists])
 
     def log_likelihood(self, x):
-        raise NotImplementedError
+        return np.sum([dist.log_likelihood(_x)
+                       for dist, _x in zip(self.dists, list(zip(*x)))])
 
 
-class TiedNormalGamma:
+class TiedNormalGammas(StackedNormalGammas):
 
-    def __init__(self, size, dim,
+    def __init_(self, size, dim,
                  mus=None, kappas=None,
                  alphas=None, betas=None):
 
-        self.size = size
-        self.dim = dim
+        super(TiedNormalGammas, self).__init__(size, dim,
+                                               mus, kappas,
+                                               alphas, betas)
 
-        self.gaussians = StackedGaussiansWithDiagonalPrecision(size=size, dim=dim, mus=mus)
-        self.gamma = Gamma(dim=dim, alphas=alphas, betas=betas)
-        self.kappas = kappas
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
-    @property
-    def params(self):
-        return self.gaussians.mus, self.kappas,\
-               self.gamma.alphas, self.gamma.betas
-
-    @params.setter
-    def params(self, values):
-        self.gaussians.mus, self.kappas, \
-        self.gamma.alphas, self.gamma.betas = values
-
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        # stats = [mu * lmbda_diag,
-        #          -0.5 * lmbda_diag * mu * mu,
-        #          0.5 * log(lmbda_diag),
-        #          -0.5 * lmbda_diag]
-        # nats = [kappa * m,
-        #         kappa,
-        #         2 * alpha - 1,
-        #         2 * beta + kappa * m * m]
-
-        a = params[1] * params[0]
-        b = params[1]
-        c = 2. * params[2] - 1.
-        d = 2. * params[3] + np.einsum('kd,kd->d', params[1], params[0]**2)
-        return Stats([a, b, c, d])
-
-    @staticmethod
-    def nat_to_std(natparam):
-        mus = natparam[0] / natparam[1]
+    def nat_to_std(self, natparam):
+        mus = np.einsum('kd,kd->kd', 1. / natparam[1], natparam[0])
         kappas = natparam[1]
-        alphas = 0.5 * (natparam[2] + 1.)
-        betas = 0.5 * (natparam[3] - np.einsum('kd,kd->d', kappas, mus**2))
+        alphas = np.mean(0.5 * (natparam[2] + 1.), axis=0)
+        betas = np.mean(0.5 * (natparam[3] - kappas * mus**2), axis=0)
+
+        alphas = np.array(self.size * [alphas])
+        betas = np.array(self.size * [betas])
         return mus, kappas, alphas, betas
-
-    def mean(self):
-        return self.gaussians.mean(), self.gamma.mean()
-
-    def mode(self):
-        return self.gaussians.mode(), self.gamma.mode()
-
-    def rvs(self):
-        lmbda_diag = self.gamma.rvs()
-        self.gaussians.lmbdas_diags = self.kappas * lmbda_diag
-        mus = self.gaussians.rvs()
-        return mus, lmbda_diag
-
-    @property
-    def base(self):
-        return self.gaussians.base * self.gamma.base
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def log_partition(self):
-        _, kappas, alphas, betas = self.params
-        return - 0.5 * np.sum(np.log(kappas))\
-               + Gamma(dim=self.dim, alphas=alphas, betas=betas).log_partition()
-
-    def log_likelihood(self, x):
-        raise NotImplementedError
 
 
 class MatrixNormalWishart:
@@ -590,28 +499,16 @@ class MatrixNormalWishart:
         self.column_dim = column_dim
         self.row_dim = row_dim
 
-        self.matnorm = MatrixNormalWithPrecision(column_dim,
-                                                 row_dim,
-                                                 M=M, K=K)
+        self.matnorm = MatrixNormalWithPrecision(column_dim, row_dim, M=M, K=K)
         self.wishart = Wishart(dim=row_dim, psi=psi, nu=nu)
 
     @property
-    def dcol(self):
-        return self.matnorm.dcol
-
-    @property
-    def drow(self):
-        return self.matnorm.drow
-
-    @property
     def params(self):
-        return self.matnorm.M, self.matnorm.K,\
-               self.wishart.psi, self.wishart.nu
+        return self.matnorm.M, self.matnorm.K, self.wishart.psi, self.wishart.nu
 
     @params.setter
     def params(self, values):
-        self.matnorm.M, self.matnorm.K,\
-        self.wishart.psi, self.wishart.nu = values
+        self.matnorm.M, self.matnorm.K, self.wishart.psi, self.wishart.nu = values
 
     @property
     def nat_param(self):
@@ -621,36 +518,37 @@ class MatrixNormalWishart:
     def nat_param(self, natparam):
         self.params = self.nat_to_std(natparam)
 
-    @staticmethod
-    def std_to_nat(params):
+    def std_to_nat(self, params):
         # stats = [A.T @ V,
         #          -0.5 * A.T @ V @ A,
         #          -0.5 * V,
-        #          0.5 * logdet(V)]
+        #          0.5 * log_det(V)]
+        #
         # nats = [M @ K,
         #         K,
         #         psi^-1 + M @ K @ M.T,
-        #         nu - d - 1 + l]
+        #         nu - d - 1. + l]
 
-        a = params[0].dot(params[1])
+        a = params[0] @ params[1]
         b = params[1]
-        c = np.linalg.inv(params[2]) + params[0].dot(params[1]).dot(params[0].T)
-        d = params[3] - params[2].shape[0] - 1 + params[0].shape[-1]
+        c = np.linalg.inv(params[2]) + params[0] @ params[1] @ params[0].T
+        d = params[3] - self.row_dim - 1. + self.column_dim
         return Stats([a, b, c, d])
 
-    @staticmethod
-    def nat_to_std(natparam):
-        M = np.dot(natparam[0], np.linalg.pinv(natparam[1]))
+    def nat_to_std(self, natparam):
+        M = natparam[0] @ np.linalg.inv(natparam[1])
         K = natparam[1]
-        psi = np.linalg.inv(natparam[2] - M.dot(K).dot(M.T))
-        nu = natparam[3] + natparam[2].shape[0] + 1 - natparam[0].shape[-1]
+        psi = np.linalg.inv(natparam[2] - M @ K @ M.T)
+        nu = natparam[3] + self.row_dim + 1. - self.column_dim
         return M, K, psi, nu
 
     def mean(self):
         return self.matnorm.mean(), self.wishart.mean()
 
     def mode(self):
-        return self.matnorm.mode(), self.wishart.mode()
+        A = self.matnorm.mode()
+        lmbda = (self.wishart.nu - self.row_dim) * self.wishart.psi
+        return A, lmbda
 
     def rvs(self, size=1):
         lmbda = self.wishart.rvs()
@@ -667,7 +565,7 @@ class MatrixNormalWishart:
 
     def log_partition(self):
         _, K, psi, nu = self.params
-        return - 0.5 * self.drow * np.linalg.slogdet(K)[1]\
+        return - 0.5 * self.row_dim * np.linalg.slogdet(K)[1]\
                + Wishart(dim=self.row_dim, psi=psi, nu=nu).log_partition()
 
     def log_likelihood(self, x):
@@ -678,8 +576,20 @@ class MatrixNormalWishart:
                                          K=self.matnorm.K).log_likelihood(A)\
                + self.wishart.log_likelihood(lmbda)
 
+    def log_likelihood_grad(self, x):
+        A, lmbda = x
+        a = 0.5 * (lmbda @ A @ self.matnorm.K + (self.matnorm.K @ A.T @ lmbda).T) \
+            - 0.5 * (lmbda @ self.matnorm.M @ self.matnorm.K + lmbda.T @ self.matnorm.M @ self.matnorm.K.T)
+        b = 0.5 * (self.row_dim * np.linalg.inv(self.matnorm.K).T
+                   - ((A - self.matnorm.M).T @ lmbda @ (A - self.matnorm.M)).T)
+        c = 0.5 * ((np.linalg.inv(self.wishart.psi) @ lmbda @ np.linalg.inv(self.wishart.psi)).T
+                   - self.wishart.nu * np.linalg.inv(self.wishart.psi).T)
+        d = 0.5 * (np.linalg.slogdet(lmbda)[1] - self.row_dim * np.log(2.)
+                   - np.linalg.slogdet(self.wishart.psi)[1] - digamma(self.wishart.nu / 2.))
+        return a, b, c, d
 
-class StackedMatrixNormalWishart:
+
+class StackedMatrixNormalWisharts:
 
     def __init__(self, size, column_dim, row_dim,
                  Ms=None, Ks=None, psis=None, nus=None):
@@ -715,16 +625,16 @@ class StackedMatrixNormalWishart:
         self.params = self.nat_to_std(natparam)
 
     def std_to_nat(self, params):
-        list_params = list(zip(*params))
-        list_natparams = [dist.std_to_nat(par) for dist, par in zip(self.dists, list_params)]
-        stacked_natparams = Stats(map(partial(np.stack, axis=0), zip(*list_natparams)))
-        return stacked_natparams
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
     def nat_to_std(self, natparam):
-        list_natparams = list(zip(*natparam))
-        list_params = [dist.nat_to_std(par) for dist, par in zip(self.dists, list_natparams)]
-        stacked_params = tuple(map(partial(np.stack, axis=0), zip(*list_params)))
-        return stacked_params
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
 
     @property
     def Ms(self):
@@ -785,92 +695,39 @@ class StackedMatrixNormalWishart:
         return np.array([dist.log_partition() for dist in self.dists])
 
     def log_likelihood(self, x):
-        raise NotImplementedError
+        return np.sum([dist.log_likelihood(_x)
+                       for dist, _x in zip(self.dists, list(zip(*x)))])
+
+    def log_likelihood_grad(self, x):
+        grad_list = [dist.log_likelihood_grad(_x)
+                     for dist, _x in zip(self.dists, list(zip(*x)))]
+        grad_stack = tuple(map(partial(np.stack, axis=0), zip(*grad_list)))
+        return grad_stack
 
 
-class TiedMatrixNormalWishart:
+class TiedMatrixNormalWisharts(StackedMatrixNormalWisharts):
 
     def __init__(self, size, column_dim, row_dim,
-                 Ms=None, Ks=None, psi=None, nu=None):
+                 Ms=None, Ks=None, psis=None, nus=None):
 
-        self.size = size
-        self.column_dim = column_dim
-        self.outpt_dim = row_dim
+        super(TiedMatrixNormalWisharts, self).__init__(size, column_dim, row_dim,
+                                                       Ms, Ks, psis, nus)
 
-        self.matnorms = StackedMatrixNormalWithPrecision(size=size,
-                                                         column_dim=column_dim,
-                                                         row_dim=row_dim,
-                                                         Ms=Ms, Ks=Ks)
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
-        self.wishart = Wishart(dim=row_dim, psi=psi, nu=nu)
-
-    @property
-    def params(self):
-        return self.matnorms.Ms, self.matnorms.Ks,\
-               self.wishart.psi, self.wishart.nu
-
-    @params.setter
-    def params(self, values):
-        self.matnorms.Ms, self.matnorms.Ks,\
-        self.wishart.psi, self.wishart.nu = values
-
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        # stats = [A.T @ V,
-        #          -0.5 * A.T @ V @ A,
-        #          -0.5 * V,
-        #          0.5 * logdet(V)]
-        # nats = [M @ K,
-        #         K,
-        #         psi^-1 + M @ K @ M.T,
-        #         nu - d - 1 + l]
-
-        a = np.einsum('kdl,klm->kdm', params[0], params[1])
-        b = params[1]
-        c = np.linalg.inv(params[2]) + np.einsum('kdl,klm,khm->dh', params[0], params[1], params[0])
-        d = params[3] - params[2].shape[0]
-        return Stats([a, b, c, d])
-
-    @staticmethod
-    def nat_to_std(natparam):
-        Ms = np.einsum('ndl,nlh->ndh', natparam[0], np.linalg.pinv(natparam[1]))
+    def nat_to_std(self, natparam):
+        Ms = np.einsum('kdl,klh->kdh', natparam[0], np.linalg.inv(natparam[1]))
         Ks = natparam[1]
-        psi = np.linalg.inv(natparam[2] - np.einsum('kdl,klm,khm->dh', Ms, Ks, Ms))
-        nu = natparam[3] + natparam[2].shape[0]
-        return Ms, Ks, psi, nu
+        psi = np.linalg.inv(np.mean(natparam[2] - np.einsum('kdl,klm,khm->kdh', Ms, Ks, Ms), axis=0))
+        nu = np.mean(natparam[3] + self.row_dim + 1 - self.column_dim)
 
-    def mean(self):
-        return self.matnorms.mean(), self.wishart.mean()
-
-    def mode(self):
-        return self.matnorms.mode(), self.wishart.mode()
-
-    def rvs(self):
-        lmbda = self.wishart.rvs()
-        self.matnorms.Vs = np.array([lmbda for k in range(self.size)])
-        A = self.matnorms.rvs()
-        return A, lmbda
-
-    @property
-    def base(self):
-        return self.matnorms.base * self.wishart.base
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def log_partition(self):
-        raise NotImplementedError
-
-    def log_likelihood(self, x):
-        raise NotImplementedError
+        psis = np.array(self.size * [psi])
+        nus = np.array(self.size * [nu])
+        return Ms, Ks, psis, nus
 
 
 class MatrixNormalGamma:
@@ -881,28 +738,16 @@ class MatrixNormalGamma:
         self.column_dim = column_dim
         self.row_dim = row_dim
 
-        self.matnorm = MatrixNormalWithDiagonalPrecision(column_dim,
-                                                         row_dim,
-                                                         M=M, K=K)
+        self.matnorm = MatrixNormalWithDiagonalPrecision(column_dim, row_dim, M=M, K=K)
         self.gamma = Gamma(dim=row_dim, alphas=alphas, betas=betas)
 
     @property
-    def dcol(self):
-        return self.matnorm.dcol
-
-    @property
-    def drow(self):
-        return self.matnorm.drow
-
-    @property
     def params(self):
-        return self.matnorm.M, self.matnorm.K, \
-               self.gamma.alphas, self.gamma.betas
+        return self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas
 
     @params.setter
     def params(self, values):
-        self.matnorm.M, self.matnorm.K, \
-        self.gamma.alphas, self.gamma.betas = values
+        self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas = values
 
     @property
     def nat_param(self):
@@ -918,12 +763,13 @@ class MatrixNormalGamma:
         #          -0.5 * A.T @ A,
         #          0.5 * log(V_diag),
         #          -0.5 * V_diag]
+        #
         # nats = [M @ K,
         #         K,
-        #         2 * alpha - 1,
-        #         2 * beta + M @ K @ M.T]
+        #         2. * alpha - 1.,
+        #         2. * beta + M @ K @ M.T]
 
-        a = params[0].dot(params[1])
+        a = params[0] @ params[1]
         b = params[1]
         c = 2. * params[2] - 1.
         d = 2. * params[3] + np.einsum('dl,lm,dm->d', params[0], params[1], params[0])
@@ -931,7 +777,7 @@ class MatrixNormalGamma:
 
     @staticmethod
     def nat_to_std(natparam):
-        M = np.dot(natparam[0], np.linalg.pinv(natparam[1]))
+        M = natparam[0] @ np.linalg.inv(natparam[1])
         K = natparam[1]
         alphas = 0.5 * (natparam[2] + 1.)
         betas = 0.5 * (natparam[3] - np.einsum('dl,lm,dm->d', M, K, M))
@@ -941,7 +787,9 @@ class MatrixNormalGamma:
         return self.matnorm.mean(), self.gamma.mean()
 
     def mode(self):
-        return self.matnorm.mode(), self.gamma.mode()
+        A = self.matnorm.mode()
+        lmbda_diag = (self.gamma.alphas - 1. / 2.) / self.gamma.betas
+        return A, lmbda_diag
 
     def rvs(self, size=1):
         lmbdas = self.gamma.rvs()
@@ -957,13 +805,20 @@ class MatrixNormalGamma:
         return np.log(self.base)
 
     def log_partition(self):
-        raise NotImplementedError
+        _, K, alphas, betas = self.params
+        return - self.row_dim * (0.5 * self.column_dim * np.linalg.slogdet(K)[1])\
+               + Gamma(dim=self.row_dim, alphas=alphas, betas=betas).log_partition()
 
     def log_likelihood(self, x):
-        raise NotImplementedError
+        A, lmbda_diag = x
+        return MatrixNormalWithDiagonalPrecision(column_dim=self.column_dim,
+                                                 row_dim=self.row_dim,
+                                                 M=self.matnorm.M, V_diag=lmbda_diag,
+                                                 K=self.matnorm.K).log_likelihood(A)\
+               + self.gamma.log_likelihood(lmbda_diag)
 
 
-class StackedMatrixNormalGamma:
+class StackedMatrixNormalGammas:
 
     def __init__(self, size,
                  column_dim, row_dim,
@@ -1001,16 +856,16 @@ class StackedMatrixNormalGamma:
         self.params = self.nat_to_std(natparam)
 
     def std_to_nat(self, params):
-        list_params = list(zip(*params))
-        list_natparams = [dist.std_to_nat(par) for dist, par in zip(self.dists, list_params)]
-        stacked_natparams = Stats(map(partial(np.stack, axis=0), zip(*list_natparams)))
-        return stacked_natparams
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
     def nat_to_std(self, natparam):
-        list_natparams = list(zip(*natparam))
-        list_params = [dist.nat_to_std(par) for dist, par in zip(self.dists, list_natparams)]
-        stacked_params = tuple(map(partial(np.stack, axis=0), zip(*list_params)))
-        return stacked_params
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
 
     @property
     def Ms(self):
@@ -1071,95 +926,36 @@ class StackedMatrixNormalGamma:
         return np.array([dist.log_partition() for dist in self.dists])
 
     def log_likelihood(self, x):
-        raise NotImplementedError
+        return np.sum([dist.log_likelihood(_x)
+                       for dist, _x in zip(self.dists, list(zip(*x)))])
 
 
-class TiedMatrixNormalGamma:
+class TiedMatrixNormalGammas(StackedMatrixNormalGammas):
 
     def __init__(self, size, column_dim, row_dim,
                  Ms=None, Ks=None, alphas=None, betas=None):
 
-        self.size = size
-        self.column_dim = column_dim
-        self.outpt_dim = row_dim
+        super(TiedMatrixNormalGammas, self).__init__(size, column_dim, row_dim,
+                                                     Ms, Ks, alphas, betas)
 
-        self.matnorms = StackedMatrixNormalWithDiagonalPrecision(size=size,
-                                                                 column_dim=column_dim,
-                                                                 row_dim=row_dim,
-                                                                 Ms=Ms, Ks=Ks)
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
-        self.gamma = Gamma(dim=row_dim, alphas=alphas, betas=betas)
-
-    @property
-    def params(self):
-        return self.matnorms.Ms, self.matnorms.Ks,\
-               self.gamma.alphas, self.gamma.betas
-
-    @params.setter
-    def params(self, values):
-        self.matnorms.Ms, self.matnorms.Ks,\
-        self.gamma.alphas, self.gamma.betas = values
-
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        # stats = [A.T * V_diag,
-        #          -0.5 * A.T @ A,
-        #          0.5 * log(V_diag),
-        #          -0.5 * V_diag]
-        # nats = [M @ K,
-        #         K,
-        #         2 * alpha - 1,
-        #         2 * beta + M @ K @ M.T]
-
-        a = np.einsum('kdl,klm->kdm', params[0], params[1])
-        b = params[1]
-        c = 2. * params[2] - 1.
-        d = 2. * params[3] + np.einsum('kdl,klm,kdm->d', params[0], params[1], params[0])
-        return Stats([a, b, c, d])
-
-    @staticmethod
-    def nat_to_std(natparam):
+    def nat_to_std(self, natparam):
         aT = np.transpose(natparam[0], (0, 2, 1))
         bT = np.transpose(natparam[1], (0, 2, 1))
 
         Ms = np.transpose(np.linalg.solve(bT, aT), (0, 2, 1))
         Ks = natparam[1]
-        alphas = 0.5 * (natparam[2] + 1.)
-        betas = 0.5 * (natparam[3] - np.einsum('kdl,klm,kdm->d', Ms, Ks, Ms))
+        alphas = np.mean(0.5 * (natparam[2] + 1.), axis=0)
+        betas = np.mean(0.5 * (natparam[3] - np.einsum('kdl,klm,kdm->kd', Ms, Ks, Ms)), axis=0)
+
+        alphas = np.array(self.size * [alphas])
+        betas = np.array(self.size * [betas])
         return Ms, Ks, alphas, betas
-
-    def mean(self):
-        return self.matnorms.mean(), self.gamma.mean()
-
-    def mode(self):
-        return self.matnorms.mode(), self.gamma.mode()
-
-    def rvs(self):
-        lmbda_diag = self.gamma.rvs()
-        self.matnorms.Vs_diag = np.array([lmbda_diag for k in range(self.size)])
-        A = self.matnorms.rvs()
-        return A, lmbda_diag
-
-    @property
-    def base(self):
-        return self.matnorms.base * self.gamma.base
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def log_partition(self):
-        raise NotImplementedError
-
-    def log_likelihood(self, x):
-        raise NotImplementedError
 
 
 class SingleOutputLinearGaussianWithAutomaticRelevance:
@@ -1246,9 +1042,9 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
             return list(map(self.log_likelihood, x, y))
 
     def _em(self, x, y, w=None, nb_iter=10):
-        self.likelihood_precision_posterior = deepcopy(self.likelihood_precision_prior)
-        self.parameter_precision_posterior = deepcopy(self.parameter_precision_prior)
-        self.parameter_posterior = deepcopy(self.parameter_prior)
+        # self.likelihood_precision_posterior = deepcopy(self.likelihood_precision_prior)
+        # self.parameter_precision_posterior = deepcopy(self.parameter_precision_prior)
+        # self.parameter_posterior = deepcopy(self.parameter_prior)
 
         for i in range(nb_iter):
             # variational e-step
@@ -1280,58 +1076,9 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
             stats = parameter_likelihood.statistics(coef)
             self.parameter_precision_posterior.nat_param = self.parameter_precision_prior.nat_param + stats
 
-    def _stochastic_em(self, x, y, w=None, nb_sub_iter=10,
-                       lr=1e-3, nb_batches=1):
-        for i in range(nb_sub_iter):
-            # variational e-step
-
-            # parameter posterior
-            alphas = self.parameter_precision_posterior.mean()
-            self.parameter_prior.lmbda = np.diag(alphas)
-
-            beta = self.likelihood_precision_posterior.mean()
-            self.likelihood_known_precision.lmbda = beta
-
-            stats = self.likelihood_known_precision.statistics(x, y) if w is None\
-                    else self.likelihood_known_precision.weighted_statistics(x, y, w)
-            self.parameter_posterior.nat_param = (1. - lr) * self.parameter_posterior.nat_param\
-                                                 + lr * (self.parameter_prior.nat_param + nb_batches * stats)
-
-            # variatinoal m-step
-
-            # likelihood precision posterior
-            coef = self.parameter_posterior.mean()
-            self.likelihood_known_mean.W = coef
-
-            stats = self.likelihood_known_mean.statistics(x, y) if w is None\
-                    else self.likelihood_known_mean.weighted_statistics(x, y, w)
-            self.likelihood_precision_posterior.nat_param = (1. - lr) * self.likelihood_precision_posterior.nat_param\
-                                                            + lr * (self.likelihood_precision_prior.nat_param + nb_batches * stats)
-
-            # parameter precision posterior
-            parameter_likelihood = GaussianWithKnownMeanAndDiagonalPrecision(dim=self.input_dim)
-
-            stats = parameter_likelihood.statistics(coef)
-            self.parameter_precision_posterior.nat_param = self.parameter_precision_prior.nat_param + stats
-
     def em(self, x, y, w=None, **kwargs):
-        method = kwargs.get('method', 'direct')
-        if method == 'direct':
-            nb_iter = kwargs.get('nb_iter', 50)
-            self._em(x, y, w, nb_iter)
-        elif method == 'sgd':
-            from sds.utils.general import batches
-
-            nb_iter = kwargs.get('nb_iter', 1)
-            nb_sub_iter = kwargs.get('nb_sub_iter', 50)
-            batch_size = kwargs.get('batch_size', 64)
-            lr = kwargs.get('lr', 1e-3)
-
-            set_size = len(x)
-            nb_batches = float(batch_size / set_size)
-            for _ in range(nb_iter):
-                for batch in batches(batch_size, set_size):
-                    self._stochastic_em(x[batch], y[batch], w[batch], nb_sub_iter, nb_batches)
+        nb_iter = kwargs.get('nb_iter', 10)
+        self._em(x, y, w, nb_iter)
 
         values = kwargs.get('values', 'mode')
         if values == 'mode':
@@ -1344,6 +1091,7 @@ class SingleOutputLinearGaussianWithAutomaticRelevance:
 
 
 class MultiOutputLinearGaussianWithAutomaticRelevance:
+
     def __init__(self, input_dim, output_dim,
                  likelihood_precision_prior,
                  parameter_precision_prior, affine=True):
@@ -1404,10 +1152,10 @@ class MultiOutputLinearGaussianWithAutomaticRelevance:
 
     def log_likelihood(self, x, y):
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            loglik = np.zeros((len(x), ))
+            log_lik = np.zeros((len(x), ))
             for i, dist in enumerate(self.dists):
-                loglik += dist.log_likelihood(x, y[:, i])
-            return loglik
+                log_lik += dist.log_likelihood(x, y[:, i])
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, y))
 
@@ -1417,6 +1165,7 @@ class MultiOutputLinearGaussianWithAutomaticRelevance:
 
 
 class StackedMultiOutputLinearGaussianWithAutomaticRelevance:
+
     def __init__(self, stack_size, input_dim, output_dim,
                  likelihood_precision_prior,
                  parameter_precision_prior, affine=True):
@@ -1475,10 +1224,10 @@ class StackedMultiOutputLinearGaussianWithAutomaticRelevance:
 
     def log_likelihood(self, x, y):
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            loglik = np.zeros((len(x), self.stack_size))
+            log_lik = np.zeros((len(x), self.stack_size))
             for k, dist in enumerate(self.stack):
-                loglik[:, k] = dist.log_likelihood(x, y)
-            return loglik
+                log_lik[:, k] = dist.log_likelihood(x, y)
+            return log_lik
         else:
             return list(map(self.log_likelihood, x, y))
 
