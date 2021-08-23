@@ -75,7 +75,7 @@ class HybridPendulum(gym.Env):
 
     def dynamics(self, xhist, uhist):
         xhist, uhist = np.atleast_2d(xhist, uhist)
-        xn = self.rarhmm.step(xhist, uhist, stoch=False, average=True)
+        _, xn = self.rarhmm.step(xhist, uhist, stoch=False, average=True)
         return xn
 
     def rewrad(self, x, u):

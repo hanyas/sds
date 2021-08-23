@@ -125,7 +125,8 @@ if __name__ == "__main__":
     trans_type = 'neural'
 
     # init_state_prior
-    init_state_prior = {}
+    from sds.distributions.dirichlet import Dirichlet
+    init_state_prior = Dirichlet(dim=nb_states, alphas=np.ones((nb_states, )))
 
     # init_obs_prior
     mu = np.zeros((obs_dim,))
@@ -170,8 +171,8 @@ if __name__ == "__main__":
 
     # mstep kwargs
     init_state_mstep_kwargs = {}
-    init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 32, 'lr': 1e-2}
+    init_obs_mstep_kwargs = {}
+    obs_mstep_kwargs = {}
     trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 32, 'lr': 5e-4, 'l2': 1e-32}
 
     models = parallel_em(train_obs=train_obs, train_act=train_act,
@@ -205,15 +206,11 @@ if __name__ == "__main__":
     scores = np.array([train_scores]) + np.array([test_scores])
     rarhmm = models[np.argmin(sc.stats.rankdata(-1. * scores))]
 
-    # # plot trajectories
-    # for i in range(len(obs)):
-    #     rarhmm.plot(obs[i], act[i])
-
     # validate model on test set
     hr = [1, 5, 10, 15, 20]
     for h in hr:
         mse, smse, evar = rarhmm.kstep_error(test_obs, test_act, horizon=h, average=True)
         print(f"MSE: {mse}, SMSE:{smse}, EVAR:{evar}")
 
-    import torch
-    torch.save(rarhmm, open("../../sds/envs/hybrid/models/rarhmm_pole.pkl", "wb"))
+    # import torch
+    # torch.save(rarhmm, open("rarhmm_pole.pkl", "wb"))

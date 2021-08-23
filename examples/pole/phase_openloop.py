@@ -48,7 +48,7 @@ if __name__ == "__main__":
     xlim = (-0.25, 0.25)
     ylim = (-1.5, 1.5)
 
-    npts, hr = 35, 2
+    npts, hr = 36, 2
 
     x = np.linspace(*xlim, npts)
     y = np.linspace(*ylim, npts)
@@ -73,7 +73,8 @@ if __name__ == "__main__":
 
     ax.streamplot(XYi[0, 1, :], XYi[1, :, 0], dXY[0, ...], dXY[1, ...],
                   color='b', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  arrowstyle='-|>', arrowsize=1.,
+                  minlength=0.25)
 
     ax = beautify(ax)
     ax.grid(False)
@@ -107,7 +108,8 @@ if __name__ == "__main__":
 
     ax.streamplot(xi, yi, dxi, dyi,
                   color='r', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  arrowstyle='-|>', arrowsize=1.,
+                  minlength=0.25)
 
     ax = beautify(ax)
     ax.grid(False)
@@ -115,7 +117,7 @@ if __name__ == "__main__":
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
-    # from tikzplotlib import save
-    # save("pole_openloop.tex")
+    from tikzplotlib import save
+    save("pole_openloop.tex")
 
     plt.show()
