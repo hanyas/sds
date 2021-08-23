@@ -8,23 +8,28 @@ import numpy as np
 class BouncingBall(gym.Env):
 
     def __init__(self):
-        self.dm_state = 2
-        self.dm_act = 1
-        self.dm_obs = 2
+        self.state_dim = 2
+        self.act_dim = 1
+        self.obs_dim = 2
 
-        self._dt = 0.01
+        self.dt = 0.01
 
-        self._sigma = 1e-8
+        self.sigma = 1e-8
 
         # x = [x, xd]
-        self._xmax = np.array([np.inf, np.inf])
-        self.observation_space = spaces.Box(low=-self._xmax,
-                                            high=self._xmax,
+        self.xmax = np.array([np.inf, np.inf])
+        self.state_space = spaces.Box(low=-self.xmax,
+                                      high=self.xmax,
+                                      dtype=np.float64)
+
+        self.ymax = np.array([np.inf, np.inf])
+        self.observation_space = spaces.Box(low=-self.ymax,
+                                            high=self.ymax,
                                             dtype=np.float64)
 
-        self._umax = 0.
-        self.action_space = spaces.Box(low=-self._umax,
-                                       high=self._umax, shape=(1,),
+        self.umax = 0.
+        self.action_space = spaces.Box(low=-self.umax,
+                                       high=self.umax, shape=(1,),
                                        dtype=np.float64)
 
         self.state = None
@@ -34,19 +39,11 @@ class BouncingBall(gym.Env):
 
     @property
     def xlim(self):
-        return self._xmax
+        return self.xmax
 
     @property
     def ulim(self):
-        return self._umax
-
-    @property
-    def dt(self):
-        return self._dt
-
-    @property
-    def goal(self):
-        return NotImplementedError
+        return self.umax
 
     def dynamics(self, x, u):
         k, g = 0.8, 9.81
@@ -72,7 +69,7 @@ class BouncingBall(gym.Env):
         return x
 
     def noise(self, x=None, u=None):
-        return self._sigma * np.eye(self.dm_state)
+        return self.sigma * np.eye(self.obs_dim)
 
     def rewrad(self, x, u):
         return NotImplementedError
@@ -82,44 +79,19 @@ class BouncingBall(gym.Env):
         return [seed]
 
     def step(self, u):
-        # apply action constraints
-        _u = np.clip(u, -self.ulim, self.ulim)
-
-        # state-action dependent noise
-        _sigma = self.noise(self.state, _u)
-
-        # evolve deterministic dynamics
-        _xn = self.dynamics(self.state, _u)
-
-        # apply state constraints
-        _xn = np.clip(_xn, -self.xlim, self.xlim)
-
-        # compute reward
-        rwrd = self.rewrad(self.state, _u)
-
-        # add noise
-        self.state = self.np_random.multivariate_normal(mean=_xn, cov=_sigma)
-
-        return self.observe(self.state), rwrd, False, {}
-
-    # following functions for plotting
-    def fake_step(self, x, u):
-        # apply action constraints
-        _u = np.clip(u, -self.ulim, self.ulim)
-
-        # state-action dependent noise
-        _sigma = self.noise(x, _u)
-
-        # evolve deterministic dynamics
-        _xn = self.dynamics(x, _u)
-
-        # apply state constraints
-        _xn = np.clip(_xn, -self.xlim, self.xlim)
-
-        return self.observe(_xn)
+        self.state = self.dynamics(self.state, u)
+        rwrd = self.rewrad(self.state, u)
+        sigma = self.noise(self.state, u)
+        obs = self.np_random.multivariate_normal(self.observe(self.state), sigma)
+        return obs, rwrd, False, {}
 
     def reset(self):
-        _low = np.array([8.0, 1.0])
-        _high = np.array([10.0, 2.0])
-        self.state = self.np_random.uniform(low=_low, high=_high)
+        low = np.array([8.0, 1.0])
+        high = np.array([10.0, 2.0])
+        self.state = self.np_random.uniform(low=low, high=high)
         return self.observe(self.state)
+
+    # for plotting
+    def fake_step(self, x, u):
+        xn = self.dynamics(x, u)
+        return self.observe(xn)

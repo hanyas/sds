@@ -1,77 +1,54 @@
 import numpy as np
 import numpy.random as npr
 
-from sds import HMM
-from sds.utils import permutation
+import scipy as sc
+from scipy import stats
+
+from sds.models import HiddenMarkovModel
 
 import matplotlib.pyplot as plt
-from hips.plotting.colormaps import gradient_cmap
 
-import seaborn as sns
+# npr.seed(1337)
 
-import torch
+true_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
 
-npr.randn(1337)
-torch.manual_seed(1337)
+obs_dim = true_hmm.obs_dim
+act_dim = true_hmm.act_dim
+nb_states = true_hmm.nb_states
 
-sns.set_style("white")
-sns.set_context("talk")
-
-color_names = ["windows blue", "red", "amber",
-               "faded green", "dusty purple", "orange"]
-
-colors = sns.xkcd_palette(color_names)
-cmap = gradient_cmap(colors)
-
-true_hmm = HMM(nb_states=3, dm_obs=2)
-
-thetas = np.linspace(0, 2 * np.pi, true_hmm.nb_states, endpoint=False)
+thetas = np.linspace(0, 2. * np.pi, nb_states, endpoint=False)
 for k in range(true_hmm.nb_states):
-    true_hmm.observations.mu[k, :] = 3 * np.array([np.cos(thetas[k]), np.sin(thetas[k])])
+    true_hmm.observations.sigma[k, ...] = sc.stats.invwishart.rvs(obs_dim + 1, np.eye(obs_dim))
+    true_hmm.observations.mu[k, :] = 3. * np.array([np.cos(thetas[k]), np.sin(thetas[k])])
+
+mat = 0.95 * np.eye(nb_states) + 0.05 * npr.rand(nb_states, nb_states)
+mat /= np.sum(mat, axis=1, keepdims=True)
+true_hmm.transitions.matrix = mat
 
 # trajectory lengths
 T = [95, 85, 75]
 
 true_z, x = true_hmm.sample(horizon=T)
-true_ll = true_hmm.log_norm(x)
+true_ll = true_hmm.log_normalizer(x)
 
-hmm = HMM(nb_states=3, dm_obs=2, preprocess=True)
-hmm.initialize(x)
+npr.seed(1337)
+ann_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
+ann_lls = ann_hmm.annealed_em(x, nb_iter=500, tol=0., discount=0.99)
 
-lls = hmm.em(x, nb_iter=1000, prec=0.)
-print("true_ll=", true_ll, "hmm_ll=", lls[-1])
+npr.seed(1337)
+std_hmm = HiddenMarkovModel(nb_states=3, obs_dim=2)
+std_lls = std_hmm.em(x, nb_iter=500, tol=0., initialize=True)
 
-plt.figure(figsize=(5, 5))
-plt.plot(np.ones(len(lls)) * true_ll, '-r')
-plt.plot(lls)
+print("true_ll=", true_ll, "std_ll=", std_lls[-1], "ann_ll=", ann_lls[-1])
+
+plt.figure(figsize=(7, 7))
+plt.axhline(y=true_ll, color='r')
+plt.plot(ann_lls)
+plt.plot(std_lls)
+plt.xscale('symlog')
+plt.yscale('symlog')
 plt.show()
 
-_, hmm_z = hmm.viterbi(x)
-_seq = npr.choice(len(x))
-hmm.permute(permutation(true_z[_seq], hmm_z[_seq], K1=3, K2=3))
-
-_, hmm_z = hmm.viterbi(x[_seq])
-
-plt.figure(figsize=(8, 4))
-plt.subplot(211)
-plt.imshow(true_z[_seq][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-plt.xlim(0, len(x[_seq]))
-plt.ylabel("$z_{\\mathrm{true}}$")
-plt.yticks([])
-
-plt.subplot(212)
-plt.imshow(hmm_z[0][None, :], aspect="auto", cmap=cmap, vmin=0, vmax=len(colors) - 1)
-plt.xlim(0, len(x[_seq]))
-plt.ylabel("$z_{\\mathrm{inferred}}$")
-plt.yticks([])
-plt.xlabel("time")
-
-plt.tight_layout()
-plt.show()
-
-hmm_x = hmm.mean_observation(x)
-
-plt.figure(figsize=(8, 4))
-plt.plot(x[_seq] + 10 * np.arange(hmm.dm_obs), '-k', lw=2)
-plt.plot(hmm_x[_seq] + 10 * np.arange(hmm.dm_obs), '-', lw=2)
-plt.show()
+seq = npr.choice(len(x))
+ann_hmm.plot(x[seq], true_state=true_z[seq], title='Annlead')
+std_hmm.plot(x[seq], true_state=true_z[seq], title='Standard')

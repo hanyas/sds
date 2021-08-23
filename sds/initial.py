@@ -1,298 +1,867 @@
 import numpy as np
 import numpy.random as npr
 
-from scipy.special import logsumexp
-
 import scipy as sc
-from scipy import linalg, stats, special
+from scipy import stats
+from scipy.special import logsumexp
 from scipy.stats import multivariate_normal as mvn
+from scipy.stats import invwishart
 
-from sds.stats import multivariate_normal_logpdf as lg_mvn
-from sds.utils import linear_regression
+from sds.utils.stats import multivariate_normal_logpdf as lg_mvn
+from sds.utils.general import linear_regression, one_hot
+
+from sds.distributions.categorical import Categorical
+from sds.distributions.gaussian import StackedGaussiansWithPrecision
+from sds.distributions.gaussian import StackedGaussiansWithDiagonalPrecision
+from sds.distributions.lingauss import StackedLinearGaussiansWithPrecision
+
+from sds.distributions.gaussian import GaussianWithPrecision
+from sds.distributions.gaussian import GaussianWithDiagonalPrecision
 
 from sklearn.preprocessing import PolynomialFeatures
 
+from functools import partial
+from operator import mul
 
-class CategoricalInitState:
+import copy
 
-    def __init__(self, nb_states, prior, reg=1e-8):
+
+class InitCategoricalState:
+
+    def __init__(self, nb_states, **kwargs):
         self.nb_states = nb_states
-
-        self.prior = prior
-        self.reg = reg
-
-        self.logpi = - np.log(self.nb_states) * np.ones(self.nb_states)
+        self.pi = 1. / self.nb_states * np.ones(self.nb_states)
 
     @property
     def params(self):
-        return self.logpi
+        return self.pi
 
     @params.setter
     def params(self, value):
-        self.logpi = value
+        self.pi = value
 
-    @property
-    def pi(self):
-        return np.exp(self.logpi - logsumexp(self.logpi))
+    def permute(self, perm):
+        self.pi = self.pi[perm]
 
     def initialize(self):
         pass
 
-    def sample(self):
-        return npr.choice(self.nb_states, p=self.pi)
-
     def likeliest(self):
         return np.argmax(self.pi)
 
+    def sample(self):
+        return npr.choice(self.nb_states, p=self.pi)
+
     def log_init(self):
-        return self.logpi - logsumexp(self.logpi)
+        return np.log(self.pi)
 
-    def log_prior(self):
-        lp = 0.
-        if self.prior:
-            pass
-        return lp
+    def mstep(self, p, **kwargs):
+        eps = kwargs.get('eps', 1e-8)
 
-    def permute(self, perm):
-        self.logpi = self.logpi[perm]
-
-    def mstep(self, gamma, **kwargs):
-        _pi = sum([_w[0, :] for _w in gamma]) + self.reg
-        self.logpi = np.log(_pi / sum(_pi))
+        pi = sum([_p[0, :] for _p in p]) + eps
+        self.pi = pi / sum(pi)
 
 
-class GaussianInitObservation:
+class InitGaussianObservation:
 
-    def __init__(self, nb_states, dm_obs, dm_act, prior, reg=1e-8):
+    def __init__(self, nb_states, obs_dim, act_dim, nb_lags=1, **kwargs):
+
+        assert nb_lags > 0
+
         self.nb_states = nb_states
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
 
-        self.prior = prior
-        self.reg = reg
+        # self.mu = npr.randn(self.nb_states, self.obs_dim)
+        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.obs_dim, self.obs_dim)
 
-        self.mu = npr.randn(self.nb_states, self.dm_obs)
+        self.mu = np.zeros((self.nb_states, self.obs_dim))
+        self._sigma_chol = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
 
-        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_obs, self.dm_obs)
-
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_obs + 1, np.eye(self.dm_obs))
-            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_obs))
+            _sigma = invwishart.rvs(self.obs_dim + 1, np.eye(self.obs_dim))
+            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.obs_dim))
+            self.mu[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
+
+    @property
+    def sigma(self):
+        return np.matmul(self._sigma_chol, np.swapaxes(self._sigma_chol, -1, -2))
+
+    @sigma.setter
+    def sigma(self, value):
+        self._sigma_chol = np.linalg.cholesky(value + 1e-8 * np.eye(self.obs_dim))
 
     @property
     def params(self):
-        return self.mu, self._sqrt_cov
+        return self.mu, self._sigma_chol
 
     @params.setter
     def params(self, value):
-        self.mu, self._sqrt_cov = value
+        self.mu, self._sigma_chol = value
+
+    def permute(self, perm):
+        self.mu = self.mu[perm]
+        self._sigma_chol = self._sigma_chol[perm]
+
+    def initialize(self, x, **kwargs):
+        x0 = np.vstack([_x[:self.nb_lags] for _x in x])
+        self.mu = np.array([np.mean(x0, axis=0) for k in range(self.nb_states)])
+        self.sigma = np.array([np.cov(x0, rowvar=False) for k in range(self.nb_states)])
 
     def mean(self, z):
-        return self.mu[z, :]
-
-    @property
-    def cov(self):
-        return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
-
-    @cov.setter
-    def cov(self, value):
-        self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_obs))
+        return self.mu[z]
 
     def sample(self, z):
-        _x = mvn(mean=self.mean(z), cov=self.cov[z, ...]).rvs()
-        return np.atleast_1d(_x)
-
-    def initialize(self, x):
-        from sklearn.cluster import KMeans
-        _obs = np.concatenate(x)
-        km = KMeans(self.nb_states).fit(_obs)
-
-        self.mu = km.cluster_centers_
-        self.cov = np.array([np.cov(_obs[km.labels_ == k].T)
-                             for k in range(self.nb_states)])
-
-    def permute(self, perm):
-        self.mu = self.mu[perm, ...]
-        self._sqrt_cov = self._sqrt_cov[perm, ...]
-
-    def log_prior(self):
-        lp = 0.
-        if self.prior:
-            pass
-        return lp
+        x = mvn(mean=self.mean(z), cov=self.sigma[z]).rvs()
+        return np.atleast_1d(x)
 
     def log_likelihood(self, x):
-        loglik = []
-        for _x in x:
-            _loglik = np.column_stack([lg_mvn(_x[0], self.mean(k), self.cov[k])
-                                       for k in range(self.nb_states)])
-            loglik.append(_loglik)
-        return loglik
+        if isinstance(x, np.ndarray):
+            x0 = x[:self.nb_lags]
+            log_lik = np.zeros((x0.shape[0], self.nb_states))
+            for k in range(self.nb_states):
+                log_lik[:, k] = lg_mvn(x0, self.mean(k), self.sigma[k])
+            return log_lik
+        else:
+            return list(map(self.log_likelihood, x))
 
-    def mstep(self, gamma, x, weights=None, **kwargs):
-        aux = []
-        if weights:
-            for _w, _gamma in zip(weights, gamma):
-               aux.append(_w[:, None] * _gamma)
-            gamma = aux
+    def mstep(self, p, x, **kwargs):
+        x0, p0 = [], []
+        for _x, _p in zip(x, p):
+            x0.append(_x[:self.nb_lags])
+            p0.append(_p[:self.nb_lags])
 
-        _J = self.reg * np.ones((self.nb_states, self.dm_obs))
-        _h = np.zeros((self.nb_states, self.dm_obs))
-        for _x, _w in zip(x, gamma):
-            _J += _w[0, :, None]
-            _h += _w[0, :, None] * _x[0, None, :]
+        J = np.zeros((self.nb_states, self.obs_dim))
+        h = np.zeros((self.nb_states, self.obs_dim))
+        for _x, _p in zip(x0, p0):
+            J += np.sum(_p[:, :, None], axis=0)
+            h += np.sum(_p[:, :, None] * _x[:, None, :], axis=0)
 
-        self.mu = _h / _J
+        self.mu = h / J
 
-        sqerr = np.zeros((self.nb_states, self.dm_obs, self.dm_obs))
-        weight = self.reg * np.ones((self.nb_states, ))
-        for _x, _w in zip(x, gamma):
-            resid = _x[0, None, :] - self.mu
-            sqerr += _w[0, :, None, None] * resid[:, None, :] * resid[:, :, None]
-            weight += _w[0, ...]
+        sqerr = np.zeros((self.nb_states, self.obs_dim, self.obs_dim))
+        norm = np.zeros((self.nb_states, ))
+        for _x, _p in zip(x0, p0):
+            resid = _x[:, None, :] - self.mu
+            sqerr += np.sum(_p[:, :, None, None] * resid[:, :, None, :]
+                            * resid[:, :, :, None], axis=0)
+            norm += np.sum(_p, axis=0)
 
-        self.cov = sqerr / weight[:, None, None]
+        self.sigma = sqerr / norm[:, None, None]
 
-    def smooth(self, gamma, x):
-        mean = []
-        for _x, _gamma in zip(x, gamma):
-            mean.append(np.einsum('k,kl->l', _gamma[0, ...], self.mu))
-        return mean
+    def smooth(self, p, x):
+        if all(isinstance(i, np.ndarray) for i in [p, x]):
+            p0 = p[:self.nb_lags]
+            return p0.dot(self.mu)
+        else:
+            return list(map(self.smooth, p, x))
 
 
-class GaussianInitControl:
+class InitGaussianControl:
 
-    def __init__(self, nb_states, dm_obs, dm_act,
-                 prior, lags=1, degree=1, reg=1e-8):
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags=1, degree=1, **kwargs):
+
+        assert nb_lags > 0
+
         self.nb_states = nb_states
-        self.dm_obs = dm_obs
-        self.dm_act = dm_act
-
-        self.lags = lags
-
-        self.prior = prior
-        self.reg = reg
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
 
         self.degree = degree
-        self.dm_feat = int(sc.special.comb(self.degree + self.dm_obs, self.degree)) - 1
+        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
         self.basis = PolynomialFeatures(self.degree, include_bias=False)
 
-        self.K = npr.randn(self.nb_states, self.dm_act, self.dm_feat)
-        self.kff = npr.randn(self.nb_states, self.dm_act)
+        # self.K = npr.randn(self.nb_states, self.act_dim, self.feat_dim)
+        # self.kff = npr.randn(self.nb_states, self.act_dim)
+        # self._sigma_chol = 5. * npr.randn(self.nb_states, self.act_dim, self.act_dim)
 
-        # self._sqrt_cov = npr.randn(self.nb_states, self.dm_act, self.dm_act)
+        self.K = np.zeros((self.nb_states, self.act_dim, self.feat_dim))
+        self.kff = np.zeros((self.nb_states, self.act_dim))
+        self._sigma_chol = np.zeros((self.nb_states, self.act_dim, self.act_dim))
 
-        self._sqrt_cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
         for k in range(self.nb_states):
-            _cov = sc.stats.invwishart.rvs(self.dm_act + 1, np.eye(self.dm_act))
-            self._sqrt_cov[k, ...] = np.linalg.cholesky(_cov * np.eye(self.dm_act))
+            _sigma = invwishart.rvs(self.act_dim + 1, np.eye(self.act_dim))
+            self._sigma_chol[k] = np.linalg.cholesky(_sigma * np.eye(self.act_dim))
+            self.K[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(self.feat_dim, )).T
+            self.kff[k] = mvn.rvs(mean=None, cov=1e2 * _sigma, size=(1, ))
+
+    @property
+    def sigma(self):
+        return np.matmul(self._sigma_chol, np.swapaxes(self._sigma_chol, -1, -2))
+
+    @sigma.setter
+    def sigma(self, value):
+        self._sigma_chol = np.linalg.cholesky(value + 1e-8 * np.eye(self.act_dim))
 
     @property
     def params(self):
-        return self.K, self.kff, self._sqrt_cov
+        return self.K, self.kff, self._sigma_chol
 
     @params.setter
     def params(self, value):
-        self.K, self.kff, self._sqrt_cov = value
+        self.K, self.kff, self._sigma_chol = value
+
+    def permute(self, perm):
+        self.K = self.K[perm]
+        self.kff = self.kff[perm]
+        self._sigma_chol = self._sigma_chol[perm]
+
+    def initialize(self, x, u, **kwargs):
+        mu0 = kwargs.get('mu0', 0.)
+        sigma0 = kwargs.get('sigma0', 1e64)
+        psi0 = kwargs.get('psi0', 1.)
+        nu0 = kwargs.get('nu0', self.act_dim + 1)
+
+        x0 = np.vstack([_x[:self.nb_lags] for _x in x])
+        u0 = np.vstack([_u[:self.nb_lags] for _u in u])
+        f0 = self.featurize(x0)
+
+        K, kff, sigma = linear_regression(f0, u0, weights=None, fit_intercept=True,
+                                          mu0=mu0, sigma0=sigma0, psi0=psi0, nu0=nu0)
+
+        self.K = np.array([K for _ in range(self.nb_states)])
+        self.kff = np.array([kff for _ in range(self.nb_states)])
+        self.sigma = np.array([sigma for _ in range(self.nb_states)])
 
     def featurize(self, x):
-        feat = self.basis.fit_transform(np.atleast_2d(x)).squeeze()
-        return feat
+        feat = self.basis.fit_transform(np.atleast_2d(x))
+        return np.squeeze(feat) if x.ndim == 1\
+               else np.reshape(feat, (x.shape[0], -1))
 
     def mean(self, z, x):
         feat = self.featurize(x)
-        return np.einsum('kh,...h->...k', self.K[z, ...], feat) + self.kff[z, ...]
-
-    @property
-    def cov(self):
-        return np.matmul(self._sqrt_cov, np.swapaxes(self._sqrt_cov, -1, -2))
-
-    @cov.setter
-    def cov(self, value):
-        self._sqrt_cov = np.linalg.cholesky(value + self.reg * np.eye(self.dm_act))
+        u = np.einsum('kh,...h->...k', self.K[z], feat) + self.kff[z]
+        return np.atleast_1d(u)
 
     def sample(self, z, x):
-        _u = mvn(mean=self.mean(z, x), cov=self.cov[z, ...]).rvs()
-        return np.atleast_1d(_u)
-
-    def initialize(self, x, u, **kwargs):
-        localize = kwargs.get('localize', True)
-
-        feat = [self.featurize(_x) for _x in x]
-        Ts = [_x.shape[0] for _x in x]
-        if localize:
-            from sklearn.cluster import KMeans
-            km = KMeans(self.nb_states)
-            km.fit(np.hstack((np.vstack(feat), np.vstack(u))))
-            zs = np.split(km.labels_, np.cumsum(Ts)[:-1])
-        else:
-            zs = [npr.choice(self.nb_states, size=T) for T in Ts]
-
-        _cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        for k in range(self.nb_states):
-            ts = [np.where(z == k)[0] for z in zs]
-            xs = [_feat[t, :] for t, _feat in zip(ts, feat)]
-            ys = [_u[t, :] for t, _u in zip(ts, u)]
-
-            coef_, intercept_, sigma = linear_regression(np.vstack(xs), np.vstack(ys),
-                                                         weights=None, fit_intercept=True,
-                                                         **self.prior)
-            self.K[k, ...] = coef_[:, :self.dm_feat]
-            self.kff[k, :] = intercept_
-            _cov[k, ...] = sigma
-
-        self.cov = _cov
-
-    def permute(self, perm):
-        self.K = self.K[perm, ...]
-        self.kff = self.kff[perm, ...]
-        self._sqrt_cov = self._sqrt_cov[perm, ...]
-
-    def log_prior(self):
-        lp = 0.
-        if self.prior:
-            pass
-        return lp
+        u = mvn(mean=self.mean(z, x), cov=self.sigma[z]).rvs()
+        return np.atleast_1d(u)
 
     def log_likelihood(self, x, u):
-        loglik = []
-        for _x, _u in zip(x, u):
-            _loglik = np.column_stack([lg_mvn(_u[:self.lags], self.mean(k, x=_x[:self.lags]), self.cov[k])
-                                       for k in range(self.nb_states)])
-            loglik.append(_loglik)
-        return loglik
-
-    def mstep(self, gamma, x, u, weights=None, **kwargs):
-        aux = []
-        if weights:
-            for _w, _gamma in zip(weights, gamma):
-               aux.append(_w[:, None] * _gamma)
-            gamma = aux
-
-        xs, ys, ws = [], [], []
-        for _x, _u, _w in zip(x, u, gamma):
-            _feat = self.featurize(_x)
-            xs.append(np.hstack((_feat[:self.lags], np.ones((_feat[:self.lags].shape[0], 1)))))
-            ys.append(_u[:self.lags])
-            ws.append(_w[:self.lags])
-
-        _cov = np.zeros((self.nb_states, self.dm_act, self.dm_act))
-        for k in range(self.nb_states):
-            coef_, sigma = linear_regression(Xs=np.vstack(xs), ys=np.vstack(ys),
-                                             weights=np.vstack(ws)[:, k], fit_intercept=False)
-
-            self.K[k, ...] = coef_[:, :self.dm_feat]
-            self.kff[k, ...] = coef_[:, -1]
-            _cov[k, ...] = sigma
-
-        self.cov = _cov
-
-    def smooth(self, gamma, x):
-        mean = []
-        for _x, _gamma in zip(x, gamma):
-            _mu = np.zeros((self.nb_states, self.dm_act))
+        if isinstance(x, np.ndarray):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            log_lik = np.zeros((u0.shape[0], self.nb_states))
             for k in range(self.nb_states):
-                _mu[k, :] = self.mean(k, _x)
-            mean.append(np.einsum('k,kl->l', _gamma[self.lags], _mu))
-        return mean
+                log_lik[:, k] = lg_mvn(u0, self.mean(k, x0), self.sigma[k])
+            return log_lik
+        else:
+            return list(map(self.log_likelihood, x, u))
+
+    def mstep(self, p, x, u, **kwargs):
+        mu0 = kwargs.get('mu0', 0.)
+        sigma0 = kwargs.get('sigma0', 1e64)
+        psi0 = kwargs.get('psi0', 1.)
+        nu0 = kwargs.get('nu0', self.act_dim + 1)
+
+        x0, u0, p0 = [], [], []
+        for _x, _u, _p in zip(x, u, p):
+            x0.append(_x[:self.nb_lags])
+            u0.append(_u[:self.nb_lags])
+            p0.append(_p[:self.nb_lags])
+        f0 = list(map(self.featurize, x0))
+
+        _sigma = np.zeros((self.nb_states, self.act_dim, self.act_dim))
+        for k in range(self.nb_states):
+            coef, intercept, sigma = linear_regression(Xs=np.vstack(f0), ys=np.vstack(u0),
+                                                       weights=np.vstack(p0)[:, k], fit_intercept=True,
+                                                       mu0=mu0, sigma0=sigma0, psi0=psi0, nu0=nu0)
+            self.K[k] = coef
+            self.kff[k] = intercept
+            _sigma[k] = sigma
+
+        self.sigma = _sigma
+
+    def smooth(self, p, x, u):
+        if all(isinstance(i, np.ndarray) for i in [p, x, u]):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            p0 = p[:self.nb_lags]
+
+            mu = np.zeros((len(u0), self.nb_states, self.act_dim))
+            for k in range(self.nb_states):
+                mu[:, k, :] = self.mean(k, x0)
+            return np.einsum('nk,nkl->nl', p, mu)
+        else:
+            return list(map(self.smooth, p, x, u))
+
+
+class BayesianInitCategoricalState:
+
+    def __init__(self, nb_states, prior, likelihood=None):
+        self.nb_states = nb_states
+
+        # Dirichlet prior
+        self.prior = prior
+
+        # Dirichlet posterior
+        self.posterior = copy.deepcopy(prior)
+
+        # Categorical likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            pi = self.prior.rvs()
+            self.likelihood = Categorical(dim=nb_states, pi=pi)
+
+    @property
+    def params(self):
+        return self.likelihood.pi
+
+    @params.setter
+    def params(self, value):
+        self.likelihood.pi = value
+
+    def permute(self, perm):
+        self.likelihood.pi = self.likelihood.pi[perm]
+
+    def initialize(self):
+        pass
+
+    def likeliest(self):
+        return np.argmax(self.likelihood.pi)
+
+    def sample(self):
+        return npr.choice(self.nb_states, p=self.likelihood.pi)
+
+    def log_init(self):
+        return np.log(self.likelihood.pi)
+
+    def mstep(self, p, **kwargs):
+        p0 = [_p[0, :] for _p in p]
+        stats = self.likelihood.weighted_statistics(None, p0)
+        self.posterior.nat_param = self.prior.nat_param + stats
+        try:
+            self.likelihood.params = self.posterior.mode()
+        except AssertionError:
+            self.likelihood.params = self.posterior.mean()
+
+        self.empirical_bayes(**kwargs)
+
+    def empirical_bayes(self, lr=1e-3):
+        grad = self.prior.log_likelihood_grad(self.likelihood.params)
+        self.prior.params = self.prior.params + lr * grad
+
+
+class _BayesianInitGaussianObservationBase:
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+
+        assert nb_lags > 0
+
+        self.nb_states = nb_states
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.prior = prior
+        self.posterior = copy.deepcopy(prior)
+        self.likelihood = likelihood
+
+    @property
+    def params(self):
+        return self.likelihood.params
+
+    @params.setter
+    def params(self, values):
+        self.likelihood.params = values
+
+    def permute(self, perm):
+        raise NotImplementedError
+
+    def initialize(self, x, **kwargs):
+        kmeans = kwargs.get('kmeans', True)
+
+        x0 = [_x[:self.nb_lags] for _x in x]
+        t = list(map(len, x0))
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.vstack(x0))
+            z0 = np.split(km.labels_, np.cumsum(t)[:-1])
+        else:
+            z0 = list(map(partial(npr.choice, self.nb_states), t))
+
+        z0 = list(map(partial(one_hot, self.nb_states), z0))
+
+        stats = self.likelihood.weighted_statistics(x0, z0)
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.rvs()
+
+    def mean(self, z):
+        x = self.likelihood.dists[z].mean()
+        return np.atleast_1d(x)
+
+    def sample(self, z):
+        x = self.likelihood.dists[z].rvs()
+        return np.atleast_1d(x)
+
+    def log_likelihood(self, x):
+        if isinstance(x, np.ndarray):
+            x0 = x[:self.nb_lags]
+            return self.likelihood.log_likelihood(x0)
+        else:
+            return list(map(self.log_likelihood, x))
+
+    def mstep(self, p, x, **kwargs):
+        x0, p0 = [], []
+        for _x, _p in zip(x, p):
+            x0.append(_x[:self.nb_lags])
+            p0.append(_p[:self.nb_lags])
+
+        stats = self.likelihood.weighted_statistics(x0, p0)
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.mode()
+
+        self.empirical_bayes(**kwargs)
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        raise NotImplementedError
+
+    def smooth(self, p, x):
+        if all(isinstance(i, np.ndarray) for i in [p, x]):
+            p0 = p[:self.nb_lags]
+            return p0.dot(self.likelihood.mus)
+        else:
+            return list(map(self.smooth, p, x))
+
+
+class BayesianInitGaussianObservation(_BayesianInitGaussianObservationBase):
+
+    # mu = np.zeros((obs_dim,))
+    # kappa = 1e-64
+    # psi = 1e8 * np.eye(obs_dim) / (obs_dim + 1)
+    # nu = (obs_dim + 1) + obs_dim + 1
+    #
+    # from sds.distributions.composite import StackedNormalWishart
+    # prior = StackedNormalWishart(nb_states, obs_dim,
+    #                              mus=np.array([mu for _ in range(nb_states)]),
+    #                              kappas=np.array([kappa for _ in range(nb_states)]),
+    #                              psis=np.array([psi for _ in range(nb_states)]),
+    #                              nus=np.array([nu for _ in range(nb_states)]))
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(BayesianInitGaussianObservation, self).__init__(nb_states, obs_dim, act_dim,
+                                                              nb_lags, prior, likelihood)
+
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbdas = self.prior.rvs()
+            self.likelihood = StackedGaussiansWithPrecision(size=self.nb_states,
+                                                            dim=self.obs_dim,
+                                                            mus=mus, lmbdas=lmbdas)
+
+    def permute(self, perm):
+        self.likelihood.mus = self.likelihood.mus[perm]
+        self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        grad = self.prior.log_likelihood_grad(self.likelihood.params)
+        self.prior.params = [p + r * g for p, g, r in zip(self.prior.params, grad, lr)]
+
+
+class BayesianInitDiagonalGaussianObservation(_BayesianInitGaussianObservationBase):
+
+    # mu = np.zeros((obs_dim,))
+    # kappa = 1e-64 * np.ones((obs_dim,))
+    # alpha = ((obs_dim + 1) + obs_dim + 1) / 2. * np.ones((obs_dim,))
+    # beta = 1. / (2. * 1e8 * np.ones((obs_dim,)) / (obs_dim + 1))
+    #
+    # from sds.distributions.composite import StackedNormalGamma
+    # prior = StackedNormalGamma(nb_states, obs_dim,
+    #                            mus=np.array([mu for _ in range(nb_states)]),
+    #                            kappas=np.array([kappa for _ in range(nb_states)]),
+    #                            alphas=np.array([alpha for _ in range(nb_states)]),
+    #                            betas=np.array([beta for _ in range(nb_states)]))
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(BayesianInitDiagonalGaussianObservation, self).__init__(nb_states, obs_dim, act_dim,
+                                                                      nb_lags, prior, likelihood)
+
+        # Diagonal Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbdas_diag = self.prior.rvs()
+            self.likelihood = StackedGaussiansWithDiagonalPrecision(size=self.nb_states,
+                                                                    dim=self.obs_dim,
+                                                                    mus=mus, lmbdas_diag=lmbdas_diag)
+
+    def permute(self, perm):
+        self.likelihood.mus = self.likelihood.mus[perm]
+        self.likelihood.lmbdas_diag = self.likelihood.lmbdas_diag[perm]
+
+    def empirical_bayes(self, lr=np.array([0., 0., 1e-3, 1e-3])):
+        pass
+
+
+class BayesianInitGaussianControl:
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, degree=1, likelihood=None):
+
+        assert nb_lags > 0
+
+        self.nb_states = nb_states
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.degree = degree
+        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+
+        self.input_dim = self.feat_dim + 1
+        self.output_dim = self.act_dim
+
+        self.prior = prior
+        self.posterior = copy.deepcopy(prior)
+
+        # Linear-Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            As, lmbdas = self.prior.rvs()
+            self.likelihood = StackedLinearGaussiansWithPrecision(size=self.nb_states,
+                                                                  column_dim=self.input_dim,
+                                                                  row_dim=self.output_dim,
+                                                                  As=As, lmbdas=lmbdas, affine=True)
+
+    @property
+    def params(self):
+        return self.likelihood.params
+
+    @params.setter
+    def params(self, values):
+        self.likelihood.params = values
+
+    def permute(self, perm):
+        self.likelihood.As = self.likelihood.As[perm]
+        self.likelihood.lmbdas = self.likelihood.lmbdas[perm]
+
+    def initialize(self, x, u, **kwargs):
+        kmeans = kwargs.get('kmeans', False)
+
+        x0, u0 = [], []
+        for _x, _u in zip(x, u):
+            x0.append(_x[:self.nb_lags])
+            u0.append(_u[:self.nb_lags])
+        f0 = list(map(self.featurize, x0))
+
+        t = list(map(len, f0))
+        if kmeans:
+            from sklearn.cluster import KMeans
+            km = KMeans(self.nb_states)
+            km.fit(np.vstack(f0))
+            z0 = np.split(km.labels_, np.cumsum(t)[:-1])
+        else:
+            z0 = list(map(partial(npr.choice, self.nb_states), t))
+
+        z0 = list(map(partial(one_hot, self.nb_states), z0))
+
+        stats = self.likelihood.weighted_statistics(f0, u0, z0)
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.rvs()
+
+    def featurize(self, x):
+        feat = self.basis.fit_transform(np.atleast_2d(x))
+        return np.squeeze(feat) if x.ndim == 1\
+               else np.reshape(feat, (x.shape[0], -1))
+
+    def mean(self, z, x):
+        feat = self.featurize(x)
+        u = self.likelihood.dists[z].mean(feat)
+        return np.atleast_1d(u)
+
+    def sample(self, z, x):
+        feat = self.featurize(x)
+        u = self.likelihood.dists[z].rvs(feat)
+        return np.atleast_1d(u)
+
+    def log_likelihood(self, x, u):
+        if isinstance(x, np.ndarray):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            f0 = self.featurize(x0)
+            return self.likelihood.log_likelihood(f0, u0)
+        else:
+            return list(map(self.log_likelihood, x, u))
+
+    def mstep(self, p, x, u, **kwargs):
+        x0, u0, p0 = [], [], []
+        for _x, _u, _p in zip(x, u, p):
+            x0.append(_x[:self.nb_lags])
+            u0.append(_u[:self.nb_lags])
+            p0.append(_p[:self.nb_lags])
+        f0 = list(map(self.featurize, x0))
+
+        stats = self.likelihood.weighted_statistics(f0, u0, p0)
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.mode()
+
+    def smooth(self, p, x, u):
+        if all(isinstance(i, np.ndarray) for i in [p, x, u]):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            p0 = p[:self.nb_lags]
+
+            mu = np.zeros((len(u0), self.nb_states, self.obs_dim))
+            for k in range(self.nb_states):
+                mu[:, k, :] = self.mean(k, x0)
+            return np.einsum('nk,nkl->nl', p0, mu)
+        else:
+            return list(map(self.smooth, p, x, u))
+
+
+class BayesianInitGaussianControlWithAutomaticRelevance:
+
+    def __init__(self, nb_states, obs_dim, act_dim,
+                 nb_lags, prior, degree=1):
+
+        assert nb_lags > 0
+
+        self.nb_states = nb_states
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.degree = degree
+        self.feat_dim = int(sc.special.comb(self.degree + self.obs_dim, self.degree)) - 1
+        self.basis = PolynomialFeatures(self.degree, include_bias=False)
+
+        self.input_dim = self.feat_dim + 1
+        self.output_dim = self.act_dim
+
+        likelihood_precision_prior = prior['likelihood_precision_prior']
+        parameter_precision_prior = prior['parameter_precision_prior']
+
+        from sds.distributions.composite import StackedMultiOutputLinearGaussianWithAutomaticRelevance
+        self.object = StackedMultiOutputLinearGaussianWithAutomaticRelevance(self.nb_states,
+                                                                             self.input_dim,
+                                                                             self.output_dim,
+                                                                             likelihood_precision_prior,
+                                                                             parameter_precision_prior)
+
+    @property
+    def params(self):
+        return self.object.params
+
+    @params.setter
+    def params(self, values):
+        self.object.params = values
+
+    def permute(self, perm):
+        self.object.As = self.object.As[perm]
+        self.object.lmbdas = self.object.lmbdas[perm]
+
+    def initialize(self, x, u, **kwargs):
+        pass
+
+    def featurize(self, x):
+        feat = self.basis.fit_transform(np.atleast_2d(x))
+        return np.squeeze(feat) if x.ndim == 1\
+               else np.reshape(feat, (x.shape[0], -1))
+
+    def mean(self, z, x):
+        feat = self.featurize(x)
+        u = self.object.mean(z, feat)
+        return np.atleast_1d(u)
+
+    def sample(self, z, x):
+        feat = self.featurize(x)
+        u = self.object.rvs(z, feat)
+        return np.atleast_1d(u)
+
+    def log_likelihood(self, x, u):
+        if isinstance(x, np.ndarray) and isinstance(u, np.ndarray):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            f0 = self.featurize(x0)
+            return self.object.log_likelihood(f0, u0)
+        else:
+            def inner(x, u):
+                return self.log_likelihood(x, u)
+            return list(map(inner, x, u))
+
+    def mstep(self, p, x, u, **kwargs):
+        x0, u0, p0 = [], [], []
+        for _x, _u, _p in zip(x, u, p):
+            x0.append(_x[:self.nb_lags])
+            u0.append(_u[:self.nb_lags])
+            p0.append(_p[:self.nb_lags])
+        f0 = list(map(self.featurize, x0))
+
+        f0, u0, p0 = list(map(np.vstack, (f0, u0, p0)))
+        self.object.em(f0, u0, p0, **kwargs)
+
+    def smooth(self, p, x, u):
+        if all(isinstance(i, np.ndarray) for i in [p, x, u]):
+            x0 = x[:self.nb_lags]
+            u0 = u[:self.nb_lags]
+            p0 = p[:self.nb_lags]
+
+            mu = np.zeros((len(x), self.nb_states, self.act_dim))
+            for k in range(self.nb_states):
+                mu[:, k, :] = self.mean(k, x0)
+            return np.einsum('nk,nkl->nl', p0, mu)
+        else:
+            return list(map(self.smooth, p, x, u))
+
+
+class _BayesianInitGaussianLatentBase:
+
+    def __init__(self, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+
+        assert nb_lags > 0
+
+        self.ltn_dim = ltn_dim
+        self.act_dim = act_dim
+        self.nb_lags = nb_lags
+
+        self.prior = prior
+        self.posterior = copy.deepcopy(prior)
+        self.likelihood = likelihood
+
+    @property
+    def params(self):
+        return self.likelihood.params
+
+    @params.setter
+    def params(self, values):
+        self.likelihood.params = values
+
+    def initialize(self, x, **kwargs):
+        pass
+
+    def mstep(self, stats, **kwargs):
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.likelihood.params = self.posterior.mode()
+
+
+class SingleBayesianInitGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64
+    # psi = 1e8 * np.eye(ltn_dim) / (ltn_dim + 1)
+    # nu = (ltn_dim + 1) + ltn_dim + 1
+    #
+    # from sds.distributions.composite import NormalWishart
+    # prior = NormalWishart(ltn_dim,
+    #                       mu=mu, kappa=kappa,
+    #                       psi=psi, nu=nu)
+
+    def __init__(self, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(SingleBayesianInitGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                               nb_lags, prior, likelihood)
+
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mu, lmbda = self.prior.rvs()
+            self.likelihood = GaussianWithPrecision(dim=self.ltn_dim,
+                                                    mu=mu, lmbda=lmbda)
+
+
+class SingleBayesianInitDiagonalGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64 * np.ones((ltn_dim,))
+    # alpha = ((ltn_dim + 1) + ltn_dim + 1) / 2. * np.ones((ltn_dim,))
+    # beta = 1. / (2. * 1e8 * np.ones((ltn_dim,)) / (ltn_dim + 1))
+    #
+    # from sds.distributions.composite import NormalGamma
+    # prior = NormalGamma(ltn_dim,
+    #                     mu=mu, kappa=kappa,
+    #                     alphas=alpha, betas=beta)
+
+    def __init__(self, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(SingleBayesianInitDiagonalGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                                       nb_lags, prior, likelihood)
+
+        # Diagonal Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mu, lmbda_diag = self.prior.rvs()
+            self.likelihood = GaussianWithDiagonalPrecision(dim=self.ltn_dim,
+                                                            mu=mu, lmbda_diag=lmbda_diag)
+
+
+class BayesianInitGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64
+    # psi = 1e8 * np.eye(ltn_dim) / (ltn_dim + 1)
+    # nu = (ltn_dim + 1) + ltn_dim + 1
+    #
+    # from sds.distributions.composite import StackedNormalWishart
+    # prior = StackedNormalWishart(nb_states, ltn_dim,
+    #                              mus=np.array([mu for _ in range(nb_states)]),
+    #                              kappas=np.array([kappa for _ in range(nb_states)]),
+    #                              psis=np.array([psi for _ in range(nb_states)]),
+    #                              nus=np.array([nu for _ in range(nb_states)]))
+
+    def __init__(self, nb_states, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(BayesianInitGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                         nb_lags, prior, likelihood)
+
+        self.nb_states = nb_states
+
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbdas = self.prior.rvs()
+            self.likelihood = StackedGaussiansWithPrecision(size=self.nb_states,
+                                                            dim=self.ltn_dim,
+                                                            mus=mus, lmbdas=lmbdas)
+
+    def permute(self, perm):
+        pass
+
+
+class BayesianInitDiagonalGaussianLatent(_BayesianInitGaussianLatentBase):
+
+    # mu = np.zeros((ltn_dim,))
+    # kappa = 1e-64 * np.ones((ltn_dim,))
+    # alpha = ((ltn_dim + 1) + ltn_dim + 1) / 2. * np.ones((ltn_dim,))
+    # beta = 1. / (2. * 1e8 * np.ones((ltn_dim,)) / (ltn_dim + 1))
+    #
+    # from sds.distributions.composite import StackedNormalGamma
+    # prior = StackedNormalGamma(nb_states, ltn_dim,
+    #                            mus=np.array([mu for _ in range(nb_states)]),
+    #                            kappas=np.array([kappa for _ in range(nb_states)]),
+    #                            alphas=np.array([alpha for _ in range(nb_states)]),
+    #                            betas=np.array([beta for _ in range(nb_states)]))
+
+    def __init__(self, nb_states, ltn_dim, act_dim,
+                 nb_lags, prior, likelihood=None):
+        super(BayesianInitDiagonalGaussianLatent, self).__init__(ltn_dim, act_dim,
+                                                                 nb_lags, prior, likelihood)
+
+        self.nb_states = nb_states
+
+        # Diagonal Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbdas_diag = self.prior.rvs()
+            self.likelihood = StackedGaussiansWithDiagonalPrecision(size=self.nb_states,
+                                                                    dim=self.ltn_dim,
+                                                                    mus=mus, lmbdas_diag=lmbdas_diag)
+
+    def permute(self, perm):
+        pass
