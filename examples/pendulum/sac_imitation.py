@@ -204,15 +204,16 @@ if __name__ == "__main__":
     ctl_degree = 3
 
     # init_state_prior
-    init_state_prior = {}
+    from sds.distributions.dirichlet import Dirichlet
+    init_state_prior = Dirichlet(dim=nb_states, alphas=np.ones((nb_states, )))
 
     # init_obs_prior
     mu = np.zeros((obs_dim,))
     kappa = 1e-64
-    # psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
-    # nu = (obs_dim + 1) + obs_dim + 1
-    psi = np.eye(obs_dim)
-    nu = (obs_dim + 1) + 1e-8
+    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
+    nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = (obs_dim + 1) + 1e-8
 
     from sds.distributions.composite import StackedNormalWisharts
     init_obs_prior = StackedNormalWisharts(nb_states, obs_dim,
@@ -230,17 +231,17 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    # psi = 1e2 * np.eye(output_dim) / (output_dim + 1)
-    # nu = (output_dim + 1) + output_dim + 1
-    psi = np.eye(output_dim)
-    nu = (output_dim + 1) + 1e-8
+    psi = 1e4 * np.eye(output_dim) / (output_dim + 1)
+    nu = (output_dim + 1) + output_dim + 1
+    # psi = np.eye(output_dim)
+    # nu = (output_dim + 1) + 1e-8
 
-    from sds.distributions.composite import StackedMatrixNormalWisharts
-    obs_prior = StackedMatrixNormalWisharts(nb_states, input_dim, output_dim,
-                                            Ms=np.array([M for _ in range(nb_states)]),
-                                            Ks=np.array([K for _ in range(nb_states)]),
-                                            psis=np.array([psi for _ in range(nb_states)]),
-                                            nus=np.array([nu for _ in range(nb_states)]))
+    from sds.distributions.composite import TiedMatrixNormalWisharts
+    obs_prior = TiedMatrixNormalWisharts(nb_states, input_dim, output_dim,
+                                         Ms=np.array([M for _ in range(nb_states)]),
+                                         Ks=np.array([K for _ in range(nb_states)]),
+                                         psis=np.array([psi for _ in range(nb_states)]),
+                                         nus=np.array([nu for _ in range(nb_states)]))
 
     # ctl_prior
     from scipy import special
@@ -272,9 +273,9 @@ if __name__ == "__main__":
 
     # mstep kwargs
     init_state_mstep_kwargs = {}
-    init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 512, 'lr': 1e-2}
-    ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 512, 'lr': 1e-2}
+    init_obs_mstep_kwargs = {}
+    obs_mstep_kwargs = {}
+    ctl_mstep_kwargs = {}
     trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 512, 'lr': 5e-4, 'l2': 1e-32}
 
     models = parallel_em(train_obs=train_obs, train_act=train_act,
@@ -286,7 +287,7 @@ if __name__ == "__main__":
                          trans_prior=trans_prior, obs_prior=obs_prior, ctl_prior=ctl_prior,
                          init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs, ctl_kwargs=ctl_kwargs,
-                         nb_iter=500, tol=1e-4,
+                         nb_iter=100, tol=1e-4,
                          init_state_mstep_kwargs=init_state_mstep_kwargs,
                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                          trans_mstep_kwargs=trans_mstep_kwargs,
@@ -308,7 +309,6 @@ if __name__ == "__main__":
 
     scores = np.array([train_scores]) + np.array([test_scores])
     clrarhmm = models[np.argmin(sc.stats.rankdata(-1. * scores))]
-
 
     # ctl = clrarhmm.smoothed_control(obs, act)
     # # state, ctl = clrarhmm.filtered_control(obs, act)
@@ -411,7 +411,7 @@ if __name__ == "__main__":
     xlim = (-np.pi, np.pi)
     ylim = (-8.0, 8.0)
 
-    npts = 35
+    npts = 36
     x = np.linspace(*xlim, npts)
     y = np.linspace(*ylim, npts)
 
@@ -433,7 +433,8 @@ if __name__ == "__main__":
 
     ax.streamplot(x, y, dXY[0, ...], dXY[1, ...],
                   color='g', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  arrowstyle='-|>', arrowsize=1.,
+                  minlength=0.25)
 
     ax = beautify(ax)
     ax.grid(False)
@@ -480,7 +481,8 @@ if __name__ == "__main__":
 
     ax.streamplot(xi, yi, dxi, dyi,
                   color='r', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  arrowstyle='-|>', arrowsize=1.,
+                  minlength=0.25)
 
     ax = beautify(ax)
     ax.grid(False)

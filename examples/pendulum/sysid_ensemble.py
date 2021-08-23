@@ -39,7 +39,8 @@ if __name__ == "__main__":
     trans_type = 'neural-ensemble'
 
     # init_state_prior
-    init_state_prior = {}
+    from sds.distributions.dirichlet import Dirichlet
+    init_state_prior = Dirichlet(dim=nb_states, alphas=np.ones((nb_states, )))
 
     # init_obs_prior
     mu = np.zeros((obs_dim,))
@@ -67,12 +68,12 @@ if __name__ == "__main__":
     # psi = np.eye(obs_dim)
     # nu = obs_dim + 1 + 1e-8
 
-    from sds.distributions.composite import StackedMatrixNormalWisharts
-    obs_prior = StackedMatrixNormalWisharts(nb_states, input_dim, output_dim,
-                                            Ms=np.array([M for _ in range(nb_states)]),
-                                            Ks=np.array([K for _ in range(nb_states)]),
-                                            psis=np.array([psi for _ in range(nb_states)]),
-                                            nus=np.array([nu for _ in range(nb_states)]))
+    from sds.distributions.composite import TiedMatrixNormalWisharts
+    obs_prior = TiedMatrixNormalWisharts(nb_states, input_dim, output_dim,
+                                         Ms=np.array([M for _ in range(nb_states)]),
+                                         Ks=np.array([K for _ in range(nb_states)]),
+                                         psis=np.array([psi for _ in range(nb_states)]),
+                                         nus=np.array([nu for _ in range(nb_states)]))
 
     # trans_prior
     trans_prior = {'alpha': 1., 'kappa': 0.}  # Dirichlet params
@@ -86,8 +87,8 @@ if __name__ == "__main__":
 
     # mstep kwargs
     init_state_mstep_kwargs = {}
-    init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 256, 'lr': 1e-2}
+    init_obs_mstep_kwargs = {}
+    obs_mstep_kwargs = {}
     trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 256, 'lr': 5e-4, 'l2': 1e-32}
 
     ensemble = EnsembleHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim,
@@ -103,7 +104,7 @@ if __name__ == "__main__":
                                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     ensemble.em(train_obs, train_act,
-                nb_iter=500, tol=1e-4, initialize=True,
+                nb_iter=100, tol=1e-4, initialize=True,
                 init_state_mstep_kwargs=init_state_mstep_kwargs,
                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                 trans_mstep_kwargs=trans_mstep_kwargs,

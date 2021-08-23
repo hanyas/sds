@@ -369,7 +369,7 @@ class EnsembleHybridController:
 
             nb_iter = kwargs.get('nb_iter', 25)
             tol = kwargs.get('tol', 1e-4)
-            initialize = kwargs.get('initialize', True)
+            initialize = kwargs.get('initialize', False)
             process_id = seed
 
             ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs', {})

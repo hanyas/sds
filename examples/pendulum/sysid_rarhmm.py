@@ -124,7 +124,8 @@ if __name__ == "__main__":
     trans_type = 'neural'
 
     # init_state_prior
-    init_state_prior = {}
+    from sds.distributions.dirichlet import Dirichlet
+    init_state_prior = Dirichlet(dim=nb_states, alphas=np.ones((nb_states, )))
 
     # init_obs_prior
     mu = np.zeros((obs_dim,))
@@ -148,12 +149,12 @@ if __name__ == "__main__":
     psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
 
-    from sds.distributions.composite import StackedMatrixNormalWisharts
-    obs_prior = StackedMatrixNormalWisharts(nb_states, input_dim, output_dim,
-                                            Ms=np.array([M for _ in range(nb_states)]),
-                                            Ks=np.array([K for _ in range(nb_states)]),
-                                            psis=np.array([psi for _ in range(nb_states)]),
-                                            nus=np.array([nu for _ in range(nb_states)]))
+    from sds.distributions.composite import TiedMatrixNormalWisharts
+    obs_prior = TiedMatrixNormalWisharts(nb_states, input_dim, output_dim,
+                                         Ms=np.array([M for _ in range(nb_states)]),
+                                         Ks=np.array([K for _ in range(nb_states)]),
+                                         psis=np.array([psi for _ in range(nb_states)]),
+                                         nus=np.array([nu for _ in range(nb_states)]))
 
     # trans_prior
     trans_prior = {'alpha': 1., 'kappa': 0.}  # Dirichlet params
@@ -167,8 +168,8 @@ if __name__ == "__main__":
 
     # mstep kwargs
     init_state_mstep_kwargs = {}
-    init_obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'lr': 1e-2}
-    obs_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'batch_size': 256, 'lr': 1e-2}
+    init_obs_mstep_kwargs = {}
+    obs_mstep_kwargs = {}
     trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 256, 'lr': 5e-4, 'l2': 1e-32}
 
     models = parallel_em(train_obs=train_obs, train_act=train_act,
@@ -180,7 +181,7 @@ if __name__ == "__main__":
                          trans_prior=trans_prior, obs_prior=obs_prior,
                          init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs,
-                         nb_iter=500, tol=1e-4,
+                         nb_iter=100, tol=1e-4,
                          init_state_mstep_kwargs=init_state_mstep_kwargs,
                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                          trans_mstep_kwargs=trans_mstep_kwargs,

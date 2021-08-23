@@ -21,7 +21,7 @@ if __name__ == "__main__":
     env.unwrapped.sigma = 1e-8
     env.seed(1337)
 
-    nb_train_rollouts, nb_train_steps = 15, 250
+    nb_train_rollouts, nb_train_steps = 25, 250
     nb_test_rollouts, nb_test_steps = 5, 100
 
     train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
@@ -36,16 +36,19 @@ if __name__ == "__main__":
     algo_type = 'MAP'
     init_obs_type = 'full'
     obs_type = 'full'
-    trans_type = 'neural'
+    trans_type = 'neural-ensemble'
 
     # init_state_prior
-    init_state_prior = {}
+    from sds.distributions.dirichlet import Dirichlet
+    init_state_prior = Dirichlet(dim=nb_states, alphas=np.ones((nb_states, )))
 
     # init_obs_prior
     mu = np.zeros((obs_dim,))
     kappa = 1e-64
-    psi = 1e8 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = obs_dim + 1 + 1e-8
 
     from sds.distributions.composite import StackedNormalWisharts
     init_obs_prior = StackedNormalWisharts(nb_states, obs_dim,
@@ -60,15 +63,17 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    psi = 1e8 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e4 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
+    # psi = np.eye(obs_dim)
+    # nu = obs_dim + 1 + 1e-8
 
-    from sds.distributions.composite import StackedMatrixNormalWisharts
-    obs_prior = StackedMatrixNormalWisharts(nb_states, input_dim, output_dim,
-                                            Ms=np.array([M for _ in range(nb_states)]),
-                                            Ks=np.array([K for _ in range(nb_states)]),
-                                            psis=np.array([psi for _ in range(nb_states)]),
-                                            nus=np.array([nu for _ in range(nb_states)]))
+    from sds.distributions.composite import TiedMatrixNormalWisharts
+    obs_prior = TiedMatrixNormalWisharts(nb_states, input_dim, output_dim,
+                                         Ms=np.array([M for _ in range(nb_states)]),
+                                         Ks=np.array([K for _ in range(nb_states)]),
+                                         psis=np.array([psi for _ in range(nb_states)]),
+                                         nus=np.array([nu for _ in range(nb_states)]))
 
     # trans_prior
     trans_prior = {'alpha': 1., 'kappa': 0.1}  # Dirichlet params
@@ -76,14 +81,14 @@ if __name__ == "__main__":
     # model kwargs
     init_state_kwargs, init_obs_kwargs, obs_kwargs = {}, {}, {}
     trans_kwargs = {'device': 'cpu',
-                    'hidden_sizes': (16,), 'activation': 'splus',
+                    'hidden_sizes': (32,), 'activation': 'splus',
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
                              'std': np.array([5., 1., 1., 5., 10., 5.])}}
 
     # mstep kwargs
     init_state_mstep_kwargs, init_obs_mstep_kwargs, obs_mstep_kwargs = {}, {}, {}
-    trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 128,
-                          'lr': 1e-3, 'l2': 1e-32}
+    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 256,
+                          'lr': 5e-4, 'l2': 1e-32}
 
     ensemble = EnsembleHiddenMarkovModel(nb_states=nb_states, obs_dim=obs_dim,
                                          act_dim=act_dim, obs_lag=obs_lag,
@@ -96,7 +101,7 @@ if __name__ == "__main__":
                                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs)
 
     ensemble.em(train_obs, train_act,
-                nb_iter=50, tol=1e-4,
+                nb_iter=100, tol=1e-4, initialize=True,
                 init_state_mstep_kwargs=init_state_mstep_kwargs,
                 init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                 trans_mstep_kwargs=trans_mstep_kwargs,

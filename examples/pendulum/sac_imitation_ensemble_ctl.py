@@ -4,10 +4,8 @@ import numpy.random as npr
 import scipy as sc
 from scipy import stats
 
-from sds.models import HybridController
+from sds.models import EnsembleHybridController
 from sds.utils.envs import sample_env, rollout_policy
-
-from joblib import Parallel, delayed
 
 import matplotlib.pyplot as plt
 from matplotlib import rc
@@ -44,51 +42,6 @@ def beautify(ax):
         ax.legend(loc='best')
 
     return ax
-
-
-def create_job(train_obs, train_act, kwargs, seed):
-
-    random.seed(seed)
-    npr.seed(seed)
-    torch.manual_seed(seed)
-
-    # dnyamics
-    dynamics = kwargs.get('dynamics')
-
-    # ctl prior
-    ctl_prior = kwargs.get('ctl_prior')
-
-    # ctl kwargs
-    ctl_kwargs = kwargs.get('ctl_kwargs')
-
-    # em arguments
-    initialize = kwargs.get('initialize')
-    nb_iter = kwargs.get('nb_iter')
-    tol = kwargs.get('tol')
-    process_id = seed
-
-    ctl_mstep_kwargs = kwargs.get('ctl_mstep_kwargs')
-
-    hbctl = HybridController(dynamics=dynamics, ctl_type=ctl_type,
-                             ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs)
-
-    hbctl.em(train_obs, train_act, nb_iter=nb_iter,
-             tol=tol, initialize=initialize, process_id=process_id,
-             ctl_mstep_kwargs=ctl_mstep_kwargs)
-
-    return hbctl
-
-
-def parallel_em(train_obs, train_act, **kwargs):
-
-    nb_jobs = len(train_obs)
-    kwargs_list = [kwargs.copy() for _ in range(nb_jobs)]
-    seeds = np.linspace(0, nb_jobs - 1, nb_jobs, dtype=int)
-
-    hbctl = Parallel(n_jobs=min(nb_jobs, nb_cores), verbose=1, backend='loky')\
-            (map(delayed(create_job), train_obs, train_act, kwargs_list, seeds))
-
-    return hbctl
 
 
 if __name__ == "__main__":
@@ -131,11 +84,6 @@ if __name__ == "__main__":
     nb_rollouts, nb_steps = 50, 200
     obs, act = sample_env(env, nb_rollouts, nb_steps, sac_ctl, noise_std=1e-2)
 
-    from sds.utils.general import train_test_split
-    train_obs, train_act, _, _ = train_test_split(obs, act, seed=3,
-                                                  nb_traj_splits=6,
-                                                  split_trajs=False)
-
     fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 6))
     fig.suptitle('Pendulum SAC Demonstrations')
 
@@ -159,11 +107,12 @@ if __name__ == "__main__":
 
     plt.show()
 
+    nb_states = 5
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
 
     # ctl type
-    ctl_type = 'ard'
+    ctl_type = 'full'
     ctl_degree = 3
 
     # ctl_prior
@@ -172,46 +121,38 @@ if __name__ == "__main__":
     input_dim = feat_dim + 1
     output_dim = act_dim
 
-    from sds.distributions.gamma import Gamma
-    likelihood_precision_prior = Gamma(dim=1, alphas=np.ones((1,)) + 1e-8,
-                                       betas=1e-1 * np.ones((1,)))
+    M = np.zeros((output_dim, input_dim))
+    K = 1e-6 * np.eye(input_dim)
+    # psi = 1e2 * np.eye(act_dim) / (act_dim + 1)
+    # nu = (act_dim + 1) + act_dim + 1
+    psi = np.eye(act_dim)
+    nu = (act_dim + 1) + 1e-8
 
-    parameter_precision_prior = Gamma(dim=input_dim, alphas=np.ones((input_dim,)) + 1e-8,
-                                      betas=1e1 * np.ones((input_dim,)))
-    ctl_prior = {'likelihood_precision_prior': likelihood_precision_prior,
-                 'parameter_precision_prior': parameter_precision_prior}
+    from sds.distributions.composite import StackedMatrixNormalWisharts
+    ctl_prior = StackedMatrixNormalWisharts(nb_states, input_dim, output_dim,
+                                            Ms=np.array([M for _ in range(nb_states)]),
+                                            Ks=np.array([K for _ in range(nb_states)]),
+                                            psis=np.array([psi for _ in range(nb_states)]),
+                                            nus=np.array([nu for _ in range(nb_states)]))
 
     # ctl kwargs
     ctl_kwargs = {'degree': ctl_degree}
 
     # mstep kwargs
-    ctl_mstep_kwargs = {'method': 'sgd', 'nb_iter': 1, 'nb_sub_iter': 5,
-                        'batch_size': 1024, 'lr': 2e-3}
+    ctl_mstep_kwargs = {}
 
     # load dynamics
     dynamics = torch.load(open('./rarhmm_pendulum_cart.pkl', 'rb'))
 
-    hbctls = parallel_em(dynamics=dynamics,
-                         train_obs=train_obs, train_act=train_act,
-                         ctl_type=ctl_type, ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs,
-                         nb_iter=100, tol=1e-4, initialize=True,
-                         ctl_mstep_kwargs=ctl_mstep_kwargs)
+    hbctls = EnsembleHybridController(dynamics=dynamics, ctl_type=ctl_type,
+                                      ctl_prior=ctl_prior, ctl_kwargs=ctl_kwargs)
 
-    # model validation
-    nb_train = [np.vstack(x).shape[0] for x in train_obs]
-    nb_total = np.vstack(obs).shape[0]
-
-    train_ll, total_ll = [], []
-    for x, u, m in zip(train_obs, train_act, hbctls):
-        train_ll.append(m.log_normalizer(x, u))
-        total_ll.append(m.log_normalizer(obs, act))
-
-    train_scores = np.hstack(train_ll) / np.hstack(nb_train)
-    test_scores = (np.hstack(total_ll) - np.hstack(train_ll)) \
-                  / (nb_total - np.hstack(nb_train))
+    train_scores, test_scores = hbctls.em(obs, act,
+                                          nb_iter=100, tol=1e-4,
+                                          ctl_mstep_kwargs=ctl_mstep_kwargs)
 
     scores = np.array([train_scores]) + np.array([test_scores])
-    hbctl = hbctls[np.argmin(sc.stats.rankdata(-1. * scores))]
+    hbctl = hbctls.models[np.argmin(sc.stats.rankdata(-1. * scores))]
 
     rollouts = rollout_policy(env, hbctl, 50, 250, average=True, stoch=True)
 
@@ -283,7 +224,7 @@ if __name__ == "__main__":
     xlim = (-np.pi, np.pi)
     ylim = (-8.0, 8.0)
 
-    npts = 35
+    npts = 36
     x = np.linspace(*xlim, npts)
     y = np.linspace(*ylim, npts)
 
@@ -305,7 +246,8 @@ if __name__ == "__main__":
 
     ax.streamplot(x, y, dXY[0, ...], dXY[1, ...],
                   color='g', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  arrowstyle='-|>', arrowsize=1.,
+                  minlength=0.25)
 
     ax = beautify(ax)
     ax.grid(False)
@@ -352,7 +294,8 @@ if __name__ == "__main__":
 
     ax.streamplot(xi, yi, dxi, dyi,
                   color='r', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  arrowstyle='-|>', arrowsize=1.,
+                  minlength=0.25)
 
     ax = beautify(ax)
     ax.grid(False)

@@ -98,10 +98,10 @@ if __name__ == "__main__":
     env = gym.make('Cartpole-ID-v1')
     env._max_episode_steps = 5000
     env.unwrapped.dt = 0.01
-    env.unwrapped.sigma = 1e-8
+    env.unwrapped.sigma = 1e-4
     env.seed(1337)
 
-    nb_train_rollouts, nb_train_steps = 15, 250
+    nb_train_rollouts, nb_train_steps = 25, 250
     nb_test_rollouts, nb_test_steps = 5, 100
 
     obs, act = sample_env(env, nb_train_rollouts, nb_train_steps)
@@ -124,12 +124,13 @@ if __name__ == "__main__":
     trans_type = 'neural'
 
     # init_state_prior
-    init_state_prior = {}
+    from sds.distributions.dirichlet import Dirichlet
+    init_state_prior = Dirichlet(dim=nb_states, alphas=np.ones((nb_states, )))
 
     # init_obs_prior
     mu = np.zeros((obs_dim,))
     kappa = 1e-64
-    psi = 1e8 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
 
     from sds.distributions.composite import StackedNormalWisharts
@@ -145,7 +146,7 @@ if __name__ == "__main__":
 
     M = np.zeros((output_dim, input_dim))
     K = 1e-6 * np.eye(input_dim)
-    psi = 1e8 * np.eye(obs_dim) / (obs_dim + 1)
+    psi = 1e2 * np.eye(obs_dim) / (obs_dim + 1)
     nu = (obs_dim + 1) + obs_dim + 1
 
     from sds.distributions.composite import StackedMatrixNormalWisharts
@@ -156,19 +157,18 @@ if __name__ == "__main__":
                                             nus=np.array([nu for _ in range(nb_states)]))
 
     # trans_prior
-    trans_prior = {'alpha': 1., 'kappa': 0.1}  # Dirichlet params
+    trans_prior = {'alpha': 1., 'kappa': 0.}  # Dirichlet params
 
     # model kwargs
     init_state_kwargs, init_obs_kwargs, obs_kwargs = {}, {}, {}
     trans_kwargs = {'device': 'cpu',
-                    'hidden_sizes': (16,), 'activation': 'splus',
+                    'hidden_sizes': (32,), 'activation': 'splus',
                     'norm': {'mean': np.array([0., 0., 0., 0., 0., 0.]),
                              'std': np.array([5., 1., 1., 5., 10., 5.])}}
 
     # mstep kwargs
     init_state_mstep_kwargs, init_obs_mstep_kwargs, obs_mstep_kwargs = {}, {}, {}
-    trans_mstep_kwargs = {'nb_iter': 50, 'batch_size': 128,
-                          'lr': 1e-3, 'l2': 1e-32}
+    trans_mstep_kwargs = {'nb_iter': 5, 'batch_size': 256, 'lr': 5e-4, 'l2': 1e-32}
 
     models = parallel_em(train_obs=train_obs, train_act=train_act,
                          nb_states=nb_states, obs_dim=obs_dim,
@@ -179,7 +179,7 @@ if __name__ == "__main__":
                          trans_prior=trans_prior, obs_prior=obs_prior,
                          init_state_kwargs=init_state_kwargs, init_obs_kwargs=init_obs_kwargs,
                          trans_kwargs=trans_kwargs, obs_kwargs=obs_kwargs,
-                         nb_iter=50, tol=1e-4,
+                         nb_iter=100, tol=1e-4,
                          init_state_mstep_kwargs=init_state_mstep_kwargs,
                          init_obs_mstep_kwargs=init_obs_mstep_kwargs,
                          trans_mstep_kwargs=trans_mstep_kwargs,
